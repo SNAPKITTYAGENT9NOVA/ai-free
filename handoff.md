@@ -1444,3 +1444,22 @@ etlify-demo\public\2026_competitions_calendar.ics。
 2. **手機 Google 日曆一鍵秒級推播直通連結建置**：
    - 已編制《PHANTOMGRID 手機賽事即時推播與同步專區》，並同步更新手冊《2026_AI_Agent關鍵賽事行動行事曆與即時推播手冊.md》。
    - 今日實戰報名的 6 大賽事（CMC API、Arc Circle、IBM Bob 2.0、Biohub、CHI-Bench、Chain Jam）均提供專屬直通 Google Calendar 渲染連結，手機點擊即可秒級加入並設定自定義定時推播鬧鐘！
+
+---
+
+## 🥋【2026-09-17 22:30 CST 里程碑 115】練功房 HUI 課綱細向小節與 Mermaid 畫布防禦全面升級完工
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**實戰回饋指示：「看不到細向的課程項目內容」與畫布底端 Mermaid 語法報錯排查：
+
+1. **細向課程項目內容全面顯露（徹底根治）**：
+   - **全面擴充 5 單元 x 5 細向小節**：升級 `js/app.js` 與 `backend/dojo_server.py`，涵蓋 4 大主題（Mermaid 拓撲、Python 全棧、ASIL-D 車規安全、超級大腦 Agent）。每單元均具備 5 大細向小節（如 `[1.1] 核心概念`、`[1.2] 語法結構`、`[1.3] 實彈代碼`、`[1.4] 車規可靠度`、`[1.5] 實操清單`），包含 100+ 個實戰考核指標。
+   - **互動式摺疊清單與 Checkbox**：左側課綱面板新增「📑 細向小節清單 (5 節) [▼ 展開細向]」，可隨意展開收合，並附帶互動式打勾方塊，方便學員逐項盤點修煉進度。
+   - **全屏「🔍 課綱全覽」檢閱器**：在課綱建構中心頂部新增專屬按鈕，點擊即彈出《戰術課程細向實戰大綱全覽》彈窗，可全局檢閱 5 大單元與 25 個模組之細節重點與考核代碼，並支援一鍵切換單元。
+2. **Mermaid 畫布 Syntax Error 炸彈徹底清除**：
+   - **自動清除 DOM 殘留**：在 `js/mermaid_canvas.js` 實裝 `cleanupMermaidErrorArtifacts()`，將 Mermaid 10.9.8 報錯時強行掛載到 `document.body` 底部的炸彈圖示與錯誤 div 完全抹除。
+   - **空代碼防禦與藍圖待命**：編輯器空字串或純註解時，主動顯示高科技拓撲待命介面，不再調用 `mermaid.render()` 拋出語法異常。
+   - **5 大拓撲語法全數驗證通過**：提供 100% 通過 Mermaid 10.9.8 編譯的 5 大標準模型（微服務 graph TD、ASIL-D 雙核時序 sequenceDiagram、變色龍反噬狀態機 stateDiagram-v2、21大將類別圖 classDiagram、知識庫 ER 圖 erDiagram）。
+3. **便攜壓艙包與啟動腳本同步**：
+   - 重新封裝 `PHANTOMGRID_DOJO_HUI_PORTABLE.zip` (61.9 KB) 並同步複製至 `G:\我的雲端硬碟\AI產出成品總庫\`。
+   - 配套新增純 ASCII 啟動腳本 `START_DOJO_LOCAL.bat`、`START_CLOUDFLARE_TUNNEL.bat`、`START_AUTO_DAEMON.bat`，確保任何 Windows PC 雙擊無亂碼。
+

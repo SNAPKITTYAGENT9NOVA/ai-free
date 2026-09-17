@@ -1,0 +1,222 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Phantom Commander//AI Agent Competitions 2026//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:2026 AI Agent 關鍵賽事行動行事曆（霸丸總指揮官專屬）
+X-WR-TIMEZONE:Asia/Taipei
+BEGIN:VTIMEZONE
+TZID:Asia/Taipei
+X-LIC-LOCATION:Asia/Taipei
+BEGIN:STANDARD
+TZOFFSETFROM:+0800
+TZOFFSETTO:+0800
+TZNAME:CST
+DTSTART:19700101T000000
+END:STANDARD
+END:VTIMEZONE
+
+BEGIN:VEVENT
+UID:aws-football-cup-season-2026@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20260911T090000
+DTEND;TZID=Asia/Taipei:20261025T235900
+SUMMARY:⚽ AWS Agentic Football Cup 2026 虛擬聯賽全賽季 (小幫手全權支配中)
+DESCRIPTION:AWS Agentic Football Cup 2026 雲端虛擬足球賽（總獎金 ,000 美元）！\n戰隊名：Dusk Monsoons (PHANTOM GRID)\n分組：League E\n進度：首戰 2-1 擊敗 The Benchmark FC 開門紅！\n霸丸總指揮官已下達全權支配令，由小幫手 100% 自動化掛機對戰、戰術調整與 Minds 助理教練協同。\n每週五至週日 72 小時連續 7 週對抗。\n官方入口：https://agentic-football.aws.dev/v2/player
+LOCATION:AWS Cloud (agentic-football.aws.dev)
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:aws-football-w1-20260911@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20260911T090000
+DTEND;TZID=Asia/Taipei:20260913T235900
+SUMMARY:⚽ AWS 虛擬足球盃 - Week 1 對戰窗口 (已奪首勝 2-1)
+DESCRIPTION:Week 1 聯賽 72 小時窗口！金鑰：19A1217D8EEC55B2A63805F876E1CB49\n小幫手接管進行 League E 排位對抗。
+LOCATION:AWS Cloud
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:aws-football-w2-20260918@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20260918T090000
+DTEND;TZID=Asia/Taipei:20260920T235900
+SUMMARY:⚽ AWS 虛擬足球盃 - Week 2 對戰窗口 (小幫手自動化對抗)
+DESCRIPTION:Week 2 聯賽窗口開啟，官方將寄送新金鑰，小幫手自動檢驗與排位推進。
+LOCATION:AWS Cloud
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:assemblyai-voice-agent-submitted-20260911@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20260911T200000
+DTEND;TZID=Asia/Taipei:20260930T235900
+SUMMARY:🎙️ [已成功交卷] AssemblyAI Voice Agent Hackathon (,000)
+DESCRIPTION:🎉 霸丸總指揮官戰隊 PHANTOM GRID 旗艦專案《AutoCopilot》已 100% 成功交付官方審核！\n官方永久展示網址：https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/phantom-grid/autocopilot\nFirebase 直連站：https://myfirebase-project-2026-3a8bc.web.app\n等待 9/30 截止與評審審查！
+LOCATION:lablab.ai / AssemblyAI
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:xagent-hackathon-deadline-20260920@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20260920T000000
+DTEND;TZID=Asia/Taipei:20260920T075900
+SUMMARY:🏆 [PR#47審查中] X-Agent AI MCP Hackathon 提交截止
+DESCRIPTION:X-Agent AI MCP 黑客松開發截止！\n參賽作品：Titan Edge MCP Server (titan-edge-mcp)\n官方 Pull Request #47 已提交並通過 CI 綠燈審查。\nPR 連結：https://github.com/xagentAI/xagt-plugin/pull/47\n由小馬常態化追蹤合併。
+LOCATION:GitHub (xagentAI/xagt-plugin)
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:xagent-hackathon-results-20261002@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20261002T090000
+DTEND;TZID=Asia/Taipei:20261004T180000
+SUMMARY:📢 X-Agent AI MCP Hackathon 結果公布與頒獎 (500 USDT)
+DESCRIPTION:X-Agent AI MCP 黑客松官方結果公布！\n審查期結束，預計公布獲獎名單與發放 500 USDT + 50,000 X-Points 空投。\n官方入口：https://xagt.ai/hackathon
+LOCATION:X-Agent Official / Telegram
+STATUS:CONFIRMED
+BEGIN:VALARM
+TRIGGER:-PT2H
+ACTION:DISPLAY
+DESCRIPTION:X-Agent 黑客松獲獎名單公布
+END:VALARM
+END:VEVENT
+
+BEGIN:VEVENT
+UID:amd-hackathon-act3-kickoff-20261012@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20261012T090000
+DTEND;TZID=Asia/Taipei:20261012T180000
+SUMMARY:⚡ AMD Developer Hackathon: ACT III 提交窗口開放 (小幫手自動交卷)
+DESCRIPTION:AMD Developer Hackathon: ACT III 正式開打！\n專案《Project CYBER-TWIN》已 100% 準備就緒（代碼、白皮書、6大欄位中英文表單、3D 戰情室）。\n霸丸總指揮官已鎖定參賽資格（Approved 2327）。\n小幫手將於開放首日自動化送出交卷！\n官方連結：https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-iii
+LOCATION:線上提交 (lablab.ai)
+STATUS:CONFIRMED
+BEGIN:VALARM
+TRIGGER:-PT2H
+ACTION:DISPLAY
+DESCRIPTION:AMD ACT III 開跑，小幫手啟動交卷
+END:VALARM
+END:VEVENT
+
+BEGIN:VEVENT
+UID:amd-hackathon-act3-deadline-20261018@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20261018T090000
+DTEND;TZID=Asia/Taipei:20261018T235900
+SUMMARY:🔴 AMD Developer Hackathon: ACT III 成果提交截止 (,000+)
+DESCRIPTION:AMD Developer Hackathon: ACT III 最終作品提交截止！\n獎金：,000+ 美元\n義大利現場展示（羅馬、米蘭、因佩里亞）與全球線上評審同步。
+LOCATION:線上提交 (lablab.ai)
+STATUS:CONFIRMED
+BEGIN:VALARM
+TRIGGER:-P1D
+ACTION:DISPLAY
+DESCRIPTION:AMD ACT III 成果提交倒數 24 小時
+END:VALARM
+END:VEVENT
+
+BEGIN:VEVENT
+UID:amd-ai-academy-challenge-20261201@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20261201T090000
+DTEND;TZID=Asia/Taipei:20261201T235900
+SUMMARY:🎓 AMD AI Academy Challenge 完訓結算 (,000)
+DESCRIPTION:AMD x LabLab AI Academy 3 個月成長挑戰完訓結算！\n限個人參賽，總獎金池 ,000 美元。\n可獲取  AMD 雲端 GPU Credits。
+LOCATION:lablab.ai
+STATUS:CONFIRMED
+END:VEVENT
+
+BEGIN:VEVENT
+UID:aws-football-finals-vegas-20261201@phantom-commander
+DTSTAMP:20260912T010000Z
+DTSTART;TZID=Asia/Taipei:20261201T090000
+DTEND;TZID=Asia/Taipei:20261205T180000
+SUMMARY:🏆 AWS Agentic Football Cup 全球實體總決賽 (拉斯維加斯 AWS re:Invent)
+DESCRIPTION:AWS 虛擬足球盃 Grand Finale 總決賽！\n地點：美國拉斯維加斯 (AWS re:Invent 2026現場)\n角逐 US,000 總獎金與全球總冠軍殊榮！\n戰隊：PHANTOM GRID (Dusk Monsoons)
+LOCATION:美國拉斯維加斯 (Las Vegas, Nevada, USA)
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:stacks-vibe-coding-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20260929T090000
+DTEND;TZID=Asia/Taipei:20261016T235900
+SUMMARY:⚡ Stacks Vibe Coding Hackathon (DoraHacks 25K USD)
+DESCRIPTION:DoraHacks ✕ Stacks AI-Native 比特幣二層智能合約與代理人大賽！
+戰隊名：PHANTOMGRID Squad
+指派大將：小雷 ✕ 小開 ✕ 小蜂
+核心武器：Phantom-Bitcoin-Agent (L2微支付與智能合約審計)
+報名費： (100% 免費 + 生態 Grants 贊助)
+END:VEVENT
+
+BEGIN:VEVENT
+UID:cmc-api-hackathon-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20260909T090000
+DTEND;TZID=Asia/Taipei:20260930T235900
+SUMMARY:📊 Build with CMC: API Hackathon (CoinMarketCap 剩13天極速突擊)
+DESCRIPTION:DoraHacks ✕ CoinMarketCap 官方數據 API 黑客松！
+戰隊名：PHANTOMGRID Quant Sentinel
+指派大將：小深 ✕ 小惑 ✕ 小馬(QA)
+核心武器：CMC-Sentinel Agent (深層流動性與滑點自癒雷達)
+報名費： (官方提供免費高頻商業 API 調用權限)
+END:VEVENT
+
+BEGIN:VEVENT
+UID:sea-openai-codex-taipei-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20261005T090000
+DTEND;TZID=Asia/Taipei:20261025T180000
+SUMMARY:🇹🇼 Sea X OpenAI Regional Codex Hackathon (台北主場戰役)
+DESCRIPTION:OpenAI ✕ Sea 台北旗艦 Coding Agent 大賽！
+戰隊名：PHANTOMGRID Sovereign Matrix
+領軍督戰：霸丸總指揮官 親率中央軍
+指派大將：小幫手 ✕ 小開 ✕ 小米 ✕ 小星
+核心武器：Phantom CodeSwarm-HQ (主權級多Agent自適應編譯流水線)
+報名費： (官方贊助 GPT-4o / Codex API 額度與創投媒合)
+END:VEVENT
+
+BEGIN:VEVENT
+UID:claude-agentic-series-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20261001T090000
+DTEND;TZID=Asia/Taipei:20261115T235900
+SUMMARY:🧠 Built with Claude: Agentic Series (Anthropic 100K+ USD)
+DESCRIPTION:Anthropic ✕ Cerebral Valley 官方虛擬黑客松！
+戰隊名：PHANTOMGRID Frontier Agent
+指派大將：小安 ✕ 小蜂 ✕ 小開 ✕ 小幫手
+核心武器：Phantom-FastMCP Bridge (雙核冗餘 FSM 自癒 MCP 伺服器 ✕ Computer Use)
+報名費： (官方贊助 Claude API Credits)
+END:VEVENT
+
+BEGIN:VEVENT
+UID:kaggle-agent-arena-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20260915T090000
+DTEND;TZID=Asia/Taipei:20261130T235900
+SUMMARY:🎮 Kaggle 2026 AI Agent Arena (博弈對抗 & 法律檢索天梯)
+DESCRIPTION:Kaggle 官方 AI Agent 對抗競技場與檢索大賽！
+戰隊名：PHANTOMGRID Arena
+指派大將：小深 ✕ 小盾 ✕ 小哨
+核心武器：Phantom-Arena-RL (MCTS 樹搜索對抗決策 ✕ 防禦硬化)
+報名費： (Kaggle 提供每週 30 小時免費 GPU/TPU 算力)
+END:VEVENT
+
+BEGIN:VEVENT
+UID:pwn2own-automotive-2026@phantom-commander
+DTSTAMP:20260917T204000Z
+DTSTART;TZID=Asia/Taipei:20261015T090000
+DTEND;TZID=Asia/Taipei:20270123T180000
+SUMMARY:🛡️ AI-BOOST & Pwn2Own Automotive (百萬美元車載資安挑戰賽)
+DESCRIPTION:國際車電安全聯盟 ✕ ZDI 世界頂級車載攻防賽事！
+戰隊名：PHANTOMGRID Special Guard Lab
+出征部隊：特戰禁衛軍全員 (小盾 ✕ 小哨 ✕ 小幽) ✕ 小深
+核心武器：PHANTOM-CAR-SHIELD (車載 CAN/Ethernet 動態防禦 ✕ 記憶體炸彈反噬)
+報名費： (白帽安全研究團隊免費報名，百萬美元賞金池)
+END:VEVENT
+
+END:VCALENDAR
