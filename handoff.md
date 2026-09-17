@@ -1503,5 +1503,30 @@ etlify-demo\public\2026_competitions_calendar.ics。
    - 指引長官開啟 `/v2/player/login` 輸入 Week 2 Code 刷新瀏覽器 Session。
    - 準備衝刺 Week 2 特獎（最速破門贏取拉斯維加斯之旅）之 1-2-1 雙前鋒 / 高位壓迫戰術 Prompt。
 
+---
+
+## ⚡【2026-09-18 01:40 CST 里程碑 118】AWS Agentic Football Cup 第二週狂暴雙箭頭 (1-1-2) 兵團實裝完成 · 全員通過 Fitness 認證
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**最高作戰指示：「第二週準備了...這第二週不能在輸了小幫手好好給我配置下」：
+
+1. **陣型變革 · 1-1-2 狂暴雙箭頭極速突擊陣型啟用**：
+   - 透過 API `PUT /teams/346cfe0a-0044-409c-8fc8-a8175da9406f` 將隊伍陣型由被動挨打的 2-1-1 正式升級為 **`1-1-2`（雙前鋒閃電強攻）**。
+2. **5 大特化 Agent 兵團全量部署至 AWS Bedrock 雲端 (`Job c4b90bf2`)**：
+   - 針對 Week 2「最速破門爭霸（Fastest Goal Scored）」全面採用高反應、低延遲之 `us.amazon.nova-micro-v1:0` 模型（決策延遲壓制在 500ms 內，比 Sonnet 快 2 倍以上）：
+     - **P0 門將 (GK)**：`Ironclad Keeper`（果斷撲救、得球即大腳分球）
+     - **P1 後衛 (DEF)**：`Vanguard Shield`（單核清道夫、絕不回傳、截球直接長傳直塞前場）
+     - **P2 中場 (MID)**：`Engine Dynamo`（高速推移、高位逼搶二點球、25米內起腳爆射）
+     - **P3 左鋒 (FWD1)**：`Lightning Striker L`（開球全力衝刺禁區、第一時間起腳、搶補射）
+     - **P4 右鋒 (FWD2)**：`Thunder Striker R`（開球全速衝刺右門柱、25米內不猶豫起腳、門前包抄）
+   - AWS 雲端流水線經歷 `packaging` ➔ `uploading` ➔ `creating_agents`，全員狀態 **`READY`（部署成功）**！
+3. **賽前熱身與健康檢查 (Pre-match Fitness / Scrimmage) 100% 滿分通過**：
+   - 調用 `/teams/{teamId}/scrimmage` 實測 5-Tick 實時對抗模擬：
+     - **整體結果**：`passed: true`，`totalIssues: 0`。
+     - **有效指令率**：`activeCommandPct: 100%`。
+     - **逼搶與傳球射門檢驗**：全員通過 Realism Checks，球隊已解鎖 `Practice` 與正式比賽參賽資格！
+4. **瀏覽器同步指南**：
+   - 長官只需在瀏覽器開啟 `https://agentic-football.aws.dev/v2/player/login` 輸入 Week 2 代碼 `AB00E97FFB2004428D62A49A9CCF96A1` 登入，畫面將直接呈現全新配置之 1-1-2 兵團！
+
+
 
 
