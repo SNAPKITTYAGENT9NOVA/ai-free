@@ -1485,4 +1485,23 @@ etlify-demo\public\2026_competitions_calendar.ics。
    - 📸 1280x720 雙實機高清截圖：`assets/screenshot_1_lesson_plan.png`（教案生成）、`assets/screenshot_2_quiz_wordcloud.png`（問答與文字雲）。
    - 📦 全新打包 `bundle.zip` (7.9 KB) 與上架指引 `assets/APP_STORE_LISTING_ENGLISH.md`，可直接一鍵提交至 Anna 開發者後台！
 
+---
+
+## ⚽【2026-09-18 01:30 CST 里程碑 117】AWS Agentic Football Cup 第二週 (Week 2 Wildcard) 斷連根因破譯與戰略部署全開通
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**指示排查「輸三了」與「幫我把後面用好吧」：
+
+1. **底層架構逆向審計與根因鎖定**：
+   - 審查 React 前端 `index-C9Htr-Rf.js` 與後端 API（`https://l3fmtx4zp0.execute-api.us-east-1.amazonaws.com/prod/`）。
+   - 畫面顯示「3 LOSS STREAK（4-1）」實為 **Week 1 舊戰績**。Week 1 沙盒已隨週末結束關閉，導致舊 Session 判定為 `accountExpired` / `access_denied`，鎖死 `Redeploy changes` 按鈕。
+   - **Week 2 全新實況**：戰隊 `Dusk Monsoons` 已獲分配全新錦標賽 `Animoca Virtual League 5 - Week 2`（Tournament ID: `c6f320d5-95fd-434a-8b53-c38473c60831`），對應 AWS Account: `678959824283`。
+2. **API 實時探針驗證 100% 綠燈**：
+   - 使用信件中 Week 2 專屬 Code `AB00E97FFB2004428D62A49A9CCF96A1` 成功通過 `/prod/teams/login` 鑑權（Status 200）。
+   - 查詢 `/teams/346cfe0a-0044-409c-8fc8-a8175da9406f/agents/account-status` 狀態已為 `{"status": "ok", "aws_account_id": "678959824283"}`！
+   - 查詢 `/agents/deploy-status` 為 `{"status": "idle"}`，本週全新 0 敗戰績，具備 100% 部署就緒資格。
+3. **戰術指南與一鍵切換部署鏈路備便**：
+   - 指引長官開啟 `/v2/player/login` 輸入 Week 2 Code 刷新瀏覽器 Session。
+   - 準備衝刺 Week 2 特獎（最速破門贏取拉斯維加斯之旅）之 1-2-1 雙前鋒 / 高位壓迫戰術 Prompt。
+
+
 
