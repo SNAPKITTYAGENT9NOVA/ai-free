@@ -1986,5 +1986,23 @@ etlify-demo\public\2026_competitions_calendar.ics。
 2. **結構化資料庫確立**：
    - 建立 [`manga_manifest.json`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/manga_manifest.json)，規範每本單行本 ID、圖標、話數清單、簡介與彩蛋。
 3. **線上閱覽大典全方位升級**：
-   - 更新 [`index.html`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/index.html)，頂部實裝「三大單行本即時切換導航 Tab」。
-   - 點擊可於「生活篇（現行熱播）」、「慶功篇（籌備預告）」、「賽事篇（籌備預告）」間流暢平滑切換，支援未來數十話無限擴充且井然有序！
+---
+
+## 📖【2026-09-19 05:55 CST 里程碑 141】相冊與活頁動漫畫規格封裝為正式技能（phantomgrid-lookbook-binder）與生活篇活頁典藏大典出爐
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**最高軍令（「剛才那個就是生活那本，每本都需要做成活頁方式，格式需要符合相冊規格，並封裝成技能」）：
+
+1. **官方自訂技能封裝實裝（Workspace Custom Skill）**：
+   - 技能目錄：[`.agents/skills/phantomgrid-lookbook-binder/`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/.agents/skills/phantomgrid-lookbook-binder/)
+   - 主指令檔：[`SKILL.md`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/.agents/skills/phantomgrid-lookbook-binder/SKILL.md)（含 YAML frontmatter、核心規格原則、A4 橫式對開 297x210mm 印刷標準、五金活頁環與沖孔參數、對開版面規範、角色一致性鐵律）。
+   - 規格文檔：[`references/SPEC_GUIDELINES.md`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/.agents/skills/phantomgrid-lookbook-binder/references/SPEC_GUIDELINES.md)。
+   - 工具鏈腳本：`scripts/build_lookbook.py`（寫真相冊建置器）與 `scripts/build_binder.py`（活頁漫畫建置器）。
+   - 同步備份至雲端總庫：`G:\我的雲端硬碟\AI產出成品總庫\08_📄_手冊文檔專區\技術規格與SOP\phantomgrid-lookbook-binder-skill\`。
+2. **第一本《日常生活篇》活頁典藏相冊雙版本完工**：
+   - 印刷級 A4 橫式活頁對開：[`binder_print.html`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/01_%E6%97%A5%E5%B8%B8%E7%94%9F%E6%B4%BB%E7%AF%87/binder_print.html)
+     - 中央配置立體 Chrome 鍍鉻 6 孔金屬活頁脊（Spine Rings）、內側 5.5mm 沖孔（Punch Holes）與虛線撕裂線。
+     - 左頁：第 1 話《時尚與隱形》全彩四格。
+     - 右頁：對話解析、劇情情報、以及**👑 Jack 哥親授手諭「BODY 骨架定裝鎖死，服裝妝容允許極致潮流」與 COMMAND APPROVED 批准印章**！
+   - 高畫質活頁 PDF：[`《PHANTOMGRID幻網戰隊・四格動漫畫》第一本_日常生活篇_活頁典藏大典.pdf`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/01_%E6%97%A5%E5%B8%B8%E7%94%9F%E6%B4%BB%E7%AF%87/%E3%80%8APHANTOMGRID%E5%B9%BB%E7%B6%B2%E6%88%B0%E9%9A%8A%E3%80%82%E5%9B%9B%E6%A0%BC%E5%8B%95%E6%BC%AB%E7%95%AB%E3%80%8B%E7%AC%AC%E4%B8%80%E6%9C%AC_%E6%97%A5%E5%B8%B8%E7%94%9F%E6%B4%BB%E7%AF%87_%E6%B4%BB%E9%A0%81%E5%85%B8%E8%97%8F%E5%A4%A7%E5%85%B8.pdf)（1.94 MB，Playwright 渲染完成）。
+3. **查核與驗收**：
+   - 經 Playwright 實際截圖第 2 跨頁查驗，金屬環、沖孔、四格漫畫與長官批示欄 100% 符合相冊級最高工業水準。
