@@ -85,4 +85,34 @@ with sync_playwright() as p:
         prefer_css_page_size=True
     )
     browser.close()
-`
+```
+
+## 4. 30 頁分卷容量控制標準 (30-Page Capacity Protocol)
+
+* 每本冊子物理上限：`MAX_PAGES_PER_VOLUME = 30`。
+* 涵蓋範圍：封面、前言、目錄、跨頁內頁、封底，總頁數不可超過 30 頁。
+* 當累計頁數到達 30 頁時，自動封版當前冊，並創建下一分卷（Volume Split），確保活頁環不會過載。
+
+## 5. 3D 擬真活頁翻頁互動規格 (Interactive 3D Flipbook & Audio Mechanics)
+
+* **翻頁核心感官原則**：線上互動版（`index.html`）必須給予使用者極致逼真的實體翻頁體感。
+* **3D 空間透視與翻頁旋轉**：
+  ```css
+  .book-viewport {
+    perspective: 2600px;
+  }
+  .flip-leaf {
+    transform-style: preserve-3d;
+    transform-origin: left center; /* 緊貼中央活頁脊樑 */
+    animation: turnPageForward 0.65s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+  ```
+* **紙張捲曲陰影動效**：翻頁中途伴隨陰影加深至 `rgba(0,0,0,0.8)` 與亮度阻尼，落地平展時平滑回歸。
+* **Web Audio API 擬真音訊合成**：
+  ```javascript
+  // 物理合成真實紙張摩擦空氣聲（粉紅噪聲 + 帶通/低通濾波 + 指數衰減）
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  // lowpass filter 1200Hz -> 280Hz, gain decay 0.32 -> 0.01 in 180ms
+  ```
+* **全功能操控**：點擊左右頁、鍵盤方向鍵 [← / →] / 空白鍵、滑桿直達頁面、全螢幕切換與高解析度 Lightbox 檢視。
+

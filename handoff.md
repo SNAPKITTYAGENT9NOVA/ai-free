@@ -4,13 +4,25 @@
 
 ## ⏯️ 目前做到哪
 
-### 0. AWS Agentic Football Cup 2026 門前發呆根治改造 (2026-09-18)
-- **實戰錄影複盤 (193514 案)**：診斷出門前無主球（No-Man's land $x \approx -32$）時，因 GK 畫地自限（拘泥於 18 碼線）與 DF/MF 缺乏「無持球者逼搶觸發」，導致全體發呆。
-- **V2.1 零發呆掠食者補丁實裝**：
-  - 更新 `G:\我的雲端硬碟\AI產出成品總庫\01_軟體源碼與系統\phantom-grid-agents-v2-reinforced.json` 至 V2.1。
-  - 實裝三大核心：① 門將出擊掃蕩（Sweeper-Keeper）、② 無主球動態認領（Loose Ball Proximity Override）、③ 門前 1 秒大腳清倉（Panic Clearance）。
-  - 同步翻新《AWS_Agentic_Football_戰術戰情室.html》戰情看板與一鍵複製/下載功能。
-  - 追加《PHANTOM_GRID_REINFORCED_TRAINING_REPORT.md》實測戰報。
+### 0. 冊子技能擴充「翻頁感規範」與第三本《熱血賽事篇》3D 活頁翻頁書重製落地 (Milestone 147 · 2026-09-19)
+- **冊子技能規範升級** (`.agents/skills/phantomgrid-lookbook-binder/`):
+  - 新增核心第 6 條「**擬真 3D 活頁翻頁互動規範 (Interactive 3D Page-Flip Experience - 翻頁感必備條款)**」：
+    1. 雙頁橫式（A4 Landscape 2-Page Spread）3D 空間透視（`perspective: 2500px ~ 2600px`）。
+    2. 中央貫穿 6 孔/4 孔 Chrome 鍍鉻金屬活頁夾脊樑（立體反射、陰影與沖孔穿透感）。
+    3. 擬真紙張翻頁動力學（CSS 3D `rotateY` 翻轉 + Curling Shadow 動態捲曲陰影）。
+    4. Web Audio API 物理合成紙張摩擦「沙沙～刷！」翻頁音效（免外部 mp3、離線可用）。
+    5. 全功能交互：點擊左右頁、鍵盤左右箭頭鍵/空白鍵、進度滑桿 Scrubber、全螢幕與 Lightbox。
+  - 同步更新 `SPEC_GUIDELINES.md` 與加入 `scripts/build_3d_flipbook.py`。
+- **第三本《熱血賽事篇》3D 活頁翻頁書實裝重製**:
+  - `G:\我的雲端硬碟\AI產出成品總庫\12_🎨_PHANTOMGRID_戰隊四格漫畫專區\03_熱血賽事篇\index.html`。
+  - 完整 5 頁活頁跨頁版型：封面、戰術拓撲與調優史詩、四格漫畫超清、AWS 實戰 2-1 計分板認證、榮耀封底。
+  - 圖片 Base64 內嵌，100% 離線免破圖；漫畫總專區入口已配置直通按鈕。
+- **AWS Agentic Football Cup 2026 門前發呆根治改造 (2026-09-18)**：
+  - **實戰錄影複盤 (193514 案)**：診斷出門前無主球（No-Man's land $x \approx -32$）時，因 GK 畫地自限（拘泥於 18 碼線）與 DF/MF 缺乏「無持球者逼搶觸發」，導致全體發呆。
+  - **V2.1 零發呆掠食者補丁實裝**：
+    - 更新 `G:\我的雲端硬碟\AI產出成品總庫\01_軟體源碼與系統\phantom-grid-agents-v2-reinforced.json` 至 V2.1。
+    - 實裝三大核心：① 門將出擊掃蕩（Sweeper-Keeper）、② 無主球動態認領（Loose Ball Proximity Override）、③ 門前 1 秒大腳清倉（Panic Clearance）。
+    - 追加三連勝四格漫畫、5 頁 A4 橫式活頁列印版 PDF (3.13 MB)。
 
 ### 1. ASIL-D 雙軌車載架構與 CI/CD 全自動化 (Milestone 1~62)
 - **全棧測試大滿貫**: 1,123 項單元與整合測試 100% 綠燈 PASS，涵蓋微秒級硬體中斷攔截、C++17 零拷貝三緩衝區、SOME/IP SOA、SecOC 加密與雙軌 Docker SDK/GitHub Actions 流水線 (.github/workflows/asil_d_ci.yml)。
