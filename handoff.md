@@ -2019,3 +2019,18 @@ etlify-demo\public\2026_competitions_calendar.ics。
    - 更新 [manga_manifest.json](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/manga_manifest.json)，注入 pagination_rule 參數，累計達 30 頁自動封版當前冊並創建下一分卷（Volume Split）。
 3. **第二辦公室雙端同步保證**：
    - 確保無論在 App UI 還是終端機執行各項作業，大腦與雲端總庫進度 100% 共享合流。
+---
+
+## 🚀【2026-09-19 06:10 CST 里程碑 143】第二辦公室 APP UI 正式入駐一鍵啟動與捷徑專區 ✕ 雙軌全域快捷鍵實裝
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**軍令部署（「第二個辦公室 app UI 把他放在一鍵啟動與捷徑專區資料夾中」）：
+
+1. **一鍵啟動與捷徑專區資產就緒**：
+   - 部署目錄：[G:\我的雲端硬碟\AI產出成品總庫 _🚀_一鍵啟動與捷徑專區\](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/00_%F0%9F%9A%80_%E4%B8%80%E9%8D%B5%E5%95%9F%E5%8B%95%E8%88%87%E6%8D%B7%E5%BE%91%E5%B0%88%E5%8D%80/)
+   - **一鍵秒開批次檔**：[啟動第二辦公室_APP_UI.bat](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/00_%F0%9F%9A%80_%E4%B8%80%E9%8D%B5%E5%95%9F%E5%8B%95%E8%88%87%E6%8D%B7%E5%BE%91%E5%B0%88%E5%8D%80/%E5%95%9F%E5%8B%95%E7%AC%AC%E4%BA%8C%E8%BE%A6%E5%85%AC%E5%AE%A4_APP_UI.bat)（雙擊自動檢測 8765 後台狀態，未啟動則背景全自動喚醒，並直開瀏覽器）。
+   - **PowerShell 旗艦腳本**：[open_second_office_app.ps1](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/00_%F0%9F%9A%80_%E4%B8%80%E9%8D%B5%E5%95%9F%E5%8B%95%E8%88%87%E6%8D%B7%E5%BE%91%E5%B0%88%E5%8D%80/open_second_office_app.ps1)。
+   - **直通跳轉網頁**：[第二辦公室_APP_UI_直通入口.html](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/00_%F0%9F%9A%80_%E4%B8%80%E9%8D%B5%E5%95%9F%E5%8B%95%E8%88%87%E6%8D%B7%E5%BE%91%E5%B0%88%E5%8D%80/%E7%AC%AC%E4%BA%8C%E8%BE%A6%E5%85%AC%E5%AE%A4_APP_UI_%E7%9B%B4%E9%80%9A%E5%85%A5%E5%8F%A3.html)。
+2. **全域 PowerShell 快捷特戰指令配置**：
+   - 於使用者原生環境 $PROFILE 注入 pp 與 ui 指令。長官今後在任何路徑只要輸入 pp 或 ui，即可一秒直達 App UI！
+3. **hq_ops.py 收工自動盤點升級驗證**：
+   - 經實測終端執行 收工，已能 100% 條列提取 App UI 戰略成果（M138~M142），成功通過指揮官驗收！
