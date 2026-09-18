@@ -4,7 +4,17 @@
 
 ## ⏯️ 目前做到哪
 
-### 0. 冊子技能擴充「翻頁感規範」與「全螢幕沉浸翻頁鍵」& 第三本 3D 活頁翻頁書重製落地 (Milestone 147 · 2026-09-19)
+### 0. 第二個辦公室 APP UI 升級至第一辦公室真機水準對齊 (Milestone 148 · 2026-09-19)
+- **後端真機 Agent 工具鏈落成 (`agent_core.py` ✕ `server.py`)**：
+  - 成功脫離 Mock 數據，接入第一辦公室等級真機工具：`view_file`、`edit_file`、`run_command`、`playwright_screenshot`、`git_handoff_sync`。
+  - 後端提供 `/api/stream` (真實 SSE 串流)、`/preview/vol3` (活頁 3D 翻頁書即時載入)、`/api/status` (系統監控)、`/api/handoff/sync` (一鍵收工)。
+- **前端三合一整合式戰情室升級 (`static/index.html`)**：
+  - **📱 戰情掌機 (Mobile HUI)**：支援快捷指令按鈕（⚽ 檢查足球3D活頁書、🔨 重新編譯活頁書、📸 截圖驗收、🏁 一鍵收工），真實 SSE 思考過程與工具呼叫動畫。
+  - **📖 3D 活頁即時翻頁**：右側面板直接內嵌《第三本：熱血賽事篇》3D 活頁翻頁書，支援手指/滑鼠即時翻頁與沙沙音效。
+  - **🏁 一鍵收工交接台**：點擊一鍵收工直接更新 `handoff.md` 與自動執行 `git commit`。
+- **健康驗收 PASS**：`http://127.0.0.1:8765/api/status` 綠燈回傳，Playwright 端到端驗收截圖全通。
+
+### 1. 冊子技能擴充「翻頁感規範」與「全螢幕沉浸翻頁鍵」& 第三本 3D 活頁翻頁書重製落地 (Milestone 147 · 2026-09-19)
 - **冊子技能規範升級** (`.agents/skills/phantomgrid-lookbook-binder/`):
   - 新增核心第 6 條「**擬真 3D 活頁翻頁互動規範 (Interactive 3D Page-Flip Experience - 翻頁感必備條款)**」：
     1. 雙頁橫式（A4 Landscape 2-Page Spread）3D 空間透視（`perspective: 2500px ~ 2600px`）。
