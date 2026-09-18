@@ -2006,3 +2006,16 @@ etlify-demo\public\2026_competitions_calendar.ics。
    - 高畫質活頁 PDF：[`《PHANTOMGRID幻網戰隊・四格動漫畫》第一本_日常生活篇_活頁典藏大典.pdf`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/01_%E6%97%A5%E5%B8%B8%E7%94%9F%E6%B4%BB%E7%AF%87/%E3%80%8APHANTOMGRID%E5%B9%BB%E7%B6%B2%E6%88%B0%E9%9A%8A%E3%80%82%E5%9B%9B%E6%A0%BC%E5%8B%95%E6%BC%AB%E7%95%AB%E3%80%8B%E7%AC%AC%E4%B8%80%E6%9C%AC_%E6%97%A5%E5%B8%B8%E7%94%9F%E6%B4%BB%E7%AF%87_%E6%B4%BB%E9%A0%81%E5%85%B8%E8%97%8F%E5%A4%A7%E5%85%B8.pdf)（1.94 MB，Playwright 渲染完成）。
 3. **查核與驗收**：
    - 經 Playwright 實際截圖第 2 跨頁查驗，金屬環、沖孔、四格漫畫與長官批示欄 100% 符合相冊級最高工業水準。
+---
+
+## 📏【2026-09-19 06:05 CST 里程碑 142】30 頁單本容量上限與自動分卷鐵律（Auto Volume Split）全面實裝
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**物理裝訂規範（「每本冊子依 30 頁為一本，超過 30 頁就要新增一本」）：
+
+1. **30 頁單本容量標準確立**：
+   - 物理裝訂標準：每本相冊/活頁冊嚴格以 **30 頁（30 Sheets / 30 Spreads）** 為單冊上限 (MAX_PAGES_PER_VOLUME = 30)，符合 22~25mm 活頁五金環最佳承重與翻閱流暢度。
+2. **自動分卷架構實裝**：
+   - 更新 [.agents/skills/phantomgrid-lookbook-binder/SKILL.md](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/.agents/skills/phantomgrid-lookbook-binder/SKILL.md) 與 [SPEC_GUIDELINES.md](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/.agents/skills/phantomgrid-lookbook-binder/references/SPEC_GUIDELINES.md)。
+   - 更新 [manga_manifest.json](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/AI%E7%94%A2%E5%87%BA%E6%88%90%E5%93%81%E7%B8%BD%E5%BA%AB/12_%F0%9F%8E%A8_PHANTOMGRID_%E6%88%B0%E9%9A%8A%E5%9B%9B%E6%A0%BC%E6%BC%AB%E7%95%AB%E5%B0%88%E5%8D%80/manga_manifest.json)，注入 pagination_rule 參數，累計達 30 頁自動封版當前冊並創建下一分卷（Volume Split）。
+3. **第二辦公室雙端同步保證**：
+   - 確保無論在 App UI 還是終端機執行各項作業，大腦與雲端總庫進度 100% 共享合流。
