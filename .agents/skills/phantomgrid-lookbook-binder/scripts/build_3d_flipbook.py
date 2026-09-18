@@ -168,6 +168,49 @@ body {{
   position: relative;
   display: flex;
   transform-style: preserve-3d;
+  transition: width 0.3s ease, height 0.3s ease;
+}}
+
+/* Fullscreen Mode Optimization: Expand to fill screen */
+:fullscreen .binder-outer,
+:-webkit-full-screen .binder-outer {{
+  width: min(96vw, 1560px);
+  height: min(92vh, 880px);
+  box-shadow: 0 0 70px rgba(0, 242, 254, 0.35);
+}}
+
+:fullscreen .book-viewport,
+:-webkit-full-screen .book-viewport {{
+  padding: 10px;
+}}
+
+/* In-Binder Fullscreen Floating Button */
+.btn-binder-fullscreen {{
+  position: absolute;
+  top: 14px;
+  right: 28px;
+  background: rgba(13, 21, 39, 0.88);
+  border: 1px solid var(--cyan-neon);
+  color: var(--cyan-neon);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 14px rgba(0, 242, 254, 0.3);
+  transition: all 0.25s ease;
+}}
+
+.btn-binder-fullscreen:hover {{
+  background: rgba(0, 242, 254, 0.2);
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.6);
+  transform: translateY(-1px);
 }}
 
 /* Metallic Binder Hardware Spine */
@@ -775,6 +818,11 @@ body {{
 <!-- Main Book Viewport -->
 <main class="book-viewport">
   <div class="binder-outer" id="binderBook">
+    <!-- In-Binder Floating Fullscreen Toggle -->
+    <button class="btn-binder-fullscreen" id="btnBinderFullscreen" onclick="toggleFullscreen()" title="切換全螢幕沉浸翻頁">
+      ⛶ 全螢幕
+    </button>
+
     <!-- Chrome 6-Ring Binder Spine -->
     <div class="binder-spine">
       <div class="binder-screw"></div>
@@ -833,6 +881,7 @@ body {{
 
   <div class="nav-btn-group">
     <button class="btn-nav" id="btnNext" onclick="flipNext()">下一頁 ▶</button>
+    <button class="btn-nav" id="btnNavFullscreen" onclick="toggleFullscreen()" style="background: linear-gradient(135deg, rgba(2, 132, 199, 0.45), rgba(0, 242, 254, 0.2)); border-color: var(--cyan-neon);">⛶ 全螢幕</button>
   </div>
 </footer>
 
@@ -1344,6 +1393,8 @@ window.addEventListener('keydown', (e) => {{
     goToSpread(0);
   }} else if (e.key === 'End') {{
     goToSpread(spreads.length - 1);
+  }} else if (e.key === 'f' || e.key === 'F') {{
+    toggleFullscreen();
   }}
 }});
 
@@ -1353,14 +1404,37 @@ document.getElementById('btnSound').addEventListener('click', () => {{
   document.getElementById('btnSound').textContent = soundEnabled ? "🔊 翻頁聲: 開" : "🔇 翻頁聲: 關";
 }});
 
-// Fullscreen
-document.getElementById('btnFullscreen').addEventListener('click', () => {{
-  if (!document.fullscreenElement) {{
-    document.documentElement.requestFullscreen().catch(() => {{}});
+// Fullscreen Functions
+function toggleFullscreen() {{
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {{
+    if (document.documentElement.requestFullscreen) {{
+      document.documentElement.requestFullscreen().catch(() => {{}});
+    }} else if (document.documentElement.webkitRequestFullscreen) {{
+      document.documentElement.webkitRequestFullscreen();
+    }}
   }} else {{
-    document.exitFullscreen().catch(() => {{}});
+    if (document.exitFullscreen) {{
+      document.exitFullscreen().catch(() => {{}});
+    }} else if (document.webkitExitFullscreen) {{
+      document.webkitExitFullscreen();
+    }}
   }}
-}});
+}}
+
+function updateFullscreenUI() {{
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const text = isFs ? "🗗 退出全螢幕" : "⛶ 全螢幕";
+  const btnTop = document.getElementById('btnFullscreen');
+  const btnBinder = document.getElementById('btnBinderFullscreen');
+  const btnNav = document.getElementById('btnNavFullscreen');
+  if (btnTop) btnTop.textContent = text;
+  if (btnBinder) btnBinder.textContent = text;
+  if (btnNav) btnNav.textContent = text;
+}}
+
+document.getElementById('btnFullscreen').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', updateFullscreenUI);
+document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
 
 // Lightbox
 function openLightbox(src) {{

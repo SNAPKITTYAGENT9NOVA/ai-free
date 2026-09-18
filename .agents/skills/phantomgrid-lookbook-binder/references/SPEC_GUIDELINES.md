@@ -114,5 +114,11 @@ with sync_playwright() as p:
   const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
   // lowpass filter 1200Hz -> 280Hz, gain decay 0.32 -> 0.01 in 180ms
   ```
-* **全功能操控**：點擊左右頁、鍵盤方向鍵 [← / →] / 空白鍵、滑桿直達頁面、全螢幕切換與高解析度 Lightbox 檢視。
+* **全功能操控與全螢幕功能鍵**：
+  - 活頁夾外框右上角常駐【⛶ 全螢幕】浮動快捷按鈕（`.btn-binder-fullscreen`）。
+  - 底端翻頁導航列右側配置【⛶ 全螢幕】按鈕（與「下一頁 ▶」並列）。
+  - 全螢幕狀態下活頁書主體自動擴展至 `min(96vw, 1560px)` x `min(92vh, 880px)`，去除黑邊。
+  - 按鈕文字支援雙態動態更新（`⛶ 全螢幕` ⇄ `🗗 退出全螢幕`），支援鍵盤 `F` / `f` 快捷鍵。
+  - 支援點擊左右頁翻頁、鍵盤方向鍵 [← / →] / 空白鍵、滑桿直達頁面、高解析度 Lightbox 檢視。
+
 
