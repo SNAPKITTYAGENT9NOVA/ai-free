@@ -4,9 +4,21 @@
 
 ## ⏯️ 目前做到哪
 
-- **[特助小幫手全自動同步]** (2026-09-19 10:15:00): 消融指標可視化與查修分析腳本 (`plot_ablation_metrics.py`) 成功落地並完成端到端出圖驗收！
+- **[特助小幫手全自動同步]** (2026-09-19 10:35:00): ARC-2 靜態幾何 A* 程式合成引擎 (`ARC2ProgramSynthesizer`) 及其底層 DSL 算子庫全部實體落地，第二辦公室反查綠燈確認！
 
-### 0. ARC-3 消融指標可視化與查修分析腳本實裝 (`plot_ablation_metrics.py`) (Milestone 159 · 2026-09-19)
+### 0. ARC-2 靜態幾何 A* 程式合成器與 DSL 算子套件全量落地 (Milestone 160 · 2026-09-19)
+- **實體模組矩陣完整建構**：
+  1. [`arc2_program_synthesizer.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/arc2_program_synthesizer.py) (5.39 KB)：封裝 `DSLOperation`、`SearchNode` (A* 優先佇列節點) 與 `ARC2ProgramSynthesizer` 核心合成引擎。
+  2. [`arc_dsl_primitives.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/arc_dsl_primitives.py) (1.93 KB)：實現靜態幾何算子庫，涵蓋 `rotate_cw`、`flip_h`、`flip_v`、`flip_diag`、4 向 `apply_gravity`、`scale_kronecker`。
+  3. [`arc_dataset_loader.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/arc_dataset_loader.py) (0.44 KB)：定義 `ARCPair` 與 `ARCTask` 資料結構。
+- **智能目標反查過濾升級 (Keyword & Class Regex Filter)**：
+  - 修正先前貼入代碼開頭包含 `import ...` 時被反查引擎誤判為搜尋 `import` 之盲點。
+  - 在 `agent_core.py` 增設 `re.search(r'\bclass\s+([A-Za-z0-9_]+)')` 優先識別 Class 定義，並將 Python 關鍵字納入 noise 清單。
+  - 第二辦公室 APP UI 新增「🔍 反查 ARC2Synthesizer」快捷鍵。
+- **嚴格型別與測試驗收**：
+  - [`tests/test_arc2_program_synthesizer.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/tests/test_arc2_program_synthesizer.py) 單元測試 100% 通過 (OK)。
+  - 通過 ruff、ruff-format 與 mypy 嚴格型別檢查並完成 Git 封裝提交 (`1f63bc1`)。
+  - 第二辦公室真機反查產出驗收截圖 [`second_office_arc2_verified.jpg`](file:///C:/Users/user/.gemini/antigravity/brain/aca63dd6-dd68-4180-9368-f0af2810e359/second_office_arc2_verified.jpg)，3 處定義 10 處命中，綠燈就位！
 - **實體腳本落地與相容性強化**：
   - 修正原腳本缺失 `Tuple` 型別宣告之潛在 `NameError`。
   - 解決 Windows 繁體中文 CP950 終端機 Unicode 字符編碼崩潰問題，加入 `sys.stdout.reconfigure(encoding="utf-8")`。
