@@ -4,9 +4,24 @@
 
 ## ⏯️ 目前做到哪
 
-- **[特助小幫手全自動同步]** (2026-09-19 12:22:00): 官方發布《全域避坑寶典：賽事、第二辦公室與演算法工程實戰踩坑全記錄與防禦指引》！收錄近期 12 大實戰血淚大坑與鐵律防禦方案，落實「一次踩坑、終身加固、永不重犯」！
+- **[特助小幫手全自動同步]** (2026-09-19 12:35:00): ARC-2 集成驗證器 (`ensemble_verifier.py` / `ARC2EnsembleVerifier`) 落地成功！攻克第二辦公室類別推導偏差與 Jack 哥終端工作目錄 (`G:\我的雲端硬碟\260803_opencode`) 同步盲點！
 
-### 0. 發布《全域避坑寶典：賽事與第二辦公室實戰踩坑全記錄與防禦指引》(Milestone 164 · 2026-09-19)
+### 0. ARC-2 集成驗證器落地與終端多工作區實體目錄同步加固 (Milestone 165 · 2026-09-19)
+- **排查與診斷結論（解答「第二辦公室執行 OK，終端機執行出問題」原因）**：
+  1. **類別優先級推導偏差**：Jack 哥貼入之程式碼開頭包含 `@dataclass class CandidatePrediction` 輔助資料結構，第二辦公室自動建造器擷取到第一個類別，因而將檔案命名為 `candidate_prediction.py`，而非主要驗證器 `ensemble_verifier.py`。
+  2. **終端工作目錄路徑盲點**：Jack 哥在終端機中位於 `G:\我的雲端硬碟\260803_opencode>`，先前 `tool_save_or_patch_code` 僅寫入 `ping_assistant` 與 `01_軟體源碼與系統`，未同步寫入 Jack 哥的終端當前目錄，導致終端執行報錯 `[Errno 2] No such file or directory`。
+- **架構升級與加固 (agent_core.py)**：
+  - **核心引擎類別優先識別**：若程式碼包含多個 Class，自動優先萃取以 `Verifier`、`Synthesizer`、`Optimizer`、`Engine`、`Manager` 結尾之核心主類別，過濾 `Prediction`、`Node`、`State` 等輔助資料結構。
+  - **終端目錄直接同步**：寫入目標全面覆蓋 Jack 哥的 PowerShell 工作目錄 `G:\我的雲端硬碟\260803_opencode\`。
+  - **自動別名機制**：帶有 `arc2_` 前綴的檔案自動建立無前綴別名（如 `arc2_ensemble_verifier.py` ✕ `ensemble_verifier.py`），確保 Jack 哥無論鍵入何種檔名皆能 100% 成功執行。
+- **實體模組與驗收成果**：
+  - 實體檔案：[`ensemble_verifier.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/ensemble_verifier.py)（雙軌同步至 `G:\我的雲端硬碟\260803_opencode\ensemble_verifier.py`）。
+  - 單元測試套件：[`tests/test_ensemble_verifier.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/tests/test_ensemble_verifier.py)（1 項測試 100% PASS，耗時 0.001s）。
+  - 終端真機實跑：在 `G:\我的雲端硬碟\260803_opencode>` 執行 `python ensemble_verifier.py`，精準輸出 Top-3 候選解與 Rank 1 完美命中 (`rot90 -> gravity_down`)！
+- **零桌面污染與 0 元成本確認**：
+  - 桌面保持 100% 潔淨；累積花費 $0.00 USD。
+
+### 1. 發布《全域避坑寶典：賽事與第二辦公室實戰踩坑全記錄與防禦指引》(Milestone 164 · 2026-09-19)
 - **手冊發布背景與核心宗旨**：
   - 專為霸丸總指揮官 Jack 哥與後續接手 Agent 建立最高防禦規範，系統性收錄近期的 **12 大實戰踩坑記錄**。
   - 將 AFC 足球賽事、第二辦公室 APP SSE 串流、分詞器語意校正、演算法多樣本約束與 Windows 環境除錯經驗轉化為永久防禦資產。
