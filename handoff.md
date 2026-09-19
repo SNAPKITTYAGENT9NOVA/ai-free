@@ -4,6 +4,8 @@
 
 ## ⏯️ 目前做到哪
 
+- **[特助小幫手全自動同步]** (2026-09-20 00:08:00): 🔱【里程碑 171】天頂宇航級複合混沌考驗（Apex Chaos & SEU）全線五大絕殺實裝完成！遵循「二辦沙盤定調 ➔ 一辦細緻鍛造 ➔ 四軌同步閉環」SOP。實裝 5 大核心模組（`apex_chaos_core.py`、`pwr_mock.py`、`safety_mock.py`、`bus_mock.py`、`test_apex_chaos.py`），驗收指標：①TVS 鉗位 87V 成功 + VCC 穩守 2.82V + Flash 完整 + 振盪鎖死；② SEU bit-flip 漢明反碼偵測 0.62μs（門檻 ≤1.5μs）自鎖 STATE_LATCHED；③ DTO 1.20ms 切斷 Babbling Idiot（門檻 ≤2.0ms）+ CAN_B 備援 E-stop 遞達；④ EEPROM 10^6+ 次熱塊壞塊偵測 + 透明遷移 + 零數據遺失；⑤ 電源+SEU+CAN+EEPROM 四重故障疊加 SIL-2 FMEA 防火牆強制收斂安全態（扭矩歸零、GPIO 全拉低）。全域 pytest 5 passed in 0.05s（天頂五關），25 大考驗聯合壓測 15 passed in 0.18s 全綠。二辦看板更新至 25 大考驗大滿貫，23 大核心模組 100% 在線。Git commit: 69e7d8b。
+
 - **[特助小幫手全自動同步]** (2026-09-19 21:55:00): 第二辦公室 APP UI 達成全方位戰情看板大升級 (Milestone 167)！成功實裝「🧪 測試驗收戰報」、「📦 產出建檔履歷」與「📐 建構圖面展台」三大核心看板，原四大功能（3D 活頁翻頁書、程式碼全域反查、原始 SSE 串流、一鍵收工交接）100% 完整保留！後端新增 `/api/test-matrix`、`/api/created-files`、`/api/diagrams`、`/api/image/{id}` 端點，支援手機端與網頁端「▶ 一鍵真機重測」、「📄 實體模組即時反查」、「📊 Mermaid 架構拓撲 ✕ 300 DPI 消融曲線圖」即時切換展台，Playwright 端到端驗證全數綠燈 PASS！
 
 - **[特助小幫手全自動同步]** (2026-09-19 21:40:00): Phantom Grid 車載核心五道地獄級連環考驗 (`test_hellfire_acceptance.py`) 全部 100% 綠燈秒過 (0.11s)！三大車規級 Mock 演算法模組 (`bft_mock.py` 拜占庭容錯 2-out-of-3、`hsd_mock.py` 高邊短路 10ms 永久鎖死與 DTC 0x260313、`dt_mock.py` 數位孿生結溫推算與平滑降額) 完美落地，雙環虛擬 CAN (vcan0/vcan1) BOR 快速重入網與斷線折返接管驗證成功！通過 ruff、ruff-format、mypy 全套代碼質量檢查與 Git 封裝提交 (`311abac`)，完成四軌同步與雲端雙軌落盤。
