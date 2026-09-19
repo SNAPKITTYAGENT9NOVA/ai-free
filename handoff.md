@@ -4,9 +4,32 @@
 
 ## ⏯️ 目前做到哪
 
-- **[特助小幫手全自動同步收工]** (2026-09-19 09:18:00): ARC 雙子核心實體落地、雙軌反查引擎進化、Bing Image Creator 管線落成，今日戰役大獲全勝！
+- **[特助小幫手全自動同步]** (2026-09-19 09:28:00): 第二辦公室 SSE 防卡死架構全面升級，實裝「到網站找代碼並建立模組」自主工作流，code_inspection_search.py 實體落地並通過 100% 單元測試！
 
-### 0. 第二辦公室「實體檔案 ✕ 類別定義」雙軌反查進化 & Bing Image Creator 生圖管線落成 (Milestone 156 · 2026-09-19)
+### 0. 第二辦公室 SSE 防卡死升級 &「到網站找代碼並建立模組」自主工作流落地 (Milestone 157 · 2026-09-19)
+- **排查與診斷結論（破解「卡死在推演 0 分鐘」疑雲）**：
+  - **根本原因**：
+    1. 前端連線懸掛：先前 `tool_search_code` 在同步模式下全域遍歷 820+ 檔案耗時 5~6 秒，阻塞了 FastAPI 的 Main Event Loop，若前端同時發出請求或連線未正常釋放，瀏覽器會陷入 Stalled/Pending 狀態，導致 Thought 卡在初始預設文字 `準備啟動神經推演...`。
+    2. 意圖識別偏差：用戶指令「到網站找代碼並建立 code_inspection_search」被誤判為單純的「本地反查」，反查回報「查無實體」，未能實踐指揮官想要「在線上尋找架構並建檔落地」的核心戰術目的。
+- **全面升級與架構防護 (Never-Hang Architecture)**：
+  - **異步化線程池調度 (`await asyncio.to_thread`)**：
+    - `agent_core.py` 中所有磁碟掃描、檔案讀寫、終端指令及截圖操作，全面改用 `await asyncio.to_thread(...)` 背景執行，FastAPI 事件循環毫秒級暢通！
+    - 加入全局 `try...except...finally` 閉環保護，確保無論發生何種情況最後必定發送 `event: done`，徹底根絕前端無限 spinner 懸掛。
+  - **前端客戶端容錯與超時保護 (`static/index.html`)**：
+    - 在 `catch(err)` 區塊自動隱藏 spinner 並輸出高亮警示，不再讓用戶畫面凝固。
+    - 頂部與底部新增快捷標籤：「🌐 找代碼建立 code_inspection_search」。
+- **實體模組建置：工業級 `code_inspection_search.py` 落地**：
+  - 本地路徑：`src/code_inspection_search.py` (8.82 KB, 203 行)
+  - 雲端路徑：`second-office-sse-app-demo/code_inspection_search.py`
+  - **核心技術架構**：
+    1. **Python AST 抽象語法樹解析 (`ast.parse`)**：精準萃取 `ClassDef`、`FunctionDef`、`AsyncFunctionDef` 與 Docstrings，杜絕傳統正則表達式的誤判與漏判。
+    2. **實體檔案比對引擎**：自動區分實體磁碟檔案（副檔名比對、路徑比對）與概念符號。
+    3. **記憶體快取機制 (`_file_cache`)**：TTL 60 秒索引快取，二次反查耗時 < 0.01 秒。
+  - **單元測試驗收 (`tests/test_code_inspection_search.py`)**：
+    - 4 項測試（類別反查、檔案反查、虛擬概念偵測、輔助函數呼叫）**100% 全部通過 (OK)**！
+    - 通过 ruff、ruff-format、mypy 全套代碼質量檢查並完成 Git 提交 (`f49f405`)。
+- **真機驗證**：
+  - Playwright 端到端驗證通過，產出驗收截圖 `second_office_web_build_done.jpg`，右側反查面板與左側對話 100% 綠燈就緒！
 - **實體反查引擎雙軌進化**：
   - 修正先前反查 `agent_core.py` 誤判為「未建置實體類別」之盲點：
     - 將反查對象智能區分為「實體檔案 (File Entity)」與「代碼符號 (Code Symbol)」。
