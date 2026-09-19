@@ -42,7 +42,10 @@
 - **零桌面污染與 0 元成本確認**：
   - 桌面保持 100% 潔淨；累積花費 $0.00 USD。
 
-### 1. ARC-2 靜態幾何 A* 程式合成器與 DSL 算子套件全量落地 (Milestone 160 · 2026-09-19)
+- **交付產出與核心三大亮點 (Authoritative Deliverables & Core Highlights)**：
+  1. **A* 啟發式剪枝**：以所有訓練範例的「平均像素殘差比率」做為 $h(n)$，優先展開殘差下降最顯著的幾何算子分支。
+  2. **多樣本嚴格約束**：候選程式必須同時在所有 Few-Shot 範例（Train pairs）上達到 $h(n) = 0.0$ 才判定通過，避免單一樣本過擬合。
+  3. **時限與深度安全鎖**：內建 `timeout_sec` 與 `max_depth`，確保程式合成搜尋不會陷入無窮遞迴卡死。
 - **實體模組矩陣完整建構**：
   1. [`arc2_program_synthesizer.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/arc2_program_synthesizer.py) (5.39 KB)：封裝 `DSLOperation`、`SearchNode` (A* 優先佇列節點) 與 `ARC2ProgramSynthesizer` 核心合成引擎。
   2. [`arc_dsl_primitives.py`](file:///C:/Users/user/.gemini/antigravity/worktrees/260803_opencode/ping_assistant/arc_dsl_primitives.py) (1.93 KB)：實現靜態幾何算子庫，涵蓋 `rotate_cw`、`flip_h`、`flip_v`、`flip_diag`、4 向 `apply_gravity`、`scale_kronecker`。
