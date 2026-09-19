@@ -4,9 +4,22 @@
 
 ## ⏯️ 目前做到哪
 
-- **[特助小幫手全自動同步]** (2026-09-19 09:50:00): AFC 第二輪戰報 (Round 2 Debrief JSON) 完成深度解析與歸檔，戰隊全面實裝 V2.2「開局前 30 秒中路鐵閘」與極限反應 Prompt！
+- **[特助小幫手全自動同步]** (2026-09-19 10:15:00): 消融指標可視化與查修分析腳本 (`plot_ablation_metrics.py`) 成功落地並完成端到端出圖驗收！
 
-### 0. AWS AFC 第二輪戰報深度解析 & V2.2 戰隊「開局 30 秒中路鐵閘」升級 (Milestone 158 · 2026-09-19)
+### 0. ARC-3 消融指標可視化與查修分析腳本實裝 (`plot_ablation_metrics.py`) (Milestone 159 · 2026-09-19)
+- **實體腳本落地與相容性強化**：
+  - 修正原腳本缺失 `Tuple` 型別宣告之潛在 `NameError`。
+  - 解決 Windows 繁體中文 CP950 終端機 Unicode 字符編碼崩潰問題，加入 `sys.stdout.reconfigure(encoding="utf-8")`。
+  - 增設日誌自我修復機制：若無現存日誌時自動建立示範探索 Session，確保一鍵執行立即可視化。
+  - 落地位置：
+    - `G:\我的雲端硬碟\260803_opencode\plot_ablation_metrics.py`（Jack 哥終端機所在工作區）
+    - `C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\plot_ablation_metrics.py`
+    - `G:\我的雲端硬碟\AI產出成品總庫\01_軟體源碼與系統\plot_ablation_metrics.py`
+- **真機圖表產出驗收**：
+  - 產出高解析度 300 DPI 圖表：[`reports/figures/ablation_curve_arc3_demo_run.png`](file:///G:/%E6%88%91%E7%9A%84%E9%9B%B2%E7%AB%AF%E7%A1%AC%E7%A2%9F/260803_opencode/reports/figures/ablation_curve_arc3_demo_run.png)
+  - 完美呈現：
+    1. 上層：像素殘差與誤差比例雙 Y 軸下降曲線（Mismatch Reduction Curve，從 42 像素收斂至 0 像素）。
+    2. 下層：動作有效率狀態轉移條形圖（State Transition Diagnostic，綠色 State Shift vs 紅色 No Change）。
 - **附件歸檔與零桌面污染落實**：
   - 將桌面附件 `afc_debrief_0304573E-F36B-1410-8466-00039CE7DF11_2.json` 規範歸檔至雲端總庫：
     - `G:\我的雲端硬碟\AI產出成品總庫\08_📄_手冊文檔專區\afc_debrief_2026_w38_round2.json`
