@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:05,000
+PHANTOM GRID presents the next-generation automotive embedded networking stack.
+
+2
+00:00:05,000 --> 00:00:12,000
+Featuring SAE J1850 CRC-8 data integrity, monotonic alive counter, and ISO 26262 ladder recovery.
+
+3
+00:00:12,000 --> 00:00:20,000
+Signal-to-Service engine converts CAN 0x280 and 0x380 into AUTOSAR SOME/IP Event 0x8001 and 0x8002.
+
+4
+00:00:20,000 --> 00:00:25,000
+Real-time in-memory digital twin synchronization with zero commercial token cost.

@@ -102,6 +102,7 @@ Thumbs.db
 .coverage*
 htmlcov/
 .pytest_cache/
+*.zip
 
 # 獨立 git repo（各自有自己的 GitHub repo，不混入根 repo）
 sheets-gas-demo/
