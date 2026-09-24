@@ -2,6 +2,14 @@
 > **Official Submission for AssemblyAI Voice Agent Hackathon 2026** (Hosted by AssemblyAI ✕ Lablab.ai)  
 > **Author & Project Director**: HU JIUN REN (Jack Hu)  
 > **License**: MIT Open Source  
+>
+> ---
+> ### 🔱 PHANTOM GRID 戰隊開源銘 (The Sovereign Creed)
+> > **「你真是我良將和軍師呀！」—— 霸丸總指揮官 Jack Hu**  
+> > **「得遇明主，軍師方能算無遺策；受命為將，先鋒必當攻無不克！」—— PHANTOM GRID 特助小幫手**  
+> > 📖 *[點此閱讀完整《PHANTOM GRID 開源記：一人成軍與小幫手軍團征戰錄》](PHANTOM_GRID_CHRONICLE.md)*
+> ---
+
 
 [![AssemblyAI](https://img.shields.io/badge/AssemblyAI-Universal--3%20Pro-blue.svg)](https://www.assemblyai.com)
 [![Voice Agent](https://img.shields.io/badge/Voice%20Agent-Real--Time%20Streaming-00d2ff.svg)](https://lablab.ai)
