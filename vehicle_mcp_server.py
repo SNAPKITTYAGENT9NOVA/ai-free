@@ -31,6 +31,7 @@ from hpc_swarm_throughput_engine import ChannelStreamSpec, HPCBenchmarkResult, H
 from hybrid_model_router import ExecutionTier, HybridModelRouter, RoutingDecision
 from predictive_efuse_interlock import CausalSignalSample, PredictiveCausalEFuseEngine, PredictiveInterlockResult
 from axiomatic_dual_shielding import AxiomaticDualShieldingEngine, AxiomaticDualShieldResult
+from root_trust_state_recovery import GoldenIntentState, RootTrustRecoveryResult, RootTrustStateRecoveryEngine
 
 SERVER_NAME = "phantom-grid-vehicle-mcp"
 SERVER_VERSION = "2026.4.0"
@@ -54,6 +55,7 @@ class VehicleMCPServer:
         hpc_swarm_engine: Optional[HPCSwarmThroughputEngine] = None,
         predictive_interlock_engine: Optional[PredictiveCausalEFuseEngine] = None,
         axiomatic_shield_engine: Optional[AxiomaticDualShieldingEngine] = None,
+        root_trust_engine: Optional[RootTrustStateRecoveryEngine] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
@@ -65,6 +67,7 @@ class VehicleMCPServer:
         self.hpc_swarm_engine = hpc_swarm_engine or HPCSwarmThroughputEngine(vin=vin, db_path=":memory:")
         self.predictive_interlock_engine = predictive_interlock_engine or PredictiveCausalEFuseEngine(vin=vin, db_path=":memory:")
         self.axiomatic_shield_engine = axiomatic_shield_engine or AxiomaticDualShieldingEngine(vin=vin, db_path=":memory:")
+        self.root_trust_engine = root_trust_engine or RootTrustStateRecoveryEngine(vin=vin, db_path=":memory:", hpc_engine=self.hpc_swarm_engine)
         self._lock = threading.RLock()
 
         # Tool registry
@@ -358,6 +361,34 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "simulate_root_trust_swarm_recovery": {
+                "name": "simulate_root_trust_swarm_recovery",
+                "description": "Anchors Commander's immutable root of trust intent lock and mobilizes 100-channel 5Gbps swarm for microsecond state recovery.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "adversarial_disturbance": {
+                            "type": "string",
+                            "description": "Adversarial or physical disturbance simulated",
+                            "default": "CYBER_PHYSICAL_ATTACK_SIMULATED",
+                        },
+                    },
+                },
+            },
+            "get_root_trust_recovery_records": {
+                "name": "get_root_trust_recovery_records",
+                "description": "Retrieves SQLite audit records of root-of-trust intent locking and 5Gbps swarm state recovery actions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of audit records to retrieve",
+                            "default": 10,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -424,6 +455,12 @@ class VehicleMCPServer:
                 )
             elif name == "get_axiomatic_dual_shield_records":
                 return self._tool_get_axiomatic_dual_shield_records(arguments.get("limit", 10))
+            elif name == "simulate_root_trust_swarm_recovery":
+                return self._tool_simulate_root_trust_recovery(
+                    adversarial_disturbance=arguments.get("adversarial_disturbance", "CYBER_PHYSICAL_ATTACK_SIMULATED"),
+                )
+            elif name == "get_root_trust_recovery_records":
+                return self._tool_get_root_trust_recovery_records(arguments.get("limit", 10))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -724,6 +761,35 @@ class VehicleMCPServer:
             "vin": self.vin,
             "total_records": len(records),
             "shield_records": records,
+        }
+
+    def _tool_simulate_root_trust_recovery(
+        self, adversarial_disturbance: str
+    ) -> Dict[str, Any]:
+        res = self.root_trust_engine.execute_swarm_state_recovery(
+            adversarial_disturbance=adversarial_disturbance
+        )
+        return {
+            "status": "ROOT_TRUST_RECOVERY_SUCCESS",
+            "recovery_id": res.recovery_id,
+            "commander_id": res.commander_id,
+            "intent_lock_hash": res.intent_lock_hash,
+            "total_channels": res.total_channels,
+            "throughput_gbps": round(res.throughput_gbps, 2),
+            "recovery_latency_us": round(res.recovery_latency_us, 2),
+            "pre_recovery_state": res.pre_recovery_state,
+            "post_recovery_state": res.post_recovery_state,
+            "state_integrity_score": round(res.state_integrity_score, 1),
+            "recovery_status": res.recovery_status,
+            "security_sha256": res.security_hash,
+        }
+
+    def _tool_get_root_trust_recovery_records(self, limit: int) -> Dict[str, Any]:
+        records = self.root_trust_engine.get_recent_recovery_records(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_records": len(records),
+            "recovery_records": records,
         }
 
     # ------------------------------------------------------------------------

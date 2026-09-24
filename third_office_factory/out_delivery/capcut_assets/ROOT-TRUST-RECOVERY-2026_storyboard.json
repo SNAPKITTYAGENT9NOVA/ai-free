@@ -1,0 +1,38 @@
+{
+  "project_id": "ROOT-TRUST-RECOVERY-2026",
+  "title": "PHANTOM GRID Root-of-Trust Intent Lock & 5Gbps Swarm State Recovery",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID establishes hardware-anchored root of trust intent locking. The Commander baseline intent is latched as an unshakable primary cause. Following extreme cyber-physical disruption, the automotive domain controller mobilizes a 100-channel heterogeneous swarm. Line-rate throughput surges to 5.00 Gbps across CAN-FD and SOME/IP backbones. In eighteen microseconds, deterministic global state rollback reconstitutes the vehicle to one hundred percent operational integrity. All recovery cycles are signed with immutable SHA-256 cryptographic seals.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 3.5,
+      "narration": "PHANTOM GRID establishes hardware-anchored root of trust intent locking.",
+      "visual_prompt": "Automotive HSM cryptographic root of trust glowing gold anchor"
+    },
+    {
+      "index": 2,
+      "duration": 4.0,
+      "narration": "The Commander baseline intent is latched as an unshakable primary cause.",
+      "visual_prompt": "Digital twin baseline dashboard locked with tamper-evident seal"
+    },
+    {
+      "index": 3,
+      "duration": 4.5,
+      "narration": "Following extreme cyber-physical disruption, the automotive domain controller mobilizes a 100-channel heterogeneous swarm.",
+      "visual_prompt": "Vehicle central computing brain firing 100 parallel bus channels"
+    },
+    {
+      "index": 4,
+      "duration": 4.0,
+      "narration": "Line-rate throughput surges to 5.00 Gbps across CAN-FD and SOME/IP backbones.",
+      "visual_prompt": "Bandwidth meter surging past 5.00 Gbps with zero dropped frames"
+    },
+    {
+      "index": 5,
+      "duration": 4.5,
+      "narration": "In eighteen microseconds, deterministic global state rollback reconstitutes the vehicle to one hundred percent operational integrity.",
+      "visual_prompt": "18 microsecond stopwatch locking into 100% green operational status"
+    }
+  ]
+}
