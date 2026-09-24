@@ -2934,5 +2934,10 @@ etlify-demo\public\2026_competitions_calendar.ics。
 
 
 ## ⏰ 系統高優先級提醒 (Deadlines)
+- [ ] **2026/09/25 23:00 (今晚/明晚)**: 🔔 **【最高優先級】發送 Email 通知 Jack 哥前往 IBM Bob 2.0 賽事平台按下 Submit 交卷！**
+  - **收件信箱**：`jackhu24@gmail.com`
+  - **發送端**：小幫手個人信箱 / GAS 寄信 API
+  - **交卷專屬網址**：`https://lablab.ai/ai-hackathons/ibm-bob-2-hackathon/bobflow`
+  - **備註**：直接貼上專案名稱 `BobFlow Agentic Engine`、簡介與代碼庫，提醒哥上台交卷！
 - [ ] **2026/10/05**: 啟動 Colosseum 決賽交卷準備（產出 GitHub Repo 與 Demo）。
 - [ ] **2026/10/10**: 強制提醒 Jack 哥登入 Colosseum 後台貼上網址並按下 Submit（10/12 截止）。
