@@ -39,6 +39,10 @@ from can_l0_l1_matrix import (
     CAN_ID_POWERTRAIN_ACT,
     CAN_ID_SENSOR_ACQ,
 )
+from digital_twin_state import (
+    DigitalTwinMirrorEngine,
+    DigitalTwinState,
+)
 
 
 # ============================================================================
@@ -233,6 +237,7 @@ class SOAGatewayTwin:
         }
 
         # Digital Twin State
+        self.digital_twin_engine = DigitalTwinMirrorEngine(vin="PHANTOM-GRID-2026")
         self.twin_powertrain = PowertrainTwinState()
         self.twin_telemetry = SensorTelemetryTwinState()
         self.start_time = time.time()
@@ -293,6 +298,13 @@ class SOAGatewayTwin:
             self.twin_powertrain.last_update_ts = now
             self.total_translated_events += 1
 
+        self.digital_twin_engine.sync_powertrain_telemetry(
+            actual_torque_nm=actual_torque_nm,
+            torque_limit_pct=torque_limit_pct,
+            alive_counter=alive_cnt,
+            now=now,
+        )
+
         # Serialize SOME/IP Event 0x8001 Payload:
         # Format (Big-Endian):
         # [SpeedRPM: float32 (4B)] + [TorqueNM: float32 (4B)] + [LimitPct: float32 (4B)] + [AliveCnt: uint8] + [Status: uint8]
@@ -347,6 +359,13 @@ class SOAGatewayTwin:
             self.twin_telemetry.status_flags = 0x01 if temperature_c < 90.0 else 0x04  # 0x04: Thermal Warning
             self.twin_telemetry.last_update_ts = now
             self.total_translated_events += 1
+
+        self.digital_twin_engine.sync_sensor_telemetry(
+            temperature_c=temperature_c,
+            pressure_kpa=pressure_kpa,
+            alive_counter=alive_cnt,
+            now=now,
+        )
 
         # Serialize SOME/IP Event 0x8002 Payload:
         # Format (Big-Endian):
@@ -429,6 +448,10 @@ class SOAGatewayTwin:
                 total_translated_events=self.total_translated_events,
                 gateway_uptime_sec=time.time() - self.start_time,
             )
+
+    def get_digital_twin_state(self) -> DigitalTwinState:
+        """Returns the in-memory DigitalTwinState model."""
+        return self.digital_twin_engine.get_snapshot()
 
     def close(self) -> None:
         """Closes networking resources."""

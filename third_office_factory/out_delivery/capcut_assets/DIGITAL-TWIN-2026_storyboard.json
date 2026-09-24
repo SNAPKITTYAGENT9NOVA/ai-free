@@ -1,0 +1,32 @@
+{
+  "project_id": "DIGITAL-TWIN-2026",
+  "title": "PHANTOM Cyber-Physical Digital Twin Architecture",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID presents the In-Memory Cyber-Physical Digital Twin State Engine. Synchronizing motor RPM, degradation flags, battery millivolts, and thermal gradients at sub-millisecond speeds. Triple-channel cyber-physical mapping powers autonomous HPC controllers, cockpit HUD telltales, and cloud V2X fleets. Certified with 100% Honors Pass resilience, zero commercial token cost, fully open source.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 5.0,
+      "narration": "PHANTOM GRID presents the In-Memory Cyber-Physical Digital Twin State Engine.",
+      "visual_prompt": "3D holographic vehicle wireframe with real-time state vectors"
+    },
+    {
+      "index": 2,
+      "duration": 7.0,
+      "narration": "Synchronizing motor RPM, degradation flags, battery millivolts, and thermal gradients at sub-millisecond speeds.",
+      "visual_prompt": "Internal memory bus telemetry stream showing 398500 mV and 3675 RPM"
+    },
+    {
+      "index": 3,
+      "duration": 8.0,
+      "narration": "Triple-channel cyber-physical mapping powers autonomous HPC controllers, cockpit HUD telltales, and cloud V2X fleets.",
+      "visual_prompt": "Tri-split display: Autonomous driving AI, Cockpit instrument cluster, Cloud fleet dashboard"
+    },
+    {
+      "index": 4,
+      "duration": 5.0,
+      "narration": "Certified with 100% Honors Pass resilience, zero commercial token cost, fully open source.",
+      "visual_prompt": "Official PHANTOM GRID Graduation Certificate badge"
+    }
+  ]
+}
