@@ -27,6 +27,7 @@ from autonomous_healer import AutonomousHealer, HealingDecision, HealingLevel
 from digital_twin_state import DigitalTwinMirrorEngine, DigitalTwinState
 from efuse_isolation_engine import AttackType, EFuseIsolationEvent, EFuseProtectionEngine, EFuseState
 from fleet_nostr_mesh_node import FleetNostrMeshNode, NostrEvent
+from hpc_swarm_throughput_engine import ChannelStreamSpec, HPCBenchmarkResult, HPCSwarmThroughputEngine
 from hybrid_model_router import ExecutionTier, HybridModelRouter, RoutingDecision
 
 SERVER_NAME = "phantom-grid-vehicle-mcp"
@@ -48,6 +49,7 @@ class VehicleMCPServer:
         router: Optional[HybridModelRouter] = None,
         efuse_engine: Optional[EFuseProtectionEngine] = None,
         emc_canceller: Optional[ActiveAntiNoiseCanceller] = None,
+        hpc_swarm_engine: Optional[HPCSwarmThroughputEngine] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
@@ -56,6 +58,7 @@ class VehicleMCPServer:
         self.router = router or HybridModelRouter(vin=vin)
         self.efuse_engine = efuse_engine or EFuseProtectionEngine(vin=vin, db_path=":memory:")
         self.emc_canceller = emc_canceller or ActiveAntiNoiseCanceller(vin=vin, db_path=":memory:")
+        self.hpc_swarm_engine = hpc_swarm_engine or HPCSwarmThroughputEngine(vin=vin, db_path=":memory:")
         self._lock = threading.RLock()
 
         # Tool registry
@@ -235,6 +238,39 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "run_hpc_swarm_throughput_drill": {
+                "name": "run_hpc_swarm_throughput_drill",
+                "description": "Executes 100-channel massive concurrency ingestion (50 CAN-FD + 50 SOME/IP) and validates 5.00 Gbps line-rate throughput with zero packet loss.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "num_channels": {
+                            "type": "integer",
+                            "description": "Number of concurrent channels (default: 100)",
+                            "default": 100,
+                        },
+                        "burst_duration_sec": {
+                            "type": "number",
+                            "description": "Burst test duration in seconds (default: 0.1)",
+                            "default": 0.1,
+                        },
+                    },
+                },
+            },
+            "get_hpc_swarm_benchmarks": {
+                "name": "get_hpc_swarm_benchmarks",
+                "description": "Retrieves past HPC swarm 5Gbps benchmark records and cryptographic SHA-256 seals.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of benchmark records to return",
+                            "default": 10,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -277,6 +313,13 @@ class VehicleMCPServer:
                 )
             elif name == "get_emc_cancellation_records":
                 return self._tool_get_emc_records(arguments.get("limit", 10))
+            elif name == "run_hpc_swarm_throughput_drill":
+                return self._tool_run_hpc_swarm(
+                    num_channels=arguments.get("num_channels", 100),
+                    burst_duration_sec=arguments.get("burst_duration_sec", 0.1),
+                )
+            elif name == "get_hpc_swarm_benchmarks":
+                return self._tool_get_hpc_benchmarks(arguments.get("limit", 10))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -469,6 +512,33 @@ class VehicleMCPServer:
             "vin": self.vin,
             "total_emc_records": len(records),
             "emc_audit_records": records,
+        }
+
+    def _tool_run_hpc_swarm(self, num_channels: int, burst_duration_sec: float) -> Dict[str, Any]:
+        res = self.hpc_swarm_engine.run_hpc_swarm_benchmark(
+            num_channels=num_channels,
+            burst_duration_sec=burst_duration_sec,
+        )
+        return {
+            "status": "BENCHMARK_SUCCESS",
+            "run_id": res.run_id,
+            "total_channels": res.total_channels,
+            "can_fd_channels": res.can_fd_channels,
+            "someip_channels": res.someip_channels,
+            "effective_throughput_gbps": res.effective_throughput_gbps,
+            "packet_loss_rate_pct": res.packet_loss_rate_pct,
+            "avg_latency_us": res.avg_latency_us,
+            "total_bytes_processed": res.total_bytes_processed,
+            "hpc_status": res.hpc_status,
+            "security_sha256": res.security_hash,
+        }
+
+    def _tool_get_hpc_benchmarks(self, limit: int) -> Dict[str, Any]:
+        records = self.hpc_swarm_engine.get_recent_benchmarks(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_benchmarks": len(records),
+            "benchmark_records": records,
         }
 
     # ------------------------------------------------------------------------
