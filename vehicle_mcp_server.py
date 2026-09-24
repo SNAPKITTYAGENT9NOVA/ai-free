@@ -29,6 +29,7 @@ from efuse_isolation_engine import AttackType, EFuseIsolationEvent, EFuseProtect
 from fleet_nostr_mesh_node import FleetNostrMeshNode, NostrEvent
 from hpc_swarm_throughput_engine import ChannelStreamSpec, HPCBenchmarkResult, HPCSwarmThroughputEngine
 from hybrid_model_router import ExecutionTier, HybridModelRouter, RoutingDecision
+from predictive_efuse_interlock import CausalSignalSample, PredictiveCausalEFuseEngine, PredictiveInterlockResult
 
 SERVER_NAME = "phantom-grid-vehicle-mcp"
 SERVER_VERSION = "2026.4.0"
@@ -50,6 +51,7 @@ class VehicleMCPServer:
         efuse_engine: Optional[EFuseProtectionEngine] = None,
         emc_canceller: Optional[ActiveAntiNoiseCanceller] = None,
         hpc_swarm_engine: Optional[HPCSwarmThroughputEngine] = None,
+        predictive_interlock_engine: Optional[PredictiveCausalEFuseEngine] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
@@ -59,6 +61,7 @@ class VehicleMCPServer:
         self.efuse_engine = efuse_engine or EFuseProtectionEngine(vin=vin, db_path=":memory:")
         self.emc_canceller = emc_canceller or ActiveAntiNoiseCanceller(vin=vin, db_path=":memory:")
         self.hpc_swarm_engine = hpc_swarm_engine or HPCSwarmThroughputEngine(vin=vin, db_path=":memory:")
+        self.predictive_interlock_engine = predictive_interlock_engine or PredictiveCausalEFuseEngine(vin=vin, db_path=":memory:")
         self._lock = threading.RLock()
 
         # Tool registry
@@ -271,6 +274,49 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "simulate_predictive_efuse_interlock": {
+                "name": "simulate_predictive_efuse_interlock",
+                "description": "Executes upstream causal inference, entropy singularity detection, and proactive 100A e-fuse physical hardware trip.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target_node": {
+                            "type": "string",
+                            "description": "Suspicious actuator or MCU node ID predicted to commit attack",
+                            "default": "PREDICTED_MALICIOUS_NODE_0x666",
+                        },
+                        "entropy_bits": {
+                            "type": "number",
+                            "description": "Upstream Shannon entropy in bits (threshold >= 3.80)",
+                            "default": 4.12,
+                        },
+                        "torque_gradient_pct_per_ms": {
+                            "type": "number",
+                            "description": "Rate of change of torque requests in %/ms",
+                            "default": 18.5,
+                        },
+                        "firmware_divergence": {
+                            "type": "number",
+                            "description": "Normalized firmware signature divergence ratio (0.0 to 1.0)",
+                            "default": 0.92,
+                        },
+                    },
+                },
+            },
+            "get_predictive_interlock_records": {
+                "name": "get_predictive_interlock_records",
+                "description": "Retrieves SQLite audit records of predictive causal e-fuse interlock actions and SHA-256 seals.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of audit records to retrieve",
+                            "default": 10,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -320,6 +366,15 @@ class VehicleMCPServer:
                 )
             elif name == "get_hpc_swarm_benchmarks":
                 return self._tool_get_hpc_benchmarks(arguments.get("limit", 10))
+            elif name == "simulate_predictive_efuse_interlock":
+                return self._tool_simulate_predictive_interlock(
+                    target_node=arguments.get("target_node", "PREDICTED_MALICIOUS_NODE_0x666"),
+                    entropy_bits=arguments.get("entropy_bits", 4.12),
+                    torque_gradient_pct_per_ms=arguments.get("torque_gradient_pct_per_ms", 18.5),
+                    firmware_divergence=arguments.get("firmware_divergence", 0.92),
+                )
+            elif name == "get_predictive_interlock_records":
+                return self._tool_get_predictive_interlock_records(arguments.get("limit", 10))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -539,6 +594,45 @@ class VehicleMCPServer:
             "vin": self.vin,
             "total_benchmarks": len(records),
             "benchmark_records": records,
+        }
+
+    def _tool_simulate_predictive_interlock(
+        self,
+        target_node: str,
+        entropy_bits: float,
+        torque_gradient_pct_per_ms: float,
+        firmware_divergence: float,
+    ) -> Dict[str, Any]:
+        sample = CausalSignalSample(
+            channel="POWERTRAIN_CAN_FD_L1",
+            entropy_bits=entropy_bits,
+            torque_gradient_pct_per_ms=torque_gradient_pct_per_ms,
+            firmware_divergence=firmware_divergence,
+        )
+        res = self.predictive_interlock_engine.execute_predictive_interlock(
+            target_node=target_node,
+            sample=sample,
+        )
+        return {
+            "status": "PREDICTIVE_INTERLOCK_SUCCESS",
+            "run_id": res.run_id,
+            "target_node": res.target_node,
+            "threat_entropy": round(res.threat_entropy, 3),
+            "causal_risk_score": round(res.causal_risk_score, 3),
+            "interlock_latency_us": round(res.interlock_latency_us, 2),
+            "cutoff_current_a": res.cutoff_current_a,
+            "power_rail_state": res.power_rail_state,
+            "pin_transceiver_state": res.pin_transceiver_state,
+            "interlock_status": res.interlock_status,
+            "security_sha256": res.security_hash,
+        }
+
+    def _tool_get_predictive_interlock_records(self, limit: int) -> Dict[str, Any]:
+        records = self.predictive_interlock_engine.get_recent_interlock_records(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_records": len(records),
+            "interlock_records": records,
         }
 
     # ------------------------------------------------------------------------
