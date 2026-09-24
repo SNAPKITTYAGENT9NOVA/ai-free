@@ -1,0 +1,38 @@
+{
+  "project_id": "AEGIS-EMC-2026",
+  "title": "PHANTOM GRID Active Anti-Phase EMC Noise Cancellation",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID deploys analog front-end active anti-phase noise cancellation. Under extreme 95.5 dBm broadband RF interference, the engine triggers within 30 picoseconds. An exact 180 degree anti-phase wavefront is synthesized, suppressing noise floor to minus 120 dBm. Over 215.5 dB attenuation preserves critical sensor and CAN bus signal-to-noise ratio. All events are immutably signed with SHA-256 and exposed through vehicle MCP tooling.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 3.5,
+      "narration": "PHANTOM GRID deploys analog front-end active anti-phase noise cancellation.",
+      "visual_prompt": "Automotive analog frontend RF shield topology"
+    },
+    {
+      "index": 2,
+      "duration": 4.0,
+      "narration": "Under extreme 95.5 dBm broadband RF interference, the engine triggers within 30 picoseconds.",
+      "visual_prompt": "High power electromagnetic pulse wave entering sensor line"
+    },
+    {
+      "index": 3,
+      "duration": 4.5,
+      "narration": "An exact 180 degree anti-phase wavefront is synthesized, suppressing noise floor to minus 120 dBm.",
+      "visual_prompt": "Superposition of anti-phase waves resulting in clean flatline noise floor"
+    },
+    {
+      "index": 4,
+      "duration": 4.0,
+      "narration": "Over 215.5 dB attenuation preserves critical sensor and CAN bus signal-to-noise ratio.",
+      "visual_prompt": "Spectrum analyzer graph showing 48.5 dB clean signal peak above baseline"
+    },
+    {
+      "index": 5,
+      "duration": 4.0,
+      "narration": "All events are immutably signed with SHA-256 and exposed through vehicle MCP tooling.",
+      "visual_prompt": "Vehicle MCP Server terminal displaying CISPR 25 Level 5 verified status"
+    }
+  ]
+}

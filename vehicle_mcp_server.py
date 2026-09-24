@@ -22,6 +22,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+from aegis_emc_canceller import ActiveAntiNoiseCanceller, CancellationResult, EMCInjectionSpec
 from autonomous_healer import AutonomousHealer, HealingDecision, HealingLevel
 from digital_twin_state import DigitalTwinMirrorEngine, DigitalTwinState
 from efuse_isolation_engine import AttackType, EFuseIsolationEvent, EFuseProtectionEngine, EFuseState
@@ -46,6 +47,7 @@ class VehicleMCPServer:
         mesh_node: Optional[FleetNostrMeshNode] = None,
         router: Optional[HybridModelRouter] = None,
         efuse_engine: Optional[EFuseProtectionEngine] = None,
+        emc_canceller: Optional[ActiveAntiNoiseCanceller] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
@@ -53,6 +55,7 @@ class VehicleMCPServer:
         self.mesh_node = mesh_node or FleetNostrMeshNode(vin=vin)
         self.router = router or HybridModelRouter(vin=vin)
         self.efuse_engine = efuse_engine or EFuseProtectionEngine(vin=vin, db_path=":memory:")
+        self.emc_canceller = emc_canceller or ActiveAntiNoiseCanceller(vin=vin, db_path=":memory:")
         self._lock = threading.RLock()
 
         # Tool registry
@@ -199,6 +202,39 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "simulate_emc_anti_noise_cancellation": {
+                "name": "simulate_emc_anti_noise_cancellation",
+                "description": "Executes 30ps 180° active anti-phase noise cancellation against extreme RF/EMI interference (+95.5 dBm down to -120 dBm).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "channel_name": {
+                            "type": "string",
+                            "description": "Target analog frontend or bus channel (e.g. CAN_H_ANALOG_IN)",
+                            "default": "CAN_H_ANALOG_IN",
+                        },
+                        "raw_emi_power_dbm": {
+                            "type": "number",
+                            "description": "Injected EMI power in dBm",
+                            "default": 95.5,
+                        },
+                    },
+                },
+            },
+            "get_emc_cancellation_records": {
+                "name": "get_emc_cancellation_records",
+                "description": "Retrieves the SQLite audit records of EMC noise suppression events and SHA-256 proofs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of audit records to retrieve",
+                            "default": 10,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -234,6 +270,13 @@ class VehicleMCPServer:
                 )
             elif name == "get_efuse_blacklist":
                 return self._tool_get_efuse_blacklist(arguments.get("limit", 20))
+            elif name == "simulate_emc_anti_noise_cancellation":
+                return self._tool_simulate_emc_cancellation(
+                    channel_name=arguments.get("channel_name", "CAN_H_ANALOG_IN"),
+                    raw_emi_power_dbm=arguments.get("raw_emi_power_dbm", 95.5),
+                )
+            elif name == "get_emc_cancellation_records":
+                return self._tool_get_emc_records(arguments.get("limit", 10))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -398,6 +441,34 @@ class VehicleMCPServer:
             "vin": self.vin,
             "total_isolated_nodes": len(records),
             "blacklist_records": records,
+        }
+
+    def _tool_simulate_emc_cancellation(self, channel_name: str, raw_emi_power_dbm: float) -> Dict[str, Any]:
+        spec = EMCInjectionSpec(
+            channel_name=channel_name,
+            raw_emi_power_dbm=raw_emi_power_dbm,
+        )
+        res = self.emc_canceller.execute_active_cancellation(spec)
+        return {
+            "status": "CANCELLATION_SUCCESS",
+            "incident_id": res.incident_id,
+            "channel_name": res.channel_name,
+            "raw_noise_dbm": res.raw_noise_dbm,
+            "anti_phase_angle_deg": res.anti_phase_angle_deg,
+            "residual_noise_dbm": res.residual_noise_dbm,
+            "total_attenuation_db": round(res.total_attenuation_db, 1),
+            "response_latency_ps": res.response_latency_ps,
+            "signal_snr_db": round(res.signal_snr_db, 1),
+            "emc_compliance": res.emc_compliance,
+            "security_sha256": res.security_hash,
+        }
+
+    def _tool_get_emc_records(self, limit: int) -> Dict[str, Any]:
+        records = self.emc_canceller.get_recent_emc_records(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_emc_records": len(records),
+            "emc_audit_records": records,
         }
 
     # ------------------------------------------------------------------------
