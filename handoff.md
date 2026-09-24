@@ -2944,7 +2944,8 @@ etlify-demo\public\2026_competitions_calendar.ics。
     3. 核心資料模型契約：`C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\bobflow\core\models.py`
     4. 演示 CLI 驅動主程式：`C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\bobflow\main.py`
     5. 全套單元驗收測試套件：`C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\test_bobflow.py`
-    6. GitHub 遠端開源庫網址：`https://github.com/jackhu24-ship-it/ping_assistant`
+    6. 方案 B 完整合成之 1080P Demo 影片：`C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\bobflow_demo_assets\bobflow_demo_1080p.mp4`
+    7. GitHub 遠端開源庫網址：`https://github.com/jackhu24-ship-it/ping_assistant`
   - **操作提醒**：信件直接排版好各欄位文字，哥打開信件即可對照路徑或一鍵複製貼入官方表單按下 Submit！
 - [ ] **2026/10/05**: 啟動 Colosseum 決賽交卷準備（產出 GitHub Repo 與 Demo）。
 - [ ] **2026/10/10**: 強制提醒 Jack 哥登入 Colosseum 後台貼上網址並按下 Submit（10/12 截止）。
