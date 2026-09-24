@@ -82,6 +82,7 @@ class ActiveAntiNoiseCanceller:
         self.vin = vin
         self.db_path = db_path
         self._lock = threading.RLock()
+        self._seq_counter = 0
         self._listeners: List[Callable[[CancellationResult], None]] = []
 
         # Initialize SQLite database
@@ -193,7 +194,8 @@ class ActiveAntiNoiseCanceller:
             now = time.time()
 
         with self._lock:
-            incident_id = f"EMC-SHIELD-{int(now * 1000)}-{spec.channel_name}"
+            self._seq_counter += 1
+            incident_id = f"EMC-SHIELD-{time.time_ns()}-{self._seq_counter}-{spec.channel_name}"
 
             # Anti-phase physics model:
             # Theoretical suppression: 95.5 dBm - Target (-120.0 dBm) = 215.5 dB attenuation
