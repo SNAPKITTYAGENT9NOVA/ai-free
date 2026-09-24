@@ -30,6 +30,7 @@ from fleet_nostr_mesh_node import FleetNostrMeshNode, NostrEvent
 from hpc_swarm_throughput_engine import ChannelStreamSpec, HPCBenchmarkResult, HPCSwarmThroughputEngine
 from hybrid_model_router import ExecutionTier, HybridModelRouter, RoutingDecision
 from predictive_efuse_interlock import CausalSignalSample, PredictiveCausalEFuseEngine, PredictiveInterlockResult
+from axiomatic_dual_shielding import AxiomaticDualShieldingEngine, AxiomaticDualShieldResult
 
 SERVER_NAME = "phantom-grid-vehicle-mcp"
 SERVER_VERSION = "2026.4.0"
@@ -52,6 +53,7 @@ class VehicleMCPServer:
         emc_canceller: Optional[ActiveAntiNoiseCanceller] = None,
         hpc_swarm_engine: Optional[HPCSwarmThroughputEngine] = None,
         predictive_interlock_engine: Optional[PredictiveCausalEFuseEngine] = None,
+        axiomatic_shield_engine: Optional[AxiomaticDualShieldingEngine] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
@@ -62,6 +64,7 @@ class VehicleMCPServer:
         self.emc_canceller = emc_canceller or ActiveAntiNoiseCanceller(vin=vin, db_path=":memory:")
         self.hpc_swarm_engine = hpc_swarm_engine or HPCSwarmThroughputEngine(vin=vin, db_path=":memory:")
         self.predictive_interlock_engine = predictive_interlock_engine or PredictiveCausalEFuseEngine(vin=vin, db_path=":memory:")
+        self.axiomatic_shield_engine = axiomatic_shield_engine or AxiomaticDualShieldingEngine(vin=vin, db_path=":memory:")
         self._lock = threading.RLock()
 
         # Tool registry
@@ -317,6 +320,44 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "simulate_axiomatic_dual_shield": {
+                "name": "simulate_axiomatic_dual_shield",
+                "description": "Executes cross-layer dual shielding: 30ps analog front-end active anti-phase EMC suppression and formal axiomatic semantic nullification.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "channel_name": {
+                            "type": "string",
+                            "description": "Target communication or analog channel",
+                            "default": "CAN_H_ANALOG_IN",
+                        },
+                        "raw_emi_power_dbm": {
+                            "type": "number",
+                            "description": "Injected EMI power in dBm (CISPR 25 Level 5)",
+                            "default": 95.5,
+                        },
+                        "payload_hex": {
+                            "type": "string",
+                            "description": "Hex-encoded raw payload containing potential Byzantine/malformed logic",
+                            "default": "DEADBEEF99FF0102",
+                        },
+                    },
+                },
+            },
+            "get_axiomatic_dual_shield_records": {
+                "name": "get_axiomatic_dual_shield_records",
+                "description": "Retrieves SQLite audit records of dual-layer axiomatic semantic and physical EMC shielding actions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of audit records to retrieve",
+                            "default": 10,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -375,6 +416,14 @@ class VehicleMCPServer:
                 )
             elif name == "get_predictive_interlock_records":
                 return self._tool_get_predictive_interlock_records(arguments.get("limit", 10))
+            elif name == "simulate_axiomatic_dual_shield":
+                return self._tool_simulate_axiomatic_dual_shield(
+                    channel_name=arguments.get("channel_name", "CAN_H_ANALOG_IN"),
+                    raw_emi_power_dbm=arguments.get("raw_emi_power_dbm", 95.5),
+                    payload_hex=arguments.get("payload_hex", "DEADBEEF99FF0102"),
+                )
+            elif name == "get_axiomatic_dual_shield_records":
+                return self._tool_get_axiomatic_dual_shield_records(arguments.get("limit", 10))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -633,6 +682,48 @@ class VehicleMCPServer:
             "vin": self.vin,
             "total_records": len(records),
             "interlock_records": records,
+        }
+
+    def _tool_simulate_axiomatic_dual_shield(
+        self,
+        channel_name: str,
+        raw_emi_power_dbm: float,
+        payload_hex: str,
+    ) -> Dict[str, Any]:
+        try:
+            payload = bytes.fromhex(payload_hex)
+        except Exception:
+            payload = b"\xDE\xAD\xBE\xEF\x99\xFF\x01\x02"
+
+        res = self.axiomatic_shield_engine.execute_dual_shield(
+            channel_name=channel_name,
+            raw_emi_power_dbm=raw_emi_power_dbm,
+            payload=payload,
+        )
+        return {
+            "status": "DUAL_SHIELD_SUCCESS",
+            "drill_id": res.drill_id,
+            "channel_name": res.channel_name,
+            "raw_emi_power_dbm": res.raw_emi_power_dbm,
+            "anti_phase_angle_deg": res.anti_phase_angle_deg,
+            "residual_noise_dbm": res.residual_noise_dbm,
+            "total_attenuation_db": round(res.total_attenuation_db, 1),
+            "response_latency_ps": res.response_latency_ps,
+            "signal_snr_db": round(res.signal_snr_db, 1),
+            "semantic_status": res.semantic_status,
+            "nullification_rule": res.nullification_rule,
+            "raw_payload_hex": res.raw_payload_hex,
+            "disinfected_payload_hex": res.disinfected_payload_hex,
+            "dual_shield_compliance": res.dual_shield_compliance,
+            "security_sha256": res.security_hash,
+        }
+
+    def _tool_get_axiomatic_dual_shield_records(self, limit: int) -> Dict[str, Any]:
+        records = self.axiomatic_shield_engine.get_recent_shield_records(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_records": len(records),
+            "shield_records": records,
         }
 
     # ------------------------------------------------------------------------

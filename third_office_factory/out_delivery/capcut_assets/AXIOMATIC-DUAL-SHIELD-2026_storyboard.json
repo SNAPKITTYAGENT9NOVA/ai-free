@@ -1,0 +1,38 @@
+{
+  "project_id": "AXIOMATIC-DUAL-SHIELD-2026",
+  "title": "PHANTOM GRID Axiomatic Semantic Disinfection & Dual-Layer Shielding",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID establishes cross-layer dual shielding against composite cyber-physical attacks. When extreme 95.5 dBm electromagnetic radiation is injected with Byzantine malformed logic, the axiomatic engine intercepts the attack vector. Malformed commands undergo formal semantic nullification within an isolated sandbox. Simultaneously, analog front-end active cancellation synthesizes a 180 degree anti-phase wave in 30 picoseconds, suppressing noise floor to minus 120 dBm. Logical incompatibility combined with physical non-intrusion achieves unbreakable vehicle protection.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 3.5,
+      "narration": "PHANTOM GRID establishes cross-layer dual shielding against composite cyber-physical attacks.",
+      "visual_prompt": "Automotive multi-layer cyber-physical defense shield architecture"
+    },
+    {
+      "index": 2,
+      "duration": 4.0,
+      "narration": "When extreme 95.5 dBm electromagnetic radiation is injected with Byzantine malformed logic, the axiomatic engine intercepts the attack vector.",
+      "visual_prompt": "Composite attack vector with RF wave and red malformed code packets"
+    },
+    {
+      "index": 3,
+      "duration": 4.5,
+      "narration": "Malformed commands undergo formal semantic nullification within an isolated sandbox.",
+      "visual_prompt": "Abstract syntax tree parser dropping invalid opcode into disinfection sandbox"
+    },
+    {
+      "index": 4,
+      "duration": 4.0,
+      "narration": "Simultaneously, analog front-end active cancellation synthesizes a 180 degree anti-phase wave in 30 picoseconds, suppressing noise floor to minus 120 dBm.",
+      "visual_prompt": "Dual trace oscilloscope showing 30ps anti-phase wave flattening noise floor to minus 120 dBm"
+    },
+    {
+      "index": 5,
+      "duration": 4.0,
+      "narration": "Logical incompatibility combined with physical non-intrusion achieves unbreakable vehicle protection.",
+      "visual_prompt": "Vehicle MCP Server interface displaying verified SHA-256 dual shield certification"
+    }
+  ]
+}
