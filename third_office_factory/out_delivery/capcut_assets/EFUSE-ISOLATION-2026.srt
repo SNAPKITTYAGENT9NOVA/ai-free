@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:03,500
+PHANTOM GRID demonstrates hardware-level cyber defense against rogue automotive nodes.
+
+2
+00:00:03,500 --> 00:00:07,500
+When unauthorized CAN ID 0x666 or firmware tampering is detected, an E-Fuse trip is triggered.
+
+3
+00:00:07,500 --> 00:00:12,000
+In 1.8 microseconds, 100A peak cutoff current blows the circuit, permanently isolating transceiver pins.
+
+4
+00:00:12,000 --> 00:00:16,000
+The node signature is computed and indelibly stamped into an immutable SHA-256 blacklist audit log.
+
+5
+00:00:16,000 --> 00:00:20,000
+Exposed via vehicle MCP tools for autonomous AI Agent monitoring and fleet-wide Nostr mesh warning.

@@ -1,0 +1,38 @@
+{
+  "project_id": "EFUSE-ISOLATION-2026",
+  "title": "PHANTOM GRID Automotive Hardware Overcurrent & E-Fuse Isolation",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID demonstrates hardware-level cyber defense against rogue automotive nodes. When unauthorized CAN ID 0x666 or firmware tampering is detected, an E-Fuse trip is triggered. In 1.8 microseconds, 100A peak cutoff current blows the circuit, permanently isolating transceiver pins. The node signature is computed and indelibly stamped into an immutable SHA-256 blacklist audit log. Exposed via vehicle MCP tools for autonomous AI Agent monitoring and fleet-wide Nostr mesh warning.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 3.5,
+      "narration": "PHANTOM GRID demonstrates hardware-level cyber defense against rogue automotive nodes.",
+      "visual_prompt": "High-side driver and electronic fuse circuit schematic"
+    },
+    {
+      "index": 2,
+      "duration": 4.0,
+      "narration": "When unauthorized CAN ID 0x666 or firmware tampering is detected, an E-Fuse trip is triggered.",
+      "visual_prompt": "Intrusion detection alert showing unauthorized CAN 0x666 traffic"
+    },
+    {
+      "index": 3,
+      "duration": 4.5,
+      "narration": "In 1.8 microseconds, 100A peak cutoff current blows the circuit, permanently isolating transceiver pins.",
+      "visual_prompt": "Current pulse oscillogram dropping to zero with pin disconnect"
+    },
+    {
+      "index": 4,
+      "duration": 4.0,
+      "narration": "The node signature is computed and indelibly stamped into an immutable SHA-256 blacklist audit log.",
+      "visual_prompt": "SQLite security blacklist table showing cryptographic hash"
+    },
+    {
+      "index": 5,
+      "duration": 4.0,
+      "narration": "Exposed via vehicle MCP tools for autonomous AI Agent monitoring and fleet-wide Nostr mesh warning.",
+      "visual_prompt": "Vehicle MCP Server JSON-RPC terminal interface showing isolated node status"
+    }
+  ]
+}

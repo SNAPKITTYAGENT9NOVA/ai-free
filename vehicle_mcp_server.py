@@ -24,6 +24,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 from autonomous_healer import AutonomousHealer, HealingDecision, HealingLevel
 from digital_twin_state import DigitalTwinMirrorEngine, DigitalTwinState
+from efuse_isolation_engine import AttackType, EFuseIsolationEvent, EFuseProtectionEngine, EFuseState
 from fleet_nostr_mesh_node import FleetNostrMeshNode, NostrEvent
 from hybrid_model_router import ExecutionTier, HybridModelRouter, RoutingDecision
 
@@ -44,12 +45,14 @@ class VehicleMCPServer:
         healer: Optional[AutonomousHealer] = None,
         mesh_node: Optional[FleetNostrMeshNode] = None,
         router: Optional[HybridModelRouter] = None,
+        efuse_engine: Optional[EFuseProtectionEngine] = None,
     ):
         self.vin = vin
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
         self.healer = healer or AutonomousHealer(twin_engine=self.twin_engine, vin=vin, db_path=":memory:")
         self.mesh_node = mesh_node or FleetNostrMeshNode(vin=vin)
         self.router = router or HybridModelRouter(vin=vin)
+        self.efuse_engine = efuse_engine or EFuseProtectionEngine(vin=vin, db_path=":memory:")
         self._lock = threading.RLock()
 
         # Tool registry
@@ -158,6 +161,44 @@ class VehicleMCPServer:
                     },
                 },
             },
+            "trigger_efuse_hardware_isolation": {
+                "name": "trigger_efuse_hardware_isolation",
+                "description": "Commands smart E-Fuse 100A peak cutoff and pin hardware physical isolation against a malicious/unauthorized node.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "node_id": {
+                            "type": "string",
+                            "description": "Target ECU node identifier (e.g. UNAUTHORIZED_NODE_0x666)",
+                        },
+                        "can_id": {
+                            "type": "integer",
+                            "description": "Target CAN ID (e.g. 0x666)",
+                            "default": 0x666,
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Remediation reason for physical fuse blowout",
+                            "default": "Unauthorized firmware tampering or torque spoofing attack",
+                        },
+                    },
+                    "required": ["node_id"],
+                },
+            },
+            "get_efuse_blacklist": {
+                "name": "get_efuse_blacklist",
+                "description": "Queries the hardware-isolated node blacklist and cryptographic SHA-256 seals.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of blacklist entries to retrieve",
+                            "default": 20,
+                        }
+                    },
+                },
+            },
         }
 
     # ------------------------------------------------------------------------
@@ -185,6 +226,14 @@ class VehicleMCPServer:
                 )
             elif name == "get_healing_audit_history":
                 return self._tool_get_audit_history(arguments.get("limit", 10))
+            elif name == "trigger_efuse_hardware_isolation":
+                return self._tool_trigger_efuse_isolation(
+                    node_id=arguments.get("node_id", "UNAUTHORIZED_NODE_0x666"),
+                    can_id=arguments.get("can_id", 0x666),
+                    reason=arguments.get("reason", "Malicious node isolation"),
+                )
+            elif name == "get_efuse_blacklist":
+                return self._tool_get_efuse_blacklist(arguments.get("limit", 20))
             else:
                 raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -321,6 +370,34 @@ class VehicleMCPServer:
             "total_audit_records": summary["total_records"],
             "current_healer_level": summary["current_level"],
             "recent_audits": audits,
+        }
+
+    def _tool_trigger_efuse_isolation(self, node_id: str, can_id: int, reason: str) -> Dict[str, Any]:
+        event = self.efuse_engine.trigger_efuse_burnout_isolation(
+            node_id=node_id,
+            can_id=can_id,
+            attack_type=AttackType.UNAUTHORIZED_NODE_INJECTION,
+            reason=reason,
+        )
+        return {
+            "status": "HARDWARE_ISOLATED",
+            "incident_id": event.incident_id,
+            "target_node_id": event.target_node_id,
+            "target_can_id": f"0x{event.target_can_id:03X}",
+            "trip_current_a": event.peak_trip_current_a,
+            "efuse_state": event.efuse_state.value,
+            "pin_isolated": event.pin_isolated,
+            "blacklisted": event.blacklisted,
+            "security_sha256": event.security_hash,
+            "action_taken": event.action_taken,
+        }
+
+    def _tool_get_efuse_blacklist(self, limit: int) -> Dict[str, Any]:
+        records = self.efuse_engine.get_blacklist_records(limit=limit)
+        return {
+            "vin": self.vin,
+            "total_isolated_nodes": len(records),
+            "blacklist_records": records,
         }
 
     # ------------------------------------------------------------------------
