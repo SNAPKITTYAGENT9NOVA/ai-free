@@ -2954,3 +2954,7 @@ etlify-demo\public\2026_competitions_calendar.ics。
   - **測試套件路徑**：`C:\Users\user\.gemini\antigravity\worktrees\260803_opencode\ping_assistant\test_df_mesh.py`
 - [ ] **2026/10/05**: 啟動 Colosseum 決賽交卷準備（產出 GitHub Repo 與 Demo）。
 - [ ] **2026/10/10**: 強制提醒 Jack 哥登入 Colosseum 後台貼上網址並按下 Submit（10/12 截止）。
+- [ ] **2026/10/16 23:00**: 🔔 **發送 Email 提醒 Jack 哥前往 AMD ACT III 賽事平台提交專案！**
+  - **交卷專屬網址**：`https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-iii/phantom-grid`
+- [ ] **2026/10/18 23:00**: 🔔 **發送 Email 提醒 Jack 哥前往 TechEx Amsterdam 賽事平台提交專案！**
+  - **交卷專屬網址**：`https://lablab.ai/ai-hackathons/techex-amsterdam-hackathon/phantom-grid`
