@@ -1,0 +1,32 @@
+{
+  "project_id": "HELL-ADVERSARY-2026",
+  "title": "PHANTOM GRID Vehicle Hell Adversary",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "Extreme Cyber-Physical Deadlock and Hell Adversary Testing Suite Activated. UDS Service 36 power-cut flash tearing seamlessly rolls back to Sector B in 2.3 milliseconds. Byzantine jabbering babble on Node C dynamically isolated while actuator engages open-loop estimation. Prompt injection jailbreak payload intercepted by AST whitelist and committed to threat blacklist.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 15.0,
+      "narration": "Extreme Cyber-Physical Deadlock and Hell Adversary Testing Suite Activated.",
+      "visual_prompt": "Dashboard displaying concurrent three deadly fault injections across automotive stack."
+    },
+    {
+      "index": 2,
+      "duration": 20.0,
+      "narration": "UDS Service 36 power-cut flash tearing seamlessly rolls back to Sector B in 2.3 milliseconds.",
+      "visual_prompt": "Oscilloscope proving zero MCU bricking and instant 2.3ms golden firmware recovery."
+    },
+    {
+      "index": 3,
+      "duration": 25.0,
+      "narration": "Byzantine jabbering babble on Node C dynamically isolated while actuator engages open-loop estimation.",
+      "visual_prompt": "Powertrain actuator maintaining steady 1500 RPM propulsion without stalling."
+    },
+    {
+      "index": 4,
+      "duration": 20.0,
+      "narration": "Prompt injection jailbreak payload intercepted by AST whitelist and committed to threat blacklist.",
+      "visual_prompt": "Terminal display showing AST syntax disinfection and SHA-256 threat signature seal."
+    }
+  ]
+}
