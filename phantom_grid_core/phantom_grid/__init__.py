@@ -58,6 +58,11 @@ from .cluster import (
     MasterGatewayNode,
     PowertrainActuatorNode,
     SensorAcquisitionNode,
+    BaseNode,
+    GatewayNode,
+    ActuatorNode,
+    TelemetryNode,
+    AsyncMultiNodeCluster,
 )
 from .telemetry_backend import (
     SocketCANTelemetryBackend,
@@ -102,4 +107,9 @@ __all__ = [
     "SocketCANTelemetryBackend",
     "VehicleTelemetrySnapshot",
     "CANFrameMetrics",
+    "BaseNode",
+    "GatewayNode",
+    "ActuatorNode",
+    "TelemetryNode",
+    "AsyncMultiNodeCluster",
 ]

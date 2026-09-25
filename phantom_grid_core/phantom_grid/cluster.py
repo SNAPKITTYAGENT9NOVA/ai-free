@@ -8,10 +8,12 @@ Nodes:
 3. Sensor Acquisition Gateway (0x380, 50ms)
 4. UDS Bootloader Flashing Telemetry (Service 0x1000, Event 0x8003)
 5. Nostr Fleet Mesh V2V / V2C Broadcast Gateway (Kind 30078 / 30079)
+6. Asynchronous Concurrent Coroutine Cluster (BaseNode, GatewayNode, ActuatorNode, TelemetryNode)
 """
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import hashlib
 import json
@@ -19,6 +21,13 @@ import struct
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+try:
+    import can
+    CAN_AVAILABLE = True
+except ImportError:
+    can = None  # type: ignore[assignment]
+    CAN_AVAILABLE = False
 
 from e2e_state_matrix import (
     Iso26262SafetyStateMachine,
@@ -96,7 +105,7 @@ class SomeIpHeader:
 
 
 # =============================================================================
-# Distributed CAN Nodes
+# Distributed CAN Nodes (Synchronous Models)
 # =============================================================================
 
 
@@ -206,11 +215,9 @@ class MultiNodeClusterGateway:
         self.someip_session_counter = (self.someip_session_counter + 1) & 0xFFFF
 
         if can_id == 0x280:  # Powertrain Node
-            # Unpack RPM (2B), Torque (2B), PWM (1B)
             rpm = int.from_bytes(frame_8bytes[1:3], "big")
             torque = int.from_bytes(frame_8bytes[3:5], "big")
             pwm = frame_8bytes[5]
-            # Pack SOME/IP payload: uint16 rpm, uint16 torque, uint8 pwm
             someip_payload = struct.pack(">HHB", rpm, torque, pwm)
             header = SomeIpHeader(
                 service_id=self.SERVICE_VEHICLE_DYNAMICS,
@@ -226,7 +233,6 @@ class MultiNodeClusterGateway:
             return packet
 
         elif can_id == 0x380:  # Sensor Node
-            # Unpack Battery mV (2B), Temp °C (1B)
             voltage = int.from_bytes(frame_8bytes[1:3], "big")
             temp = frame_8bytes[3]
             someip_payload = struct.pack(">HB", voltage, temp)
@@ -372,4 +378,208 @@ class MultiNodeClusterGateway:
             "actuator_someip_len": len(someip_actuator) if someip_actuator else 0,
             "sensor_someip_len": len(someip_sensor) if someip_sensor else 0,
             "total_dispatched_events": len(self.dispatched_someip_frames),
+        }
+
+
+# =============================================================================
+# Asynchronous Concurrent Multi-Node Cluster Engine (Xiaomi Distributed Matrix)
+# =============================================================================
+
+
+class BaseNode:
+    """Base class for asynchronous concurrent CAN cluster nodes."""
+
+    def __init__(self, name: str, node_id: int, bus: Any) -> None:
+        self.name = name
+        self.node_id = node_id
+        self.bus = bus
+        self.alive_counter = 0
+
+    def next_counter(self) -> int:
+        c = self.alive_counter
+        self.alive_counter = (self.alive_counter + 1) & 0x0F
+        return c
+
+    def _send_can_message(self, can_id: int, data: bytes) -> None:
+        if not self.bus:
+            return
+        try:
+            if CAN_AVAILABLE and can is not None and hasattr(can, "Message"):
+                msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=False)
+            else:
+                msg = type(
+                    "CANMessage",
+                    (),
+                    {
+                        "arbitration_id": can_id,
+                        "data": data,
+                        "dlc": len(data),
+                        "timestamp": time.time(),
+                        "is_extended_id": False,
+                    },
+                )()
+            self.bus.send(msg)
+        except Exception:
+            pass
+
+
+class GatewayNode(BaseNode):
+    """主控節點：發送心跳 (0x080, 50ms) 與控制指令 (0x120, 10ms)。"""
+
+    def __init__(
+        self,
+        name: str,
+        node_id: int,
+        bus: Any,
+        target_power_pct: int = 75,
+    ) -> None:
+        super().__init__(name, node_id, bus)
+        self.target_power_pct = target_power_pct
+        self.is_running = True
+        self.frames_sent = 0
+
+    async def run(self, stop_event: Optional[asyncio.Event] = None) -> None:
+        heartbeat_ticks = 0
+        while self.is_running and (stop_event is None or not stop_event.is_set()):
+            cnt = self.next_counter()
+            # 構造控制幀: ID 0x120, Byte 0 為 Counter, Byte 1 為目標功率 (75%)
+            data = bytes([cnt, self.target_power_pct, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA])
+            self._send_can_message(0x120, data)
+            self.frames_sent += 1
+
+            # 每 50ms (每 5 次 10ms 循環) 發送一次 0x080 心跳廣播幀
+            heartbeat_ticks += 1
+            if heartbeat_ticks >= 5:
+                heartbeat_ticks = 0
+                hb_data = bytes([cnt, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF])
+                self._send_can_message(0x080, hb_data)
+
+            await asyncio.sleep(0.01)  # 10ms 週期
+
+
+class ActuatorNode(BaseNode):
+    """致動節點：接收控制指令，定時上報轉速 (0x280, 10ms)，監聽心跳超時 (>50ms 降級)。"""
+
+    def __init__(self, name: str, node_id: int, bus: Any) -> None:
+        super().__init__(name, node_id, bus)
+        self.last_cmd_time = time.time()
+        self.degraded = False
+        self.is_running = True
+        self.rpm = 8000
+        self.frames_sent = 0
+        self.degraded_transitions = 0
+        self.recovery_transitions = 0
+
+    async def run(self, stop_event: Optional[asyncio.Event] = None) -> None:
+        while self.is_running and (stop_event is None or not stop_event.is_set()):
+            # 檢查主控指令超時 (超過 50ms 視為失聯，強制切入安全降級模式)
+            if time.time() - self.last_cmd_time > 0.05:
+                if not self.degraded:
+                    self.degraded = True
+                    self.degraded_transitions += 1
+
+            # 回饋當前執行狀態
+            cnt = self.next_counter()
+            status_flag = 0x01 if self.degraded else 0x00
+            # 0x1F40 = 8000 RPM
+            data = bytes([cnt, status_flag, 0x1F, 0x40, 0x00, 0x00, 0x00, 0x55])
+            self._send_can_message(0x280, data)
+            self.frames_sent += 1
+            await asyncio.sleep(0.01)  # 10ms 週期
+
+    def on_message_received(self, msg: Any) -> None:
+        arb_id = getattr(msg, "arbitration_id", 0)
+        if arb_id == 0x120:
+            self.last_cmd_time = time.time()
+            if self.degraded:
+                self.degraded = False
+                self.recovery_transitions += 1
+
+
+class TelemetryNode(BaseNode):
+    """感測網關：上報電壓與溫度 (0x380, 20ms)。"""
+
+    def __init__(
+        self,
+        name: str,
+        node_id: int,
+        bus: Any,
+        battery_mv: int = 12600,
+        temp_c: int = 45,
+    ) -> None:
+        super().__init__(name, node_id, bus)
+        self.battery_mv = battery_mv
+        self.temp_c = temp_c
+        self.is_running = True
+        self.frames_sent = 0
+
+    async def run(self, stop_event: Optional[asyncio.Event] = None) -> None:
+        while self.is_running and (stop_event is None or not stop_event.is_set()):
+            cnt = self.next_counter()
+            # 模擬 12.6V 電壓 (1260 -> 0x04EC) 與 45°C
+            v_val = self.battery_mv // 10
+            data = bytes(
+                [
+                    cnt,
+                    (v_val >> 8) & 0xFF,
+                    v_val & 0xFF,
+                    self.temp_c & 0xFF,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x99,
+                ]
+            )
+            self._send_can_message(0x380, data)
+            self.frames_sent += 1
+            await asyncio.sleep(0.02)  # 20ms 週期
+
+
+class AsyncMultiNodeCluster:
+    """
+    非同步多節點集群控制器：
+    管理 GatewayNode, ActuatorNode, TelemetryNode，
+    並透過協程讀取分發循環 (rx_loop) 自動串接致動節點消息接收回呼。
+    """
+
+    def __init__(self, bus: Any, channel: str = "vcan0") -> None:
+        self.bus = bus
+        self.channel = channel
+        self.gw = GatewayNode("GW_NODE", 0x01, self.bus)
+        self.act = ActuatorNode("ACTUATOR_NODE", 0x02, self.bus)
+        self.telem = TelemetryNode("TELEM_NODE", 0x03, self.bus)
+        self.stop_event = asyncio.Event()
+
+    async def rx_loop(self) -> None:
+        """非同步輪詢或讀取總線消息並派發至節點。"""
+        while not self.stop_event.is_set():
+            try:
+                # 兼容同步/非同步 bus.recv
+                if hasattr(self.bus, "recv"):
+                    msg = self.bus.recv(timeout=0.01)
+                    if msg:
+                        self.act.on_message_received(msg)
+                await asyncio.sleep(0.005)
+            except Exception:
+                await asyncio.sleep(0.01)
+
+    async def run_cluster(self, duration_sec: float = 0.5) -> Dict[str, Any]:
+        """啟動三節點並行執行預定時長。"""
+        task_gw = asyncio.create_task(self.gw.run(self.stop_event))
+        task_act = asyncio.create_task(self.act.run(self.stop_event))
+        task_telem = asyncio.create_task(self.telem.run(self.stop_event))
+        task_rx = asyncio.create_task(self.rx_loop())
+
+        await asyncio.sleep(duration_sec)
+        self.stop_event.set()
+
+        await asyncio.gather(task_gw, task_act, task_telem, task_rx, return_exceptions=True)
+
+        return {
+            "gw_frames": self.gw.frames_sent,
+            "act_frames": self.act.frames_sent,
+            "telem_frames": self.telem.frames_sent,
+            "act_degraded": self.act.degraded,
+            "degraded_transitions": self.act.degraded_transitions,
+            "recovery_transitions": self.act.recovery_transitions,
         }

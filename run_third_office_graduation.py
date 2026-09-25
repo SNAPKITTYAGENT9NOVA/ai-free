@@ -16,7 +16,6 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 if sys.stderr and hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from third_office_factory.chaos_tester.verifier import ChaosVerifier
 from third_office_factory.factory import ThirdOfficeFactory
 from third_office_factory.media_engine.capcut_bridge import CapCutBridgeAdapter
 
@@ -52,7 +51,7 @@ def main():
         (6.0, "Embedded MCU C UDS FSM prototype and SocketCAN sliding-window telemetry backend online.", "Microcontroller C state machine flashing dual flash partitions with real-time sliding window telemetry."),
     ]
 
-    pkg = bridge.build_project_package(
+    _ = bridge.build_project_package(
         project_id="PHANTOM_GOVERNANCE_MULTISIG_CAPCUT",
         project_title="PHANTOM GRID Governance & Runtime Core Commercial Pitch",
         narration_scenes=scenes,
@@ -115,6 +114,7 @@ def main():
         "tests/test_uds_bootloader_xcp.py",
         "tests/test_telemetry_dashboard.py",
         "tests/test_multi_node_cluster.py",
+        "tests/test_async_multi_node_cluster.py",
         "tests/test_uds_c_and_backend.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
