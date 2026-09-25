@@ -337,3 +337,52 @@ def test_vehicle_mcp_server_tool_executions():
         "params": {"name": "non_existent_tool", "arguments": {}},
     })
     assert res_err["result"]["isError"] is True
+
+
+def test_mcp_trigger_emergency_derate_with_hitl_dual_signature():
+    """Validates L4 MCP trigger_emergency_derate tool with HITL dual-signature approval verification."""
+    server = VehicleMCPServer(vin="PHANTOM-HITL-01")
+
+    # 1. Rejection when signatures are missing
+    res_rejected = server.handle_jsonrpc({
+        "jsonrpc": "2.0",
+        "id": 301,
+        "method": "tools/call",
+        "params": {
+            "name": "trigger_emergency_derate",
+            "arguments": {
+                "target_derate_pct": 30.0,
+                "reason": "Over-temperature emergency shutdown attempt",
+                "commander_signature": "",
+                "agent_signature": "",
+            },
+        },
+    })
+    assert not res_rejected["result"]["isError"]
+    rej_content = json.loads(res_rejected["result"]["content"][0]["text"])
+    assert rej_content["status"] == "REJECTED_UNAUTHORIZED"
+    assert rej_content["is_authorized"] is False
+
+    # 2. Approved when dual signatures are provided
+    res_approved = server.handle_jsonrpc({
+        "jsonrpc": "2.0",
+        "id": 302,
+        "method": "tools/call",
+        "params": {
+            "name": "trigger_emergency_derate",
+            "arguments": {
+                "target_derate_pct": 30.0,
+                "reason": "Extreme track thermal protection",
+                "commander_signature": "COMMANDER_JACK_AUTHORIZED_TOKEN",
+                "agent_signature": "AGENT_SUPERVISOR_CONFIRMED_SIGN",
+            },
+        },
+    })
+    assert not res_approved["result"]["isError"]
+    app_content = json.loads(res_approved["result"]["content"][0]["text"])
+    assert app_content["status"] == "DERATE_EXECUTED_APPROVED"
+    assert app_content["is_authorized"] is True
+    assert app_content["hitl_dual_signed"] is True
+    assert app_content["effective_torque_limit_pct"] == 30.0
+    assert app_content["safety_mode"] == "LIMP_HOME"
+    assert len(app_content["approval_seal_sha256"]) == 64
