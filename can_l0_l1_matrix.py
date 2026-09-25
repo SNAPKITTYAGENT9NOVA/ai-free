@@ -132,20 +132,28 @@ class E2EFrameCodec:
 class NodeSafetyState(enum.Enum):
     INIT = "INIT"
     NORMAL_OPERATION = "NORMAL_OPERATION"
+    STATE_NORMAL = "NORMAL_OPERATION"
     STATE_DEGRADED = "STATE_DEGRADED"
     WARNING_DEGRADED = "STATE_DEGRADED"
     LIMP_HOME = "LIMP_HOME"
     BUS_OFF = "BUS_OFF"
+    STATE_BUS_OFF_SAFE = "STATE_BUS_OFF_SAFE"
+    STATE_HARD_FAULT = "STATE_HARD_FAULT"
+    STATE_RESET = "STATE_RESET"
     EMERGENCY_SAFE_STOP = "EMERGENCY_SAFE_STOP"
 
 
 SAFETY_STATE_PRIORITY: Dict[NodeSafetyState, int] = {
     NodeSafetyState.INIT: 0,
     NodeSafetyState.NORMAL_OPERATION: 1,
+    NodeSafetyState.STATE_NORMAL: 1,
     NodeSafetyState.STATE_DEGRADED: 2,
     NodeSafetyState.LIMP_HOME: 3,
     NodeSafetyState.BUS_OFF: 4,
-    NodeSafetyState.EMERGENCY_SAFE_STOP: 5,
+    NodeSafetyState.STATE_BUS_OFF_SAFE: 4,
+    NodeSafetyState.STATE_HARD_FAULT: 5,
+    NodeSafetyState.EMERGENCY_SAFE_STOP: 6,
+    NodeSafetyState.STATE_RESET: 7,
 }
 
 

@@ -77,3 +77,70 @@ int validate_e2e_frame(const uint8_t *frame_8bytes, uint8_t data_id, uint8_t exp
     return 0; /* Verified Valid */
 }
 
+/* ========================================================================= */
+/* MCU Standard SAE J1850 E2E Implementation & State Machine Receiver        */
+/* ========================================================================= */
+
+#define E2E_POLYNOMIAL 0x1D
+#define E2E_INITIAL_CRC 0xFF
+#define E2E_FINAL_XOR   0xFF
+
+// 計算 CRC-8 (SAE J1850)
+uint8_t E2E_CalculateCRC8(const uint8_t *data, uint8_t length) {
+    uint8_t crc = E2E_INITIAL_CRC;
+    for (uint8_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            if (crc & 0x80) {
+                crc = (crc << 1) ^ E2E_POLYNOMIAL;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc ^ E2E_FINAL_XOR;
+}
+
+// 接收驗證狀態結構體
+typedef struct {
+    uint8_t expected_counter;
+    uint8_t err_count;
+    bool is_degraded;
+    uint8_t consecutive_good;
+} E2E_RxState_t;
+
+// 封包格式：Byte 0 低 4-bit 為 Counter；Byte 7 為 CRC8
+bool E2E_ValidateFrame(const uint8_t *payload, uint8_t dlc, E2E_RxState_t *state) {
+    if (dlc != 8 || state == NULL) return false;
+
+    uint8_t received_crc = payload[7];
+    uint8_t calculated_crc = E2E_CalculateCRC8(payload, 7);
+
+    if (received_crc != calculated_crc) {
+        state->err_count++;
+        state->consecutive_good = 0;
+        if (state->err_count >= 3) state->is_degraded = true;
+        return false;
+    }
+
+    uint8_t received_counter = payload[0] & 0x0F;
+    if (received_counter != state->expected_counter) {
+        state->err_count++;
+        state->consecutive_good = 0;
+        state->expected_counter = (received_counter + 1) & 0x0F;
+        if (state->err_count >= 3) state->is_degraded = true;
+        return false;
+    }
+
+    // 校驗成功
+    state->err_count = 0;
+    state->expected_counter = (received_counter + 1) & 0x0F;
+    state->consecutive_good++;
+
+    // 連續 10 幀 E2E 正確則自動切回 NORMAL
+    if (state->consecutive_good >= 10) {
+        state->is_degraded = false;
+    }
+    return true;
+}
+

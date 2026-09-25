@@ -22,6 +22,13 @@ from .governance import (
 from .memory import TriTierMemoryEngine
 from .watchdog import SafetyWatchdog, SafetyWatchdogState
 from .anti_entropy import AntiEntropyFilter
+from .e2e import (
+    Iso26262SafetyStateMachine,
+    Iso26262State,
+    E2ERxState,
+    calculate_crc8_sae_j1850,
+    build_e2e_frame,
+)
 
 __all__ = [
     "__version__",
@@ -33,4 +40,9 @@ __all__ = [
     "SafetyWatchdog",
     "SafetyWatchdogState",
     "AntiEntropyFilter",
+    "Iso26262SafetyStateMachine",
+    "Iso26262State",
+    "E2ERxState",
+    "calculate_crc8_sae_j1850",
+    "build_e2e_frame",
 ]
