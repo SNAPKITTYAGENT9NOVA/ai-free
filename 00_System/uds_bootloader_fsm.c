@@ -2,11 +2,179 @@
  * @file uds_bootloader_fsm.c
  * @brief L0: ISO 14229 UDS Bootloader Flashing State Machine in Embedded C (MISRA-C:2012)
  * Features: A/B Rolling Flash Sectors, Ping-Pong Buffering, 2.3ms Power-Cut Rollback, Streaming CRC32.
+ * Dual-API: Implements AUTOSAR static dispatch UDS_ProcessService and contextual engine.
  * Project: PHANTOM GRID Automotive L3-L5 Embedded Platform
  */
 
 #include "uds_bootloader_fsm.h"
 #include <string.h>
+
+/* Global bootloader context for lightweight static dispatch */
+UdsBootloaderContext_t g_bl_ctx = {
+    .session = UDS_SESSION_DEFAULT,
+    .bl_state = BL_STATE_IDLE,
+    .flash_target_addr = 0x00000000U,
+    .total_expected_bytes = 0U,
+    .received_bytes = 0U,
+    .expected_block_seq = 1U
+};
+
+void UDS_ResetService(void) {
+    g_bl_ctx.session = UDS_SESSION_DEFAULT;
+    g_bl_ctx.bl_state = BL_STATE_IDLE;
+    g_bl_ctx.flash_target_addr = 0x00000000U;
+    g_bl_ctx.total_expected_bytes = 0U;
+    g_bl_ctx.received_bytes = 0U;
+    g_bl_ctx.expected_block_seq = 1U;
+}
+
+/**
+ * @brief AUTOSAR-style UDS Service Dispatch Entry Point
+ * Implements: $10 02 (Session) -> $34 (RequestDownload) -> $36 (TransferData) -> $37 (RequestTransferExit)
+ */
+void UDS_ProcessService(
+    const uint8_t *rx_payload,
+    uint8_t rx_len,
+    uint8_t *tx_payload,
+    uint8_t *tx_len
+) {
+    if (rx_payload == NULL || rx_len == 0U || tx_payload == NULL || tx_len == NULL) {
+        if (tx_len != NULL) {
+            *tx_len = 0U;
+        }
+        return;
+    }
+
+    uint8_t sid = rx_payload[0];
+
+    switch (sid) {
+        /* 0x10 Diagnostic Session Control */
+        case 0x10U: {
+            if (rx_len < 2U) {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x10U;
+                tx_payload[2] = 0x13U; /* Incorrect Message Length */
+                *tx_len = 3U;
+                return;
+            }
+            uint8_t requested_session = rx_payload[1];
+            if (requested_session == (uint8_t)UDS_SESSION_PROGRAMMING) {
+                g_bl_ctx.session = UDS_SESSION_PROGRAMMING;
+                g_bl_ctx.bl_state = BL_STATE_IDLE;
+                tx_payload[0] = 0x50U; /* Positive Response */
+                tx_payload[1] = 0x02U;
+                *tx_len = 2U;
+            } else {
+                tx_payload[0] = 0x7FU; /* Negative Response */
+                tx_payload[1] = 0x10U;
+                tx_payload[2] = 0x12U; /* Sub-function Not Supported */
+                *tx_len = 3U;
+            }
+            break;
+        }
+
+        /* 0x34 Request Download */
+        case 0x34U: {
+            if (g_bl_ctx.session != UDS_SESSION_PROGRAMMING) {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x34U;
+                tx_payload[2] = 0x22U; /* Conditions Not Correct */
+                *tx_len = 3U;
+                return;
+            }
+            if (rx_len < 9U) {
+                /* Target address (3 bytes) and length (3 bytes) require at least 9 bytes total */
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x34U;
+                tx_payload[2] = 0x13U; /* Incorrect Message Length */
+                *tx_len = 3U;
+                return;
+            }
+
+            /* Parse target address and length */
+            g_bl_ctx.flash_target_addr = ((uint32_t)rx_payload[3] << 16U) |
+                                         ((uint32_t)rx_payload[4] << 8U)  |
+                                         (uint32_t)rx_payload[5];
+            g_bl_ctx.total_expected_bytes = ((uint32_t)rx_payload[6] << 16U) |
+                                            ((uint32_t)rx_payload[7] << 8U)  |
+                                            (uint32_t)rx_payload[8];
+            g_bl_ctx.received_bytes = 0U;
+            g_bl_ctx.expected_block_seq = 1U;
+            g_bl_ctx.bl_state = BL_STATE_DOWNLOAD_ACTIVE;
+
+            tx_payload[0] = 0x74U; /* Positive Response */
+            tx_payload[1] = 0x20U; /* MaxNumberOfBlockLength indicator */
+            tx_payload[2] = 0x00U;
+            tx_payload[3] = 0x40U; /* 64 Bytes per block */
+            *tx_len = 4U;
+            break;
+        }
+
+        /* 0x36 Transfer Data */
+        case 0x36U: {
+            if (g_bl_ctx.bl_state != BL_STATE_DOWNLOAD_ACTIVE &&
+                g_bl_ctx.bl_state != BL_STATE_FLASHING) {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x36U;
+                tx_payload[2] = 0x24U; /* Request Sequence Error */
+                *tx_len = 3U;
+                return;
+            }
+            if (rx_len < 2U) {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x36U;
+                tx_payload[2] = 0x13U; /* Incorrect Message Length */
+                *tx_len = 3U;
+                return;
+            }
+            uint8_t block_seq = rx_payload[1];
+            if (block_seq != g_bl_ctx.expected_block_seq) {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x36U;
+                tx_payload[2] = 0x73U; /* Wrong Block Sequence */
+                *tx_len = 3U;
+                return;
+            }
+
+            /* Record data received */
+            uint8_t data_len = rx_len - 2U;
+            g_bl_ctx.received_bytes += data_len;
+            g_bl_ctx.expected_block_seq = (uint8_t)((g_bl_ctx.expected_block_seq + 1U) & 0xFFU);
+            if (g_bl_ctx.expected_block_seq == 0U) {
+                g_bl_ctx.expected_block_seq = 1U;
+            }
+            g_bl_ctx.bl_state = BL_STATE_FLASHING;
+
+            tx_payload[0] = 0x76U; /* Positive Response */
+            tx_payload[1] = block_seq;
+            *tx_len = 2U;
+            break;
+        }
+
+        /* 0x37 Request Transfer Exit */
+        case 0x37U: {
+            if (g_bl_ctx.received_bytes >= g_bl_ctx.total_expected_bytes &&
+                g_bl_ctx.total_expected_bytes > 0U) {
+                g_bl_ctx.bl_state = BL_STATE_COMPLETED;
+                tx_payload[0] = 0x77U; /* Positive Response */
+                *tx_len = 1U;
+            } else {
+                tx_payload[0] = 0x7FU;
+                tx_payload[1] = 0x37U;
+                tx_payload[2] = 0x24U; /* Request Sequence Error / Byte Mismatch */
+                *tx_len = 3U;
+            }
+            break;
+        }
+
+        default:
+            tx_payload[0] = 0x7FU;
+            tx_payload[1] = sid;
+            tx_payload[2] = 0x11U; /* Service Not Supported */
+            *tx_len = 3U;
+            break;
+    }
+}
 
 /* IEEE 802.3 CRC32 polynomial table */
 static uint32_t crc32_for_byte(uint32_t byte_val) {

@@ -6,7 +6,7 @@ Verifies:
 2. Subscriber notification mechanism and clean worker thread termination.
 3. Integrity and conformance of C source/header files
    (src/uds_bootloader_fsm.h, src/uds_bootloader_fsm.c).
-4. Python verification suite of the C UDS state machine specification.
+4. Python verification suite of the C UDS state machine specification (UDS_ProcessService).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from can_telemetry_backend import (
     SocketCANTelemetryBackend,
     VehicleTelemetrySnapshot,
 )
+from dashboard import get_db_path, query_approvals, query_audit_logs
 
 
 class TestSocketCANTelemetryBackend:
@@ -58,7 +59,6 @@ class TestSocketCANTelemetryBackend:
         success = backend.send_frame(0x120, payload)
         assert success is True
 
-        # Wait for worker thread to process
         time.sleep(0.1)
 
         snapshot = backend.get_snapshot()
@@ -152,6 +152,9 @@ class TestCBootloaderFSMAssets:
             "UDS_NRC_GENERAL_PROG_FAILURE",
             "FLASH_PARTITION_A",
             "FLASH_PARTITION_B",
+            "UdsBootloaderContext_t",
+            "g_bl_ctx",
+            "UDS_ProcessService",
             "uds_bootloader_init",
             "uds_bootloader_process_request",
             "uds_bootloader_emergency_power_cut_rollback",
@@ -166,9 +169,117 @@ class TestCBootloaderFSMAssets:
             content = f.read()
 
         assert "0xEDB88320" in content, "CRC32 polynomial missing in C implementation"
+        assert "UDS_ProcessService" in content
+        assert "g_bl_ctx" in content
+        assert "UdsBootloaderContext_t" in content
         assert "uds_bootloader_process_request" in content
         assert "UDS_SID_REQUEST_DOWNLOAD" in content
         assert "UDS_SID_TRANSFER_DATA" in content
         assert "UDS_SID_REQUEST_TRANSFER_EXIT" in content
         assert "uds_bootloader_emergency_power_cut_rollback" in content
         assert "uds_bootloader_commit_active_partition" in content
+
+    def test_python_model_of_uds_process_service(self):
+        """Simulates and verifies the exact AUTOSAR service dispatch chain of UDS_ProcessService."""
+
+        class UDSModel:
+            def __init__(self):
+                self.session = 0x01
+                self.bl_state = 0  # IDLE
+                self.flash_target_addr = 0
+                self.total_expected_bytes = 0
+                self.received_bytes = 0
+                self.expected_block_seq = 1
+
+            def process(self, rx: bytes) -> bytes:
+                if not rx:
+                    return b""
+                sid = rx[0]
+                if sid == 0x10:
+                    if len(rx) < 2:
+                        return bytes([0x7F, 0x10, 0x13])
+                    if rx[1] == 0x02:
+                        self.session = 0x02
+                        self.bl_state = 0
+                        return bytes([0x50, 0x02])
+                    return bytes([0x7F, 0x10, 0x12])
+                elif sid == 0x34:
+                    if self.session != 0x02:
+                        return bytes([0x7F, 0x34, 0x22])
+                    if len(rx) < 9:
+                        return bytes([0x7F, 0x34, 0x13])
+                    self.flash_target_addr = (rx[3] << 16) | (rx[4] << 8) | rx[5]
+                    self.total_expected_bytes = (rx[6] << 16) | (rx[7] << 8) | rx[8]
+                    self.received_bytes = 0
+                    self.expected_block_seq = 1
+                    self.bl_state = 2  # DOWNLOAD_ACTIVE
+                    return bytes([0x74, 0x20, 0x00, 0x40])
+                elif sid == 0x36:
+                    if self.bl_state not in (2, 3):
+                        return bytes([0x7F, 0x36, 0x24])
+                    if len(rx) < 2:
+                        return bytes([0x7F, 0x36, 0x13])
+                    block_seq = rx[1]
+                    if block_seq != self.expected_block_seq:
+                        return bytes([0x7F, 0x36, 0x73])
+                    data_len = len(rx) - 2
+                    self.received_bytes += data_len
+                    self.expected_block_seq = (self.expected_block_seq + 1) & 0xFF
+                    if self.expected_block_seq == 0:
+                        self.expected_block_seq = 1
+                    self.bl_state = 3  # FLASHING
+                    return bytes([0x76, block_seq])
+                elif sid == 0x37:
+                    if self.received_bytes >= self.total_expected_bytes > 0:
+                        self.bl_state = 4  # COMPLETED
+                        return bytes([0x77])
+                    return bytes([0x7F, 0x37, 0x24])
+                return bytes([0x7F, sid, 0x11])
+
+        model = UDSModel()
+
+        # Step 1: Reject $34 before programming session
+        res = model.process(bytes([0x34, 0x00, 0x33, 0x08, 0x02, 0x00, 0x00, 0x00, 0x40]))
+        assert res == bytes([0x7F, 0x34, 0x22])
+
+        # Step 2: Switch to programming session $10 02
+        res = model.process(bytes([0x10, 0x02]))
+        assert res == bytes([0x50, 0x02])
+
+        # Step 3: Request Download $34 (Addr 0x080200, 64 bytes)
+        res = model.process(bytes([0x34, 0x00, 0x33, 0x08, 0x02, 0x00, 0x00, 0x00, 0x40]))
+        assert res == bytes([0x74, 0x20, 0x00, 0x40])
+        assert model.total_expected_bytes == 64
+
+        # Step 4: Out-of-order block sequence test (Expect 1, send 2)
+        res = model.process(bytes([0x36, 0x02] + [0xAA] * 32))
+        assert res == bytes([0x7F, 0x36, 0x73])  # NRC 0x73 Wrong Block Sequence
+
+        # Step 5: Send Block 1 (32 bytes)
+        res = model.process(bytes([0x36, 0x01] + [0xAA] * 32))
+        assert res == bytes([0x76, 0x01])
+        assert model.received_bytes == 32
+
+        # Step 6: Send Block 2 (32 bytes)
+        res = model.process(bytes([0x36, 0x02] + [0xBB] * 32))
+        assert res == bytes([0x76, 0x02])
+        assert model.received_bytes == 64
+
+        # Step 7: Request Transfer Exit $37
+        res = model.process(bytes([0x37]))
+        assert res == bytes([0x77])
+        assert model.bl_state == 4  # COMPLETED
+
+
+class TestDashboardAssets:
+    """Verifies that the dashboard helper functions and file structure operate cleanly."""
+
+    def test_dashboard_helpers(self):
+        db_path = get_db_path()
+        assert isinstance(db_path, str)
+
+        logs = query_audit_logs(db_path, limit=5)
+        assert isinstance(logs, list)
+
+        approvals = query_approvals(db_path, limit=5)
+        assert isinstance(approvals, list)

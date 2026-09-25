@@ -2,6 +2,7 @@
  * @file uds_bootloader_fsm.h
  * @brief L0: ISO 14229 UDS Bootloader Flashing State Machine Header (MISRA-C:2012 Compliant)
  * Features: A/B Dual Partition Atomic Commit & Rollback, Streaming CRC32, Static Memory Allocation.
+ * Dual-API: Provides both UDS_ProcessService (AUTOSAR static dispatch) and Contextual Multi-instance API.
  * Project: PHANTOM GRID Automotive L3-L5 Embedded Platform
  */
 
@@ -53,6 +54,8 @@ typedef enum {
     UDS_SESSION_EXTENDED    = 0x03U
 } UdsSessionMode;
 
+typedef UdsSessionMode UdsSession_t;
+
 /**
  * @brief Bootloader Finite State Machine States
  */
@@ -66,6 +69,18 @@ typedef enum {
     BOOT_STATE_ROLLBACK_SAFE,
     BOOT_STATE_ERROR
 } BootloaderFsmState;
+
+/**
+ * @brief Xiaomi AUTOSAR Lightweight State Enum
+ */
+typedef enum {
+    BL_STATE_IDLE = 0,
+    BL_STATE_UNLOCKED,
+    BL_STATE_DOWNLOAD_ACTIVE,
+    BL_STATE_FLASHING,
+    BL_STATE_COMPLETED,
+    BL_STATE_ERROR
+} BootloaderState_t;
 
 /**
  * @brief Flash Partition Slot Indicator (A/B Ping-Pong)
@@ -97,7 +112,44 @@ typedef struct {
 } UdsBootloaderContext;
 
 /**
- * @brief Initialize the UDS bootloader state machine context.
+ * @brief Xiaomi AUTOSAR Lightweight Bootloader Context Structure
+ */
+typedef struct {
+    UdsSession_t session;
+    BootloaderState_t bl_state;
+    uint32_t flash_target_addr;
+    uint32_t total_expected_bytes;
+    uint32_t received_bytes;
+    uint8_t  expected_block_seq;
+} UdsBootloaderContext_t;
+
+/**
+ * @brief Global Bootloader Context for Static Dispatch
+ */
+extern UdsBootloaderContext_t g_bl_ctx;
+
+/**
+ * @brief AUTOSAR-style UDS Service Dispatch Entry Point
+ * Handles core flashing service chain: $10 02 -> $34 -> $36 -> $37
+ * @param rx_payload Pointer to received CAN/UDS payload
+ * @param rx_len Length of received payload
+ * @param tx_payload Buffer to write response payload
+ * @param tx_len Pointer to store response payload length
+ */
+void UDS_ProcessService(
+    const uint8_t *rx_payload,
+    uint8_t rx_len,
+    uint8_t *tx_payload,
+    uint8_t *tx_len
+);
+
+/**
+ * @brief Initialize the global bootloader context g_bl_ctx.
+ */
+void UDS_ResetService(void);
+
+/**
+ * @brief Initialize the contextual UDS bootloader state machine context.
  * @param ctx Pointer to bootloader context.
  */
 void uds_bootloader_init(UdsBootloaderContext *ctx);
