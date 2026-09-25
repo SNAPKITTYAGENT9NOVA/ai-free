@@ -6,8 +6,15 @@ PHANTOM_GRID_GOVERNANCE_MULTISIG_RUNTIME
 
 import os
 import shutil
+import sys
 import zipfile
 from pathlib import Path
+
+# Ensure UTF-8 output on Windows console
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from third_office_factory.chaos_tester.verifier import ChaosVerifier
 from third_office_factory.factory import ThirdOfficeFactory
@@ -64,6 +71,8 @@ def main():
         "phantom_grid_core/phantom_grid/e2e.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
+        "verify_10k_e2e_vectors.py",
+        "02_Knowledge/CAN_MATRIX_E2E.md",
         "e2e_crc8_driver.c",
         "src/e2e_crc8_driver.c",
         "governance_multisig_gate.py",

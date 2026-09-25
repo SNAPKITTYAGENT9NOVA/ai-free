@@ -15,4 +15,4 @@ minversion = "8.0"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra -q --import-mode=importlib"
-pythonpath = [".", "src"]
+pythonpath = [".", "src", "src/clearing"]
