@@ -18,6 +18,7 @@ from .governance import (
     GovernanceProposal,
     ProposalType,
     ProposalStatus,
+    GovernanceDB,
 )
 from .memory import TriTierMemoryEngine
 from .watchdog import SafetyWatchdog, SafetyWatchdogState
@@ -36,6 +37,10 @@ from .pipeline import (
     TaskStatus,
     build_automotive_e2e_pipeline,
     build_secretary_xiaomi_pipeline,
+)
+from .hil import (
+    HILStressRunner,
+    MockCANBus,
 )
 
 __all__ = [
@@ -58,4 +63,7 @@ __all__ = [
     "TaskStatus",
     "build_automotive_e2e_pipeline",
     "build_secretary_xiaomi_pipeline",
+    "GovernanceDB",
+    "HILStressRunner",
+    "MockCANBus",
 ]

@@ -46,6 +46,7 @@ def main():
         (5.0, "Tri-Tier Memory Engine triggers instant blueprint solidification into 02_Knowledge upon spark_Aegis_Guardian birth.", "Geometric CAD wireframe of absolute defense aegis crystallizing into persistent memory layers."),
         (5.0, "Safety Watchdog locks down hardware to SAFE_STATE_FAIL_SILENT within 0ms during PARADOX_CHAOS.", "Automotive ECU status board cutting PWM duty to 0% and power to 0% with millisecond latency."),
         (4.0, "Anti-Entropy Filter purifies bus egress, stripping AI boilerplates for 100% actionable command density.", "Cyberpunk terminal data stream filtering out conversational noise, leaving pristine binary directives."),
+        (5.0, "Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.", "Automotive HIL test bench injecting fault frames into CAN bus with real-time waveform monitors and oscilloscope."),
     ]
 
     pkg = bridge.build_project_package(
@@ -55,7 +56,12 @@ def main():
     )
     print(f"🎬 Stage 2 Passed: CapCut Package Generated at {capcut_dir} (SRT + Storyboard JSON)")
 
-    # 3. Zip Release Packaging
+    # 3. Rebuild phantom_grid_core_v1.0.tar.gz
+    import tarfile
+    with tarfile.open("phantom_grid_core_v1.0.tar.gz", "w:gz") as tar:
+        tar.add("phantom_grid_core", arcname="phantom_grid_core")
+
+    # 4. Zip Release Packaging
     packager_dir = Path("third_office_factory/packager")
     packager_dir.mkdir(parents=True, exist_ok=True)
     zip_path = packager_dir / "PHANTOM_GOVERNANCE_MULTISIG_RELEASE.zip"
@@ -70,10 +76,14 @@ def main():
         "phantom_grid_core/phantom_grid/anti_entropy.py",
         "phantom_grid_core/phantom_grid/e2e.py",
         "phantom_grid_core/phantom_grid/pipeline.py",
+        "phantom_grid_core/phantom_grid/hil.py",
         "pipeline_orchestrator.py",
         "tests/test_pipeline_orchestrator.py",
         "audit_governance.py",
         "tests/test_audit_governance_pipeline.py",
+        "hil_stress_test.py",
+        "00_System/hil_stress_test.py",
+        "tests/test_hil_stress.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
         "verify_10k_e2e_vectors.py",

@@ -17,3 +17,7 @@ Safety Watchdog locks down hardware to SAFE_STATE_FAIL_SILENT within 0ms during 
 5
 00:00:20,000 --> 00:00:24,000
 Anti-Entropy Filter purifies bus egress, stripping AI boilerplates for 100% actionable command density.
+
+6
+00:00:24,000 --> 00:00:29,000
+Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.
