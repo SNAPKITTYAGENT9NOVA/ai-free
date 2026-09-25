@@ -14,5 +14,5 @@ check_untyped_defs = true
 minversion = "8.0"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-python_functions = ["test_*"]
 addopts = "-ra -q --import-mode=importlib"
+pythonpath = [".", "src"]

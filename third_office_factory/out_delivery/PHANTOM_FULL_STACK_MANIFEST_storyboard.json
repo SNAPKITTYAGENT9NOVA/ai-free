@@ -1,0 +1,38 @@
+{
+  "project_id": "PHANTOM_FULL_STACK_MANIFEST",
+  "title": "PHANTOM GRID L0-L5 Full Stack Automotive Architecture",
+  "workspace_url": "https://www.capcut.com/editor/DEAAE8F4-CCDA-4BC8-8438-0E4C89BFD41B?enter_from=create_new&from_page=work_space&__action_from=magic_tools&position=magic_tools&scenario=custom&workspaceId=7688723178012540935&spaceId=7688722658510734343",
+  "full_script": "PHANTOM GRID Sovereign Automotive Architecture: L0 to L5 Full-Stack Penetration. Layer 0 to 1 CAN physical bus with rolling Alive Counter and SAE J1850 CRC8 validation. Layer 2 to 3 SOA SOME/IP gateway and edge autonomous healing engine with Level 1 and 2 derating. Layer 4 to 5 In-Vehicle MCP Server, HITL dual-signature governance, and Nostr fleet mesh broadcast. Fully verified, tested, and containerized for zero-hallucination deployment.",
+  "scenes": [
+    {
+      "index": 1,
+      "duration": 5.0,
+      "narration": "PHANTOM GRID Sovereign Automotive Architecture: L0 to L5 Full-Stack Penetration.",
+      "visual_prompt": "Futuristic digital twin HUD with cybernetic vehicle schematics."
+    },
+    {
+      "index": 2,
+      "duration": 8.0,
+      "narration": "Layer 0 to 1 CAN physical bus with rolling Alive Counter and SAE J1850 CRC8 validation.",
+      "visual_prompt": "Oscilloscope waveforms and ISO 26262 bus-off ladder recovery state machine."
+    },
+    {
+      "index": 3,
+      "duration": 8.0,
+      "narration": "Layer 2 to 3 SOA SOME/IP gateway and edge autonomous healing engine with Level 1 and 2 derating.",
+      "visual_prompt": "Dual-loop telemetry dashboard showing 75C and 85C power clamp intervention."
+    },
+    {
+      "index": 4,
+      "duration": 7.0,
+      "narration": "Layer 4 to 5 In-Vehicle MCP Server, HITL dual-signature governance, and Nostr fleet mesh broadcast.",
+      "visual_prompt": "Command center showing Commander Jack Hu dual-signing emergency operations and Nostr mesh alert."
+    },
+    {
+      "index": 5,
+      "duration": 5.0,
+      "narration": "Fully verified, tested, and containerized for zero-hallucination deployment.",
+      "visual_prompt": "Official graduation certificate and golden release seal."
+    }
+  ]
+}

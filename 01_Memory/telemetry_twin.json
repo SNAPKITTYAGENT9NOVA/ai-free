@@ -1,0 +1,12 @@
+{
+  "vin": "PHANTOM-GRID-2026",
+  "motor_rpm": 2450.0,
+  "battery_voltage_mv": 396000,
+  "temperature_c": 52.0,
+  "torque_limit_pct": 100.0,
+  "motor_degraded": false,
+  "safety_mode": "NORMAL_OPERATION",
+  "health_score": 100.0,
+  "e2e_valid": true,
+  "updated_at": "2026-09-25T12:00:00Z"
+}

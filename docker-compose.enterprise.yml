@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # L0-L1: CAN 總線三節點拓撲集群
+  can_cluster:
+    build:
+      context: .
+      dockerfile: Dockerfile.can_cluster
+    container_name: can_cluster_node
+    network_mode: "host"
+    restart: always
+    environment:
+      - CAN_INTERFACE=vcan0
+
+  # L2-L3: SOME/IP 服務網關、數位孿生與邊緣自愈引擎
+  gateway_healer:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: gateway_healer_engine
+    network_mode: "host"
+    depends_on:
+      - can_cluster
+    restart: always
+
+  # L4: 車載 MCP 服務端 (提供 👑 小幫手 與 秘書處 調度)
+  vehicle_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: vehicle_mcp_server
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./01_Memory/audit_log.db:/app/audit_log.db
+    restart: always
+
+  # L5: Nostr 去中心化機隊協同中繼與監控儀表
+  fleet_mesh:
+    build:
+      context: .
+      dockerfile: Dockerfile.fleet
+    container_name: fleet_mesh_node
+    ports:
+      - "8501:8501" # Streamlit 看板
+    depends_on:
+      - gateway_healer
+    restart: always
+
