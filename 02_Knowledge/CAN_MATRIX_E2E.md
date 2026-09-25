@@ -26,6 +26,19 @@
 - **輸出反轉 (Reflect Output)**: False
 - **異或輸出 (Final XOR)**: `0xFF`
 
+### 📋 硬體通訊協議基線規格清單 (Baseline Architecture Specs)
+
+| 欄位 / 參數 | 規範值 | 說明與安全約束 |
+| :--- | :--- | :--- |
+| **Baudrate** | 500 kbps (11-bit Standard ID) | 標稱傳輸速率，採樣點固定 75%～80% |
+| **Payload DLC** | 8 Bytes 固定長度 | 不足 8 字節一律補 0x55 填充 |
+| **Byte 0 (Counter)** | Bits [3:0] (0x0～0xF) | 滾動 Alive Counter，單調遞增 |
+| **Byte 1..6** | Functional Data | 控制器負載、致動指令與即時遙測訊號 |
+| **Byte 7 (CRC)** | CRC-8 (SAE J1850) | 多項式 0x1D，初值 0xFF，異或值 0xFF |
+| **容錯閾值** | 連續 3 幀錯誤 | 超過閾值強制進入 STATE_DEGRADED 降級模式 (50% 功率壓制) |
+| **自癒遲滯** | 連續 10 幀正確 | 連續 10 幀合規 E2E 報文自動回正至 STATE_NORMAL (100% 功率) |
+| **Bus-Off 恢復** | 100ms / 1000ms | 階梯重試（前 3 次快恢復，其後轉入慢恢復 / 永久鎖止 DTC 0xD001） |
+
 ---
 
 ## 2. CAN 總線節點拓撲與識別碼分配矩陣 (CAN Matrix)

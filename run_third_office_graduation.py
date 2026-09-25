@@ -47,6 +47,7 @@ def main():
         (5.0, "Safety Watchdog locks down hardware to SAFE_STATE_FAIL_SILENT within 0ms during PARADOX_CHAOS.", "Automotive ECU status board cutting PWM duty to 0% and power to 0% with millisecond latency."),
         (4.0, "Anti-Entropy Filter purifies bus egress, stripping AI boilerplates for 100% actionable command density.", "Cyberpunk terminal data stream filtering out conversational noise, leaving pristine binary directives."),
         (5.0, "Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.", "Automotive HIL test bench injecting fault frames into CAN bus with real-time waveform monitors and oscilloscope."),
+        (5.0, "Architecture Assets Solidification: 00_System roles, 01_Memory changelog, and 02_Knowledge specifications baseline complete.", "Holographic three-tier architectural blueprint crystallizing into immutable automotive standard assets."),
     ]
 
     pkg = bridge.build_project_package(
@@ -83,11 +84,15 @@ def main():
         "tests/test_audit_governance_pipeline.py",
         "hil_stress_test.py",
         "00_System/hil_stress_test.py",
+        "00_System/AGENTS.md",
+        "01_Memory/changelog_phase3.md",
+        "02_Knowledge/CAN_MATRIX_E2E.md",
+        "02_Knowledge/SAFE_STATE_TRANS.md",
+        "02_Knowledge/HIL_TEST_SUITE.md",
         "tests/test_hil_stress.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
         "verify_10k_e2e_vectors.py",
-        "02_Knowledge/CAN_MATRIX_E2E.md",
         "e2e_crc8_driver.c",
         "src/e2e_crc8_driver.c",
         "governance_multisig_gate.py",
