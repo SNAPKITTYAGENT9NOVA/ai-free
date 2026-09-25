@@ -22,6 +22,7 @@ import enum
 import hashlib
 import json
 import os
+import socket
 import sqlite3
 import struct
 import sys
@@ -29,13 +30,14 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+from audit_governance import GovernanceDB
 from digital_twin_state import DigitalTwinMirrorEngine, DigitalTwinState
 from soa_gateway_twin import (
     EVENT_ID_ACTUATOR_STATUS,
@@ -43,6 +45,8 @@ from soa_gateway_twin import (
     SOAGatewayTwin,
     SOMEIPMessage,
 )
+
+SOMEIP_HEADER_LEN = 16
 
 
 class HealingLevel(enum.IntEnum):
@@ -87,22 +91,153 @@ class AutonomousHealer:
 
     def __init__(
         self,
+        listen_ip: Union[str, DigitalTwinMirrorEngine, None] = "127.0.0.1",
+        port: Union[int, str, None] = 30490,
         twin_engine: Optional[DigitalTwinMirrorEngine] = None,
-        db_path: str = ":memory:",
+        db_path: str = "audit_log.db",
         vin: str = "PHANTOM-GRID-2026",
+        bind_socket: bool = True,
+        **kwargs: Any,
     ):
+        if isinstance(listen_ip, DigitalTwinMirrorEngine):
+            twin_engine = listen_ip
+            listen_ip = "127.0.0.1"
+        if isinstance(port, str):
+            db_path = port
+            port = 30490
+        if "db_path" in kwargs:
+            db_path = kwargs["db_path"]
+        if "vin" in kwargs:
+            vin = kwargs["vin"]
+        if "twin_engine" in kwargs:
+            twin_engine = kwargs["twin_engine"]
+
+        self.listen_ip = listen_ip or "127.0.0.1"
+        self.port = port or 30490
         self.vin = vin
         self.db_path = db_path
         self.twin_engine = twin_engine or DigitalTwinMirrorEngine(vin=vin)
         self.current_level = HealingLevel.LEVEL_0_NORMAL
+        self.power_limit_pct = 100
         self._lock = threading.RLock()
         self._decision_callbacks: List[Callable[[HealingDecision], None]] = []
+
+        # Bind UDP socket for SOME/IP listening if requested
+        self.sock: Optional[socket.socket] = None
+        if bind_socket:
+            try:
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.sock.bind((self.listen_ip, self.port))
+            except OSError:
+                try:
+                    self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    self.sock.bind((self.listen_ip, 0))
+                except Exception:
+                    self.sock = None
+
+        # Governance & Audit Database
+        self.db = GovernanceDB(db_path=self.db_path)
 
         # Initialize SQLite Audit Log Database
         self._init_sqlite_db()
 
         # Connect to Digital Twin HPC callback for continuous monitoring
         self.twin_engine.register_hpc_subscriber(self._on_digital_twin_updated)
+
+    def trigger_healing_action(self, action_name: str, new_power_limit: int, reason: str) -> None:
+        """執行在線自愈策略與審計日誌歸檔"""
+        self.power_limit_pct = new_power_limit
+        print(f"\n⚡ [自我修復中樞] 觸發干預策略: {action_name}")
+        print(f"   原因: {reason} | 功率上限調整至: {self.power_limit_pct}%")
+
+        # 寫入 SQLite 審計記錄
+        self.db.log_approval(
+            task_id=f"HEAL_{int(time.time())}",
+            operator="🤖 AutonomousHealer",
+            status="EXECUTED",
+            details=f"策略: {action_name}, 限制: {new_power_limit}%, 原因: {reason}",
+            action_type=action_name,
+        )
+
+        # 同步更新當前安全等級與數位孿生
+        if new_power_limit >= 100:
+            target_level = HealingLevel.LEVEL_0_NORMAL
+            mode = "NORMAL_OPERATION"
+            degraded = False
+        elif new_power_limit >= 70:
+            target_level = HealingLevel.LEVEL_1_DYNAMIC_DERATING
+            mode = "DERATED_LEVEL_1"
+            degraded = True
+        elif new_power_limit > 0:
+            target_level = HealingLevel.LEVEL_2_LIMP_HOME
+            mode = "LIMP_HOME"
+            degraded = True
+        else:
+            target_level = HealingLevel.LEVEL_3_EMERGENCY_STOP
+            mode = "EMERGENCY_SAFE_STOP"
+            degraded = True
+
+        self.current_level = target_level
+        if self.twin_engine:
+            with self.twin_engine._lock:
+                self.twin_engine.state.torque_limit_pct = float(new_power_limit)
+                self.twin_engine.state.motor_degraded = degraded
+                self.twin_engine.state.safety_mode = mode
+                self.twin_engine.state.health_score = self.twin_engine.state.calculate_health_score()
+
+    def process_incoming_event(self, packet: bytes) -> Optional[HealingDecision]:
+        """解析 SOME/IP 數位孿生健康事件並執行防線判定"""
+        if len(packet) < SOMEIP_HEADER_LEN:
+            return None
+
+        header = packet[:SOMEIP_HEADER_LEN]
+        payload = packet[SOMEIP_HEADER_LEN:]
+
+        msg_id, length, req_id, p_ver, if_ver, msg_type, ret_code = struct.unpack("!IIIBBBB", header)
+        service_id = (msg_id >> 16) & 0xFFFF
+        event_id = msg_id & 0xFFFF
+
+        # 監聽健康服務 (Service 0x1002, Event 0x8002: 電壓與溫度)
+        if service_id == 0x1002 and event_id == 0x8002:
+            if len(payload) >= 5:
+                voltage_mv, temp_c = struct.unpack("!IB", payload[:5])
+            else:
+                return None
+
+            # Level 2 防線：極限高溫降額
+            if temp_c >= 85 and self.power_limit_pct > 50:
+                self.trigger_healing_action("EMERGENCY_DERATING", 50, f"溫度過高 ({temp_c}°C)")
+            # Level 1 防線：邊界高溫啟動降額
+            elif temp_c >= 75 and self.power_limit_pct > 70:
+                self.trigger_healing_action("THERMAL_TRIMMING", 70, f"溫度上升 ({temp_c}°C)")
+            # 狀態自愈回正：溫度降至 60°C 以下恢復全功率
+            elif temp_c < 60 and self.power_limit_pct < 100:
+                self.trigger_healing_action("AUTO_RECOVERY", 100, f"溫度恢復正常 ({temp_c}°C)")
+
+            return self.evaluate_and_heal(
+                temperature_c=float(temp_c),
+                battery_voltage_mv=voltage_mv,
+                source="SOMEIP_0x8002_UDP",
+            )
+        return None
+
+    def start_loop(self) -> None:
+        """啟動 UDP 30490 埠即時監聽循環"""
+        print("🛡️ [自我修復中樞] 監聽啟動...")
+        if not self.sock:
+            print("⚠️ [自我修復中樞] 無法綁定 UDP 套接字，退出監聽。")
+            return
+        while True:
+            try:
+                data, _ = self.sock.recvfrom(1024)
+                self.process_incoming_event(data)
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f"⚠️ [自我修復中樞] 接收異常: {e}")
+                break
 
     # ------------------------------------------------------------------------
     # SQLite Audit Database Management
@@ -468,6 +603,27 @@ class AutonomousHealer:
                 timestamp=now,
             )
             return decision
+
+    def close(self) -> None:
+        """Closes all database connections and UDP sockets safely."""
+        with self._lock:
+            if hasattr(self, "_conn") and self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+            if hasattr(self, "sock") and self.sock is not None:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+            if hasattr(self, "db") and self.db is not None:
+                try:
+                    self.db.close()
+                except Exception:
+                    pass
 
 
 # ============================================================================
