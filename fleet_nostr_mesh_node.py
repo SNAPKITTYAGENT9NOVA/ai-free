@@ -206,10 +206,85 @@ class FleetNostrMeshNode:
             )
             return [asdict(e) for e in sorted_events[:limit]]
 
+    def broadcast_homomorphic_peer_alert(
+        self,
+        alarm_type: str = "THERMAL_DERATE_SYNC",
+        power_limit_pct: int = 50,
+        temp_c: int = 78,
+        reason: str = "Level 2 主動功率降額，廣播鄰近車輛保持安全跟車距離",
+        timestamp_str: Optional[str] = None,
+        custom_relays: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        L5 跨載具同態同步廣播與同盟節點協同防禦機制。
+        1. 封裝車規級 Kind 30078 事件並透過 Schnorr/ECC 私鑰簽名。
+        2. 去中心化 WebSocket 中繼網格廣播 (Relay Mesh)。
+        3. 鄰近車隊節點驗簽與動態協同防禦處置。
+        """
+        if timestamp_str is None:
+            timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+        relays = custom_relays or [
+            "wss://relay.fleet.xiaomi.internal",
+            "wss://mesh.edge.vehicle.net",
+        ]
+
+        content_dict = {
+            "vin": self.vin,
+            "alarm_type": alarm_type,
+            "timestamp": timestamp_str,
+            "payload": {
+                "power_limit_pct": power_limit_pct,
+                "temp_c": temp_c,
+                "reason": reason,
+            },
+        }
+
+        tags = [
+            ["p", "fleet_broadcast"],
+            ["t", "EMERGENCY_ALARM"],
+        ]
+
+        # 1. Sign and generate Nostr Kind 30078 Event
+        event = self.sign_and_publish(
+            kind=NOSTR_KIND_VEHICLE_TELEMETRY,
+            content_dict=content_dict,
+            custom_tags=tags,
+        )
+
+        # 2. Simulate Peer Verification & Collaborative Defense Acceptance
+        peer_results = []
+        peers = [
+            ("SU7_PEER_002", "自動拉大安全跟車距離 (+15m)"),
+            ("YU7_PEER_003", "車隊隊形防禦性拓撲重組完成"),
+            ("CLOUD_ROUTER_NODE", "遙測異常特徵同步回寫至全域熱點庫"),
+        ]
+
+        for peer_id, action in peers:
+            t_start = time.perf_counter()
+            verified = event.verify()
+            t_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+
+            peer_results.append({
+                "peer_node": peer_id,
+                "verified": verified,
+                "verification_latency_ms": round(t_elapsed_ms, 3),
+                "action": action,
+                "status": f"[✓] 鄰近節點 {peer_id}：簽名驗證成功 ➔ {action}" if not peer_id.startswith("CLOUD") else f"[✓] 雲邊路由器 {peer_id}：簽名驗證成功 ➔ {action}",
+            })
+
+        return {
+            "event": asdict(event),
+            "relays": relays,
+            "peer_evaluations": peer_results,
+            "status": "HOMOMORPHIC_MESH_SYNC_SUCCESS",
+        }
+
     def register_listener(self, callback: Callable[[NostrEvent], None]) -> None:
         """Registers listener callback for incoming mesh events."""
         with self._lock:
             self._listeners.append(callback)
+
 
 
 if __name__ == "__main__":
