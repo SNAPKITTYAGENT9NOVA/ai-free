@@ -151,6 +151,20 @@ class AutonomousHealer:
         # Connect to Digital Twin HPC callback for continuous monitoring
         self.twin_engine.register_hpc_subscriber(self._on_digital_twin_updated)
 
+        # Cloud-Edge Hybrid Router & L5 Fleet Nostr Mesh hooks
+        self.hybrid_router: Optional[Any] = None
+        self.fleet_mesh: Optional[Any] = None
+        self.last_nostr_broadcast: Optional[Dict[str, Any]] = None
+        self.last_routing_decision: Optional[Any] = None
+
+    def attach_hybrid_router(self, router: Any) -> None:
+        """Attaches Cloud-Edge Hybrid Router for multi-tier dynamic routing."""
+        self.hybrid_router = router
+
+    def attach_fleet_mesh(self, fleet_mesh: Any) -> None:
+        """Attaches L5 Fleet Nostr Mesh Node for decentralized peer broadcast."""
+        self.fleet_mesh = fleet_mesh
+
     def trigger_healing_action(
         self, action_name: str, new_power_limit: int, reason: str
     ) -> None:
@@ -208,6 +222,43 @@ class AutonomousHealer:
                 self.twin_engine.state.health_score = (
                     self.twin_engine.state.calculate_health_score()
                 )
+
+        # 1. Cloud-Edge Hybrid Dynamic Routing
+        if self.hybrid_router is not None:
+            try:
+                urgency = "SAFETY_CRITICAL" if target_level.value >= 1 else "NORMAL"
+                self.last_routing_decision = self.hybrid_router.route_request(
+                    task_type=f"healing_{action_name.lower()}",
+                    urgency=urgency,
+                    context={"power_limit": new_power_limit, "reason": reason},
+                )
+            except Exception:
+                pass
+
+        # 2. L5 Decentralized Fleet Nostr Mesh Broadcast
+        if self.fleet_mesh is not None and target_level.value >= 1:
+            try:
+                current_temp = 75
+                if self.twin_engine and hasattr(self.twin_engine, "state"):
+                    current_temp = int(self.twin_engine.state.temp_celsius)
+                self.last_nostr_broadcast = self.fleet_mesh.broadcast_homomorphic_peer_alert(
+                    alarm_type=action_name,
+                    power_limit_pct=new_power_limit,
+                    temp_c=current_temp,
+                    reason=f"{action_name}: {reason}",
+                )
+                self.fleet_mesh.broadcast_healing_alert(
+                    {
+                        "action": action_name,
+                        "level": target_level.value,
+                        "power_limit_pct": new_power_limit,
+                        "reason": reason,
+                        "safety_mode": mode,
+                        "vin": self.vin,
+                    }
+                )
+            except Exception:
+                pass
 
     def process_incoming_event(self, packet: bytes) -> Optional[HealingDecision]:
         """解析 SOME/IP 數位孿生健康事件並執行防線判定"""
