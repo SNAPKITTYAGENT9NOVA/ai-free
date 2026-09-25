@@ -30,6 +30,12 @@ from .e2e import (
     build_e2e_frame,
 )
 
+from .pipeline import (
+    TaskPipeline,
+    AgentTask,
+    TaskStatus,
+)
+
 __all__ = [
     "__version__",
     "MultiSigGovernanceGate",
@@ -45,4 +51,7 @@ __all__ = [
     "E2ERxState",
     "calculate_crc8_sae_j1850",
     "build_e2e_frame",
+    "TaskPipeline",
+    "AgentTask",
+    "TaskStatus",
 ]
