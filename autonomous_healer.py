@@ -83,6 +83,7 @@ class AutonomousHealer:
     VOLT_LVL1_THRESHOLD_MV: int = 350000      # < 350V -> Level 1 (70% torque)
     VOLT_LVL2_THRESHOLD_MV: int = 320000      # < 320V -> Level 2 (30% torque)
     VOLT_RECOVERY_MV: int = 360000            # > 360V -> Voltage healthy
+    DEFAULT_DB_FILE: str = "audit_log.db"
 
     def __init__(
         self,
