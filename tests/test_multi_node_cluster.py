@@ -6,6 +6,7 @@ Tests for Axis 3: Multi-Node Cluster Integration & SOME/IP Signal-to-Service Gat
 from __future__ import annotations
 
 import struct
+from typing import List, Tuple
 
 from multi_node_cluster import (
     MasterGatewayNode,
@@ -118,3 +119,63 @@ def test_sdk_exports_cluster_and_bootloader() -> None:
     assert SDKXcp is not None
     assert SDKCalMap is not None
     assert SDKGateway is not None
+
+
+def test_uds_someip_event_routing() -> None:
+    gateway = MultiNodeClusterGateway()
+    dispatched_events: List[Tuple[SomeIpHeader, bytes]] = []
+
+    def on_uds_event(header: SomeIpHeader, payload: bytes) -> None:
+        dispatched_events.append((header, payload))
+
+    gateway.subscribe_event(MultiNodeClusterGateway.EVENT_UDS_BOOTLOADER, on_uds_event)
+
+    packet = gateway.route_uds_to_someip(
+        session=0x02,
+        bl_state=0x03,
+        active_partition=0x00,
+        block_seq=0x05,
+        received_bytes=2048,
+        total_expected_bytes=4096,
+    )
+
+    assert len(packet) == 16 + 13  # 16-byte header + 13-byte payload
+    header, payload = SomeIpHeader.deserialize(packet)
+    assert header.service_id == 0x1000
+    assert header.method_or_event_id == 0x8003
+    assert len(dispatched_events) == 1
+
+    (
+        session,
+        bl_state,
+        active_part,
+        block_seq,
+        rx_bytes,
+        total_bytes,
+        progress,
+    ) = struct.unpack(">BBBBI I B", payload)
+
+    assert session == 0x02
+    assert bl_state == 0x03
+    assert active_part == 0x00
+    assert block_seq == 0x05
+    assert rx_bytes == 2048
+    assert total_bytes == 4096
+    assert progress == 50
+
+
+def test_fleet_nostr_broadcast_integration() -> None:
+    gateway = MultiNodeClusterGateway()
+    event = gateway.route_and_broadcast_safety_event(
+        node_id="ACTUATOR_0x280",
+        old_state="NORMAL",
+        new_state="DEGRADED",
+        details="E2E CRC Error limit exceeded",
+    )
+
+    assert event["kind"] == 30079
+    assert len(event["id"]) == 64
+    assert len(event["sig"]) == 128
+    assert ["t", "EMERGENCY_ALARM"] in event["tags"]
+    assert ["node", "ACTUATOR_0x280"] in event["tags"]
+    assert len(gateway.dispatched_nostr_events) == 1
