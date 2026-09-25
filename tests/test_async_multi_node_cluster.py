@@ -58,7 +58,7 @@ async def test_gateway_node_frame_generation():
     stop_event = asyncio.Event()
 
     task = asyncio.create_task(gw.run(stop_event))
-    await asyncio.sleep(0.08)  # Enough for 5-8 control frames and 1 heartbeat frame
+    await asyncio.sleep(0.10)  # Enough for 8-10 control frames and heartbeat frames
     stop_event.set()
     await task
 

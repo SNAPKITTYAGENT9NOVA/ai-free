@@ -462,12 +462,11 @@ class GatewayNode(BaseNode):
             self._send_can_message(0x120, data)
             self.frames_sent += 1
 
-            # 每 50ms (每 5 次 10ms 循環) 發送一次 0x080 心跳廣播幀
-            heartbeat_ticks += 1
-            if heartbeat_ticks >= 5:
-                heartbeat_ticks = 0
+            # 每 50ms (每 5 次 10ms 循環) 發送一次 0x080 心跳廣播幀 (啟動即發送)
+            if heartbeat_ticks % 5 == 0:
                 hb_data = bytes([cnt, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF])
                 self._send_can_message(0x080, hb_data)
+            heartbeat_ticks += 1
 
             await asyncio.sleep(0.01)  # 10ms 週期
 
