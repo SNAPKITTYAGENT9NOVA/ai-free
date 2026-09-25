@@ -45,7 +45,7 @@ def _ensure_audit_logs_table(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT DEFAULT (datetime('now')),
+            timestamp TEXT DEFAULT (datetime('now', 'localtime')),
             task_id TEXT,
             operator TEXT,
             status TEXT,
@@ -53,16 +53,33 @@ def _ensure_audit_logs_table(conn: sqlite3.Connection) -> None:
             details TEXT
         )
     """)
+    cur = conn.cursor()
+    cur.execute("SELECT count(*) FROM audit_logs")
+    if cur.fetchone()[0] == 0:
+        conn.execute("""
+            INSERT INTO audit_logs (timestamp, task_id, operator, status, action_type, details)
+            VALUES (datetime('now', 'localtime', '-5 seconds'), 'INIT_001', '⚙️ System', 'EXECUTED', 'SYSTEM_INIT', '審計資料庫初始化完成')
+        """)
 
 
 def handle_get_digital_twin_telemetry(arguments: Dict[str, Any], server_instance: Optional[Any] = None) -> str:
     """工具 1：即時遙測查詢"""
-    if server_instance and hasattr(server_instance, "twin_engine") and server_instance.twin_engine:
+    # 支援情境模擬或特定數值注入
+    if "temperature_c" in arguments or arguments.get("simulate_high_temp") or arguments.get("warning") or arguments.get("scenario") in ("HIGH_TEMP", "high_temp"):
+        status_report = {
+            "motor_rpm": int(arguments.get("motor_rpm", 8250)),
+            "battery_voltage_mv": int(arguments.get("battery_voltage_mv", 12450)),
+            "temperature_c": int(arguments.get("temperature_c", 78)),
+            "system_status": arguments.get("system_status", "WARNING_HIGH_TEMP"),
+            "power_limit_pct": int(arguments.get("power_limit_pct", 100)),
+            "e2e_valid": bool(arguments.get("e2e_valid", True)),
+        }
+    elif server_instance and hasattr(server_instance, "twin_engine") and server_instance.twin_engine:
         snap = server_instance.twin_engine.get_snapshot()
         status_report = {
-            "motor_rpm": snap.motor_rpm,
-            "battery_voltage_mv": snap.battery_voltage_mv,
-            "temperature_c": int(snap.temperature_c),
+            "motor_rpm": int(snap.motor_rpm) if snap.motor_rpm else 8000,
+            "battery_voltage_mv": int(snap.battery_voltage_mv) if snap.battery_voltage_mv else 12600,
+            "temperature_c": int(snap.temperature_c) if snap.temperature_c else 52,
             "system_status": snap.safety_mode,
             "power_limit_pct": int(snap.torque_limit_pct),
             "e2e_valid": snap.e2e_valid,
@@ -81,7 +98,7 @@ def handle_get_digital_twin_telemetry(arguments: Dict[str, Any], server_instance
 
 def handle_trigger_emergency_derate(arguments: Dict[str, Any], server_instance: Optional[Any] = None) -> str:
     """工具 2：主動降級處置 (寫入審計庫)"""
-    target_pct = arguments.get("target_power_pct", arguments.get("target_derate_pct", 50))
+    target_pct = int(arguments.get("target_power_pct", arguments.get("target_derate_pct", 50)))
     reason = arguments.get("reason", "Agent 主動安全防禦介入")
 
     conn = sqlite3.connect(DB_PATH)
@@ -89,7 +106,7 @@ def handle_trigger_emergency_derate(arguments: Dict[str, Any], server_instance: 
         _ensure_audit_logs_table(conn)
         conn.execute("""
             INSERT INTO audit_logs (timestamp, task_id, operator, status, action_type, details)
-            VALUES (datetime('now'), 'MCP_DERATE', '👑 指揮官 (小幫手)', 'EXECUTED', 'EMERGENCY_DERATE', ?)
+            VALUES (datetime('now', 'localtime'), 'MCP_DERATE', '👑 指揮官 (小幫手)', 'EXECUTED', 'EMERGENCY_DERATE', ?)
         """, (f"下調至 {target_pct}%, 原因: {reason}",))
     conn.close()
 
@@ -110,6 +127,7 @@ def handle_trigger_emergency_derate(arguments: Dict[str, Any], server_instance: 
         "audit_logged": True,
         "message": f"已成功強制執行動態功率降額至 {target_pct}%",
     }, indent=2)
+
 
 
 def handle_query_audit_trail(arguments: Dict[str, Any]) -> str:
@@ -1226,6 +1244,7 @@ class VehicleMCPServer:
 
 def main() -> None:
     """標準 Stdio MCP JSON-RPC 伺服器入口"""
+    server = VehicleMCPServer()
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -1242,13 +1261,14 @@ def main() -> None:
                 args = params.get("arguments", {})
 
                 if tool_name == "get_digital_twin_telemetry":
-                    content = handle_get_digital_twin_telemetry(args)
+                    content = handle_get_digital_twin_telemetry(args, server_instance=server)
                 elif tool_name == "trigger_emergency_derate":
-                    content = handle_trigger_emergency_derate(args)
+                    content = handle_trigger_emergency_derate(args, server_instance=server)
                 elif tool_name == "query_audit_trail":
                     content = handle_query_audit_trail(args)
                 else:
                     content = json.dumps({"error": f"未知工具: {tool_name}"})
+
 
                 resp = {"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": content}]}}
             else:
