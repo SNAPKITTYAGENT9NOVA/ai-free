@@ -304,7 +304,7 @@ def test_topology_cluster_heartbeat_timeout_safety_degradation():
 
 
 def test_topology_cluster_consecutive_e2e_error_degradation():
-    """Verify 3 consecutive E2E CRC corruptions trigger safety degradation."""
+    """Verify 3 consecutive E2E CRC corruptions trigger STATE_DEGRADED mode."""
     cluster = MultiNodeTopologyCluster()
     t_now = 4000.0
 
@@ -313,8 +313,39 @@ def test_topology_cluster_consecutive_e2e_error_degradation():
         corrupted = CANFrame(can_id=CAN_ID_POWERTRAIN_ACT, data=bytearray(b"\x00\xFF\x00\x00"))
         cluster.dispatch_frame(corrupted, now=t_now)
 
-    assert cluster.cluster_safety_mode == NodeSafetyState.LIMP_HOME
-    assert cluster.actuator.torque_limit_pct == 20.0
+    assert cluster.cluster_safety_mode == NodeSafetyState.STATE_DEGRADED
+    assert cluster.actuator.torque_limit_pct == 50.0
+    assert cluster.actuator.pwm_duty_pct == 50.0
+
+
+def test_bus_off_pwm_shutdown_and_fast_restart_timer():
+    """Verify Bus-Off immediately shuts down PWM output and arms 100ms fast restart timer."""
+    actuator = PowertrainActuatorNode()
+    assert actuator.pwm_output_enabled is True
+    assert actuator.pwm_duty_pct == 100.0
+
+    t_now = 5000.0
+    actuator.handle_bus_off(now=t_now)
+
+    # 1. PWM immediately shut down
+    assert actuator.safety_state == NodeSafetyState.BUS_OFF
+    assert actuator.pwm_output_enabled is False
+    assert actuator.pwm_duty_pct == 0.0
+    assert actuator.torque_limit_pct == 0.0
+
+    # 2. Fast restart timer armed with 100ms interval
+    assert actuator.bus_off_mgr.mode == BusOffRecoveryMode.FAST_RECOVERY
+    assert actuator.bus_off_mgr.FAST_INTERVAL_SEC == 0.100
+
+    # Before 100ms: still waiting
+    restart, status = actuator.bus_off_mgr.step(now=t_now + 0.050)
+    assert restart is False
+    assert "WAITING_FAST_INTERVAL" in status
+
+    # At 100ms: fast restart triggered
+    restart_100ms, status_100ms = actuator.bus_off_mgr.step(now=t_now + 0.100)
+    assert restart_100ms is True
+    assert "FAST_RESTART_ATTEMPT_1" in status_100ms
 
 
 def test_emergency_broadcast_0x080_instant_safe_stop():

@@ -132,7 +132,8 @@ class E2EFrameCodec:
 class NodeSafetyState(enum.Enum):
     INIT = "INIT"
     NORMAL_OPERATION = "NORMAL_OPERATION"
-    WARNING_DEGRADED = "WARNING_DEGRADED"
+    STATE_DEGRADED = "STATE_DEGRADED"
+    WARNING_DEGRADED = "STATE_DEGRADED"
     LIMP_HOME = "LIMP_HOME"
     BUS_OFF = "BUS_OFF"
     EMERGENCY_SAFE_STOP = "EMERGENCY_SAFE_STOP"
@@ -141,7 +142,7 @@ class NodeSafetyState(enum.Enum):
 SAFETY_STATE_PRIORITY: Dict[NodeSafetyState, int] = {
     NodeSafetyState.INIT: 0,
     NodeSafetyState.NORMAL_OPERATION: 1,
-    NodeSafetyState.WARNING_DEGRADED: 2,
+    NodeSafetyState.STATE_DEGRADED: 2,
     NodeSafetyState.LIMP_HOME: 3,
     NodeSafetyState.BUS_OFF: 4,
     NodeSafetyState.EMERGENCY_SAFE_STOP: 5,
@@ -466,14 +467,27 @@ class PowertrainActuatorNode(BaseCANNode):
 
     def __init__(self):
         super().__init__(node_id="ACTUATOR", can_id=CAN_ID_POWERTRAIN_ACT, period_sec=0.020, data_id=0x28)
-        self.torque_limit_pct = 100.0  # Drops to 20% in Limp-Home, 0% in Safe Stop
+        self.torque_limit_pct = 100.0  # Drops to 50% in State-Degraded, 20% in Limp-Home, 0% in Safe Stop
+        self.pwm_output_enabled = True
+        self.pwm_duty_pct = 100.0
 
     def apply_safety_degradation(self, target_state: NodeSafetyState) -> None:
         self.safety_state = target_state
-        if target_state == NodeSafetyState.LIMP_HOME:
+        if target_state in (NodeSafetyState.STATE_DEGRADED, NodeSafetyState.WARNING_DEGRADED):
+            self.torque_limit_pct = 50.0
+            self.pwm_duty_pct = 50.0
+        elif target_state == NodeSafetyState.LIMP_HOME:
             self.torque_limit_pct = 20.0
+            self.pwm_duty_pct = 20.0
         elif target_state in (NodeSafetyState.EMERGENCY_SAFE_STOP, NodeSafetyState.BUS_OFF):
             self.torque_limit_pct = 0.0
+            self.pwm_duty_pct = 0.0
+            self.pwm_output_enabled = False
+
+    def handle_bus_off(self, now: Optional[float] = None) -> None:
+        """On Bus-Off event, immediately disable PWM output and arm 100ms fast restart timer."""
+        self.apply_safety_degradation(NodeSafetyState.BUS_OFF)
+        self.bus_off_mgr.trigger_bus_off(now=now)
 
     def create_actuator_telemetry(self, actual_torque_nm: float = 120.0) -> CANFrame:
         clamped_torque = min(actual_torque_nm, 300.0 * (self.torque_limit_pct / 100.0))
@@ -552,8 +566,8 @@ class MultiNodeTopologyCluster:
 
             if target_node.consecutive_rx_errors >= 3:
                 self.trigger_cluster_safe_state(
-                    NodeSafetyState.LIMP_HOME,
-                    f"Consecutive E2E errors on {target_node.node_id}"
+                    NodeSafetyState.STATE_DEGRADED,
+                    f"Consecutive E2E CRC errors on {target_node.node_id} (>= 3 frames)"
                 )
             return False
 
