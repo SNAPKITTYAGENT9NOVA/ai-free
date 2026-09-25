@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Multi-Node Cluster Integration & SOME/IP Signal-to-Service Gateway
-Axis 3: Distributed three-node EE architecture and SOME/IP UDP 30490 service routing.
-Nodes:
-1. Master Gateway ECU (0x120, 10ms)
-2. Powertrain Actuator ECU (0x280, 20ms)
-3. Sensor Acquisition Gateway (0x380, 50ms)
+PHANTOM GRID Core - Multi-Node Cluster Integration & SOME/IP Signal-to-Service Gateway
 """
 
 from __future__ import annotations
@@ -16,7 +11,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from e2e_state_matrix import (
+from .e2e import (
     E2ERxState,
     Iso26262SafetyStateMachine,
     Iso26262State,
@@ -36,18 +31,17 @@ class SomeIpMessageType(enum.Enum):
 @dataclass
 class SomeIpHeader:
     """Standard AUTOSAR SOME/IP 16-byte Header."""
-    service_id: int          # 16-bit
-    method_or_event_id: int  # 16-bit (Bit 15=1 for Events)
-    length: int              # 32-bit (8 + payload length)
-    client_id: int           # 16-bit
-    session_id: int          # 16-bit
+    service_id: int
+    method_or_event_id: int
+    length: int
+    client_id: int
+    session_id: int
     protocol_version: int = 1
     interface_version: int = 1
     message_type: SomeIpMessageType = SomeIpMessageType.NOTIFICATION
-    return_code: int = 0x00  # 0x00 = E_OK
+    return_code: int = 0x00
 
     def serialize(self, payload: bytes) -> bytes:
-        """Serializes 16-byte SOME/IP header + payload."""
         calc_length = 8 + len(payload)
         header_bytes = struct.pack(
             ">HHIIBBBB",
@@ -64,7 +58,6 @@ class SomeIpHeader:
 
     @classmethod
     def deserialize(cls, data: bytes) -> Tuple[SomeIpHeader, bytes]:
-        """Deserializes SOME/IP frame into Header and Payload."""
         if len(data) < 16:
             raise ValueError(f"SOME/IP 報文長度不足 16 字節: {len(data)}")
         (
@@ -93,29 +86,22 @@ class SomeIpHeader:
         return header, payload
 
 
-# =============================================================================
-# Distributed CAN Nodes
-# =============================================================================
-
 @dataclass
 class MasterGatewayNode:
-    """Master Gateway ECU (CAN ID 0x120, 10ms cycle)."""
     can_id: int = 0x120
     cycle_time_ms: int = 10
     alive_counter: int = 0
-    system_mode: int = 0x01  # 0x01=NORMAL, 0x02=DEGRADED, 0x03=SAFE_STOP
+    system_mode: int = 0x01
     power_limit_pct: float = 100.0
 
     def step(self) -> bytes:
         self.alive_counter = (self.alive_counter + 1) & 0x0F
-        # 6-byte functional payload: [system_mode, power_limit, timestamp, reserved...]
         payload_6 = bytes([self.system_mode, int(self.power_limit_pct), 0x00, 0x00, 0x00, 0x00])
         return build_e2e_frame(payload_6, self.alive_counter)
 
 
 @dataclass
 class PowertrainActuatorNode:
-    """Powertrain Actuator ECU (CAN ID 0x280, 20ms cycle)."""
     can_id: int = 0x280
     cycle_time_ms: int = 20
     alive_counter: int = 0
@@ -126,7 +112,6 @@ class PowertrainActuatorNode:
 
     def step(self) -> bytes:
         self.alive_counter = (self.alive_counter + 1) & 0x0F
-        # 6-byte functional payload: [motor_rpm (2B), torque_nm (2B), pwm_duty, reserved]
         rpm_bytes = self.motor_rpm.to_bytes(2, "big")
         torque_bytes = self.torque_nm.to_bytes(2, "big")
         payload_6 = rpm_bytes + torque_bytes + bytes([int(self.pwm_duty_pct), 0x00])
@@ -135,7 +120,6 @@ class PowertrainActuatorNode:
 
 @dataclass
 class SensorAcquisitionNode:
-    """Sensor Acquisition Gateway (CAN ID 0x380, 50ms cycle)."""
     can_id: int = 0x380
     cycle_time_ms: int = 50
     alive_counter: int = 0
@@ -144,24 +128,12 @@ class SensorAcquisitionNode:
 
     def step(self) -> bytes:
         self.alive_counter = (self.alive_counter + 1) & 0x0F
-        # 6-byte functional payload: [battery_mv (2B), temp_celsius (1B), reserved (3B)]
         volt_bytes = self.battery_mv.to_bytes(2, "big")
         payload_6 = volt_bytes + bytes([self.temp_celsius, 0x00, 0x00, 0x00])
         return build_e2e_frame(payload_6, self.alive_counter)
 
 
-# =============================================================================
-# Multi-Node Cluster Orchestrator & SOME/IP Gateway
-# =============================================================================
-
 class MultiNodeClusterGateway:
-    """
-    Coordinates 3-node CAN topology and routes signals into SOME/IP UDP 30490 services.
-    - Service ID 0x1000: Vehicle Dynamics Service
-      - Event ID 0x8001: Powertrain Actuator Telemetry (RPM, Torque, PWM)
-      - Event ID 0x8002: Battery & Thermal Health Telemetry (Voltage, Temp)
-    """
-
     SERVICE_VEHICLE_DYNAMICS = 0x1000
     EVENT_POWERTRAIN = 0x8001
     EVENT_SENSOR = 0x8002
@@ -181,23 +153,16 @@ class MultiNodeClusterGateway:
     def subscribe_event(
         self, event_id: int, callback: Callable[[SomeIpHeader, bytes], None]
     ) -> None:
-        """Subscribes to a SOME/IP event notification."""
         if event_id in self.event_subscribers:
             self.event_subscribers[event_id].append(callback)
 
     def route_can_to_someip(self, can_id: int, frame_8bytes: bytes) -> Optional[bytes]:
-        """
-        Signal-to-Service Funnel:
-        Translates raw E2E CAN frames into standardized SOME/IP Event packets.
-        """
         self.someip_session_counter = (self.someip_session_counter + 1) & 0xFFFF
 
-        if can_id == 0x280:  # Powertrain Node
-            # Unpack RPM (2B), Torque (2B), PWM (1B)
+        if can_id == 0x280:
             rpm = int.from_bytes(frame_8bytes[1:3], "big")
             torque = int.from_bytes(frame_8bytes[3:5], "big")
             pwm = frame_8bytes[5]
-            # Pack SOME/IP payload: uint16 rpm, uint16 torque, uint8 pwm
             someip_payload = struct.pack(">HHB", rpm, torque, pwm)
             header = SomeIpHeader(
                 service_id=self.SERVICE_VEHICLE_DYNAMICS,
@@ -212,8 +177,7 @@ class MultiNodeClusterGateway:
             self.dispatched_someip_frames.append(packet)
             return packet
 
-        elif can_id == 0x380:  # Sensor Node
-            # Unpack Battery mV (2B), Temp °C (1B)
+        elif can_id == 0x380:
             voltage = int.from_bytes(frame_8bytes[1:3], "big")
             temp = frame_8bytes[3]
             someip_payload = struct.pack(">HB", voltage, temp)
@@ -240,7 +204,6 @@ class MultiNodeClusterGateway:
                 pass
 
     def run_cluster_cycle(self) -> Dict[str, Any]:
-        """Runs one full coordinated multi-node broadcast & gateway conversion cycle."""
         frame_master = self.master_node.step()
         frame_actuator = self.actuator_node.step()
         frame_sensor = self.sensor_node.step()

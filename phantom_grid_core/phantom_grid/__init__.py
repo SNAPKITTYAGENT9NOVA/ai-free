@@ -42,6 +42,23 @@ from .hil import (
     HILStressRunner,
     MockCANBus,
 )
+from .bootloader import (
+    UdsBootloaderPipeline,
+    PartitionSlot,
+    UdsSession,
+)
+from .calibration import (
+    XcpCalibrationEngine,
+    CalibrationMemoryMap,
+)
+from .cluster import (
+    MultiNodeClusterGateway,
+    SomeIpHeader,
+    SomeIpMessageType,
+    MasterGatewayNode,
+    PowertrainActuatorNode,
+    SensorAcquisitionNode,
+)
 
 __all__ = [
     "__version__",
@@ -66,4 +83,15 @@ __all__ = [
     "GovernanceDB",
     "HILStressRunner",
     "MockCANBus",
+    "UdsBootloaderPipeline",
+    "PartitionSlot",
+    "UdsSession",
+    "XcpCalibrationEngine",
+    "CalibrationMemoryMap",
+    "MultiNodeClusterGateway",
+    "SomeIpHeader",
+    "SomeIpMessageType",
+    "MasterGatewayNode",
+    "PowertrainActuatorNode",
+    "SensorAcquisitionNode",
 ]
