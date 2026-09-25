@@ -34,6 +34,8 @@ from .pipeline import (
     TaskPipeline,
     AgentTask,
     TaskStatus,
+    build_automotive_e2e_pipeline,
+    build_secretary_xiaomi_pipeline,
 )
 
 __all__ = [
@@ -54,4 +56,6 @@ __all__ = [
     "TaskPipeline",
     "AgentTask",
     "TaskStatus",
+    "build_automotive_e2e_pipeline",
+    "build_secretary_xiaomi_pipeline",
 ]

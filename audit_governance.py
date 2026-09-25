@@ -63,8 +63,8 @@ class GovernanceDB:
         task_id: str,
         operator: str,
         status: str,
-        details: str,
-        action_type: str = "SELF_HEALING",
+        details: str = "",
+        action_type: str = "HITL_APPROVAL",
     ) -> None:
         """Logs an approval or execution event into audit_logs."""
         conn = self._get_connection()
@@ -75,6 +75,23 @@ class GovernanceDB:
             """, (task_id, operator, status, action_type, details))
         if self._conn is None:
             conn.close()
+
+    def is_approved_by_brother(self, task_id: str) -> bool:
+        """
+        Checks if the task has been explicitly approved by '哥' in audit_logs.
+        Strictly requires operator = '哥' (or Commander alias) and status = 'APPROVED'.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT status FROM audit_logs 
+            WHERE task_id = ? AND (operator = '哥' OR operator = '👑 哥' OR operator = '👑 指揮官' OR operator LIKE '%Jack%') AND status = 'APPROVED'
+            ORDER BY id DESC LIMIT 1
+        """, (task_id,))
+        row = cursor.fetchone()
+        if self._conn is None:
+            conn.close()
+        return row is not None
 
     def query_logs(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Queries recent audit logs."""

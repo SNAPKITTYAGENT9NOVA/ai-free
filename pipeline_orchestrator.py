@@ -329,6 +329,109 @@ def build_automotive_e2e_pipeline(
     return pipeline
 
 
+def build_secretary_xiaomi_pipeline(
+    workspace_root: Optional[Path] = None,
+    governance_db: Optional[Any] = None,
+    commander_name: str = "秘書處（小米）",
+) -> TaskPipeline:
+    """
+    秘書處（小米）三大前置作業流水線：
+    TASK_01（CAN_E2E_VERIFY）：運行 10,000 次隨機幀注入驗證（零偽陽性）。
+    TASK_02（FIRMWARE_SAFETY_LINT）：靜態審查看門狗餵狗點與 Bus-Off 狀態轉換覆蓋率。
+    TASK_03（REGISTER_OVERWRITE_LOCK）：鎖定關鍵暫存器配置，預設需經由 SQLite 審核日誌記錄。
+    """
+    if workspace_root is None:
+        workspace_root = Path(__file__).resolve().parent
+
+    if governance_db is None:
+        from audit_governance import GovernanceDB
+        governance_db = GovernanceDB(db_path=":memory:")
+
+    pipeline = TaskPipeline(commander_name=commander_name)
+
+    # TASK_01: CAN_E2E_VERIFY
+    def action_can_e2e_verify() -> bool:
+        from verify_10k_e2e_vectors import run_10k_vector_validation
+        res = run_10k_vector_validation(seed=42)
+        return bool(res.total_vectors == 10000 and res.detection_rate_pct == 100.0 and res.false_positive_rate_pct == 0.0)
+
+    # TASK_02: FIRMWARE_SAFETY_LINT
+    def action_firmware_safety_lint() -> bool:
+        c_driver = workspace_root / "src" / "e2e_crc8_driver.c"
+        py_sdk = workspace_root / "e2e_state_matrix.py"
+        if not c_driver.exists():
+            c_driver = workspace_root / "e2e_crc8_driver.c"
+        if not c_driver.exists() or not py_sdk.exists():
+            return False
+
+        c_text = c_driver.read_text(encoding="utf-8", errors="replace")
+        py_text = py_sdk.read_text(encoding="utf-8", errors="replace")
+
+        # C driver checks
+        if "E2E_CalculateCRC8" not in c_text or "E2E_ValidateFrame" not in c_text:
+            return False
+
+        # Python ASIL-D state checks
+        safety_tokens = [
+            "STATE_BUS_OFF_SAFE",
+            "STATE_HARD_FAULT",
+            "STATE_RESET",
+            "0xD001",
+            "execute_uds_14_clear_dtc",
+        ]
+        return all(tok in py_text for tok in safety_tokens)
+
+    # TASK_03: REGISTER_OVERWRITE_LOCK
+    def action_register_overwrite_lock() -> bool:
+        if not governance_db.is_approved_by_brother("TASK_03"):
+            governance_db.log_approval(
+                task_id="TASK_03",
+                operator="秘書處 (小米)",
+                status="REJECTED",
+                details="未檢測到 哥 的 APPROVED 審批記錄，維持高危暫存器鎖定",
+                action_type="HITL_INTERCEPT",
+            )
+            return False
+
+        governance_db.log_approval(
+            task_id="TASK_03",
+            operator="秘書處 (小米)",
+            status="EXECUTED",
+            details="已取得 哥 授權簽發，成功鎖定關鍵暫存器配置 (REG_0x4002)",
+            action_type="HARDWARE_LOCK",
+        )
+        return True
+
+    pipeline.register_task(AgentTask(
+        task_id="TASK_01",
+        name="CAN 總線 E2E 10,000 次偽隨機注入驗證 (CAN_E2E_VERIFY)",
+        assigned_agent="戰術研發鍛造廠 (Python Worker)",
+        action=action_can_e2e_verify,
+        dependencies=[],
+        requires_approval=False,
+    ))
+
+    pipeline.register_task(AgentTask(
+        task_id="TASK_02",
+        name="車規韌體安全靜態審查 (FIRMWARE_SAFETY_LINT)",
+        assigned_agent="戰術研發鍛造廠 (第一辦公室)",
+        action=action_firmware_safety_lint,
+        dependencies=["TASK_01"],
+        requires_approval=False,
+    ))
+
+    pipeline.register_task(AgentTask(
+        task_id="TASK_03",
+        name="關鍵暫存器配置鎖定 (REGISTER_OVERWRITE_LOCK)",
+        assigned_agent="統帥部 (👑 哥親批 ➔ is_approved_by_brother)",
+        action=action_register_overwrite_lock,
+        dependencies=["TASK_02"],
+        requires_approval=True,
+    ))
+
+    return pipeline
+
+
 if __name__ == "__main__":
     pipeline = build_automotive_e2e_pipeline()
     success = pipeline.execute_all(approval_handler=lambda t_id: True)

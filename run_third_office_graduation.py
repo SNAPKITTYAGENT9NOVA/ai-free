@@ -72,6 +72,8 @@ def main():
         "phantom_grid_core/phantom_grid/pipeline.py",
         "pipeline_orchestrator.py",
         "tests/test_pipeline_orchestrator.py",
+        "audit_governance.py",
+        "tests/test_audit_governance_pipeline.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
         "verify_10k_e2e_vectors.py",
