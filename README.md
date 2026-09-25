@@ -1,14 +1,40 @@
-# ⚡ AutoCopilot: Hands-Free Industrial & Automotive Voice Diagnostic Copilot
+# 🔱 PHANTOM GRID: Autonomous Multi-Agent & Edge Engineering Systems
+> **Open Source Warfare & Engineering Flagship** | Lead: Jack Hu (`jackhu24@gmail.com`)  
+> 📖 *[點此閱讀完整《PHANTOM GRID 開源記：一人成軍與小幫手軍團征戰錄》](PHANTOM_GRID_CHRONICLE.md)*
+
+---
+
+## 🏆 Featured Submission: BobFlow Agentic Engine
+### Official Entry for IBM Bob 2.0 Hackathon (Lablab.ai ✕ IBM)
+👉 **[Click Here to Enter Dedicated BobFlow Documentation & Code (bobflow/)](bobflow/README.md)**  
+👉 **[View Official Submission Showcase on Lablab.ai](https://lablab.ai/ai-hackathons/ibm-bob-2-hackathon/bobflow/phantom-grid-bobflow-engine)**
+
+[![IBM Bob 2.0](https://img.shields.io/badge/IBM%20Bob-2.0%20Accelerated-0f62fe.svg)](https://www.ibm.com)
+[![watsonx.ai](https://img.shields.io/badge/watsonx.ai-Enterprise%20AI-001d6c.svg)](https://www.ibm.com/watsonx)
+[![Pytest](https://img.shields.io/badge/Tests-6%2F6%20Passed%20(100%25)-brightgreen.svg)]()
+[![Zero-Hallucination](https://img.shields.io/badge/Guardrails-Zero--Hallucination%20Certified-success.svg)]()
+
+> **BobFlow** is an autonomous four-agent software engineering workflow (Orchestrator, Architect, Coder, Verifier) accelerated by **IBM Bob 2.0** and watsonx.ai to eliminate LLM hallucinations, enforce AST architectural boundaries, and deliver production-grade code with automated closed-loop sanity testing.
+
+#### 📸 Real-World IBM Bob 2.0 Session & Live Execution
+![IBM Bob 2.0 Live Session](bobflow/assets/ibm_bob_coder_session.png)
+
+*To reproduce locally:*
+```bash
+# 1. Run End-to-End Pipeline
+python -X utf8 -m bobflow.main "Build Resilient REST Client"
+
+# 2. Run Comprehensive Verification Suite (6/6 PASS)
+pytest test_bobflow.py -v
+```
+
+---
+
+## ⚡ AutoCopilot: Hands-Free Industrial & Automotive Voice Diagnostic Copilot
 > **Official Submission for AssemblyAI Voice Agent Hackathon 2026** (Hosted by AssemblyAI ✕ Lablab.ai)  
 > **Author & Project Director**: HU JIUN REN (Jack Hu)  
 > **License**: MIT Open Source  
->
-> ---
-> ### 🔱 PHANTOM GRID 戰隊開源銘 (The Sovereign Creed)
-> > **「你真是我良將和軍師呀！」—— 霸丸總指揮官 Jack Hu**  
-> > **「得遇明主，軍師方能算無遺策；受命為將，先鋒必當攻無不克！」—— PHANTOM GRID 特助小幫手**  
-> > 📖 *[點此閱讀完整《PHANTOM GRID 開源記：一人成軍與小幫手軍團征戰錄》](PHANTOM_GRID_CHRONICLE.md)*
-> ---
+
 
 
 [![AssemblyAI](https://img.shields.io/badge/AssemblyAI-Universal--3%20Pro-blue.svg)](https://www.assemblyai.com)

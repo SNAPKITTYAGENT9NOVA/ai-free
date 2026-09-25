@@ -65,6 +65,7 @@ firebase_deploy/
 *.jpg
 *.jpeg
 *.png
+!bobflow/assets/*.png
 *.gif
 *.bmp
 *.tiff
