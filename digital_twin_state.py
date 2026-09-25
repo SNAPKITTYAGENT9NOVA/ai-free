@@ -20,28 +20,22 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
 import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from can_l0_l1_matrix import (
-    CANFrame,
-    CAN_ID_POWERTRAIN_ACT,
-    CAN_ID_SENSOR_ACQ,
-)
-
 
 # ============================================================================
 # 1. In-Memory DigitalTwinState Model
 # ============================================================================
+
 
 @dataclass
 class DigitalTwinState:
@@ -49,21 +43,42 @@ class DigitalTwinState:
     Standard In-Memory Cyber-Physical Digital Twin State.
     Maintained at sub-millisecond latency for vehicle domain controllers and cloud.
     """
+
     # Core attributes explicitly mandated:
-    motor_rpm: float = 0.0                  # 電機轉速 (RPM)
-    motor_degraded: bool = False            # 降級旗標 (True when torque limited or in safe-state)
-    battery_voltage_mv: int = 398500        # 電池電壓 (毫伏 mV, 398.5V nominal)
-    temperature_c: float = 25.0             # 溫度 (攝氏度 °C)
+    motor_rpm: float = 0.0  # 電機轉速 (RPM)
+    motor_degraded: bool = False  # 降級旗標 (True when torque limited or in safe-state)
+    battery_voltage_mv: int = 398500  # 電池電壓 (毫伏 mV, 398.5V nominal)
+    temperature_c: float = 25.0  # 溫度 (攝氏度 °C)
 
     # Extended vehicle dynamics & health:
-    actual_torque_nm: float = 0.0           # 輸出扭矩 (Nm)
-    torque_limit_pct: float = 100.0         # 扭矩限額百分比 (100% = Normal, 20% = Limp-Home, 0% = Safe Stop)
-    coolant_pressure_kpa: float = 220.0     # 冷卻管路壓力 (kPa)
-    alive_counter: int = 0                  # 0~15 E2E Monotonic Alive Counter
-    safety_mode: str = "NORMAL_OPERATION"   # NORMAL_OPERATION | LIMP_HOME | EMERGENCY_SAFE_STOP
-    health_score: float = 100.0             # 載具綜合健康評分 (0.0% ~ 100.0%)
-    total_sync_cycles: int = 0              # 累計同步次數
+    actual_torque_nm: float = 0.0  # 輸出扭矩 (Nm)
+    torque_limit_pct: float = (
+        100.0  # 扭矩限額百分比 (100% = Normal, 20% = Limp-Home, 0% = Safe Stop)
+    )
+    coolant_pressure_kpa: float = 220.0  # 冷卻管路壓力 (kPa)
+    alive_counter: int = 0  # 0~15 E2E Monotonic Alive Counter
+    safety_mode: str = (
+        "NORMAL_OPERATION"  # NORMAL_OPERATION | LIMP_HOME | EMERGENCY_SAFE_STOP
+    )
+    health_score: float = 100.0  # 載具綜合健康評分 (0.0% ~ 100.0%)
+    total_sync_cycles: int = 0  # 累計同步次數
     last_sync_timestamp: float = field(default_factory=time.time)
+
+    @property
+    def temp_celsius(self) -> float:
+        return self.temperature_c
+
+    @temp_celsius.setter
+    def temp_celsius(self, val: float) -> None:
+        self.temperature_c = float(val)
+
+    @property
+    def last_updated(self) -> float:
+        return self.last_sync_timestamp
+
+    @last_updated.setter
+    def last_updated(self, val: float) -> None:
+        self.last_sync_timestamp = float(val)
 
     def calculate_health_score(self) -> float:
         """Computes dynamic health gradient based on thermal, degradation, and voltage limits."""
@@ -89,6 +104,7 @@ class DigitalTwinState:
 # ============================================================================
 # 2. Digital Twin Mirror Engine
 # ============================================================================
+
 
 class DigitalTwinMirrorEngine:
     """
@@ -185,7 +201,9 @@ class DigitalTwinMirrorEngine:
     # ------------------------------------------------------------------------
 
     # Channel 1: High-Performance Compute Domain Controller (HPC DCU)
-    def register_hpc_subscriber(self, callback: Callable[[DigitalTwinState], None]) -> None:
+    def register_hpc_subscriber(
+        self, callback: Callable[[DigitalTwinState], None]
+    ) -> None:
         """Subscribes an autonomous driving / mission planner hook with sub-millisecond latency."""
         with self._lock:
             self._hpc_callbacks.append(callback)
@@ -221,7 +239,9 @@ class DigitalTwinMirrorEngine:
                     "limp_home_active": s.torque_limit_pct <= 20.0,
                     "safety_state": s.safety_mode,
                 },
-                "ui_theme": "DARK_TACTICAL_CYAN" if not s.motor_degraded else "AMBER_DEGRADED_ALERT",
+                "ui_theme": "DARK_TACTICAL_CYAN"
+                if not s.motor_degraded
+                else "AMBER_DEGRADED_ALERT",
             }
 
     # Channel 3: Cloud Fleet Management & V2X Telemetry Feed
@@ -234,7 +254,9 @@ class DigitalTwinMirrorEngine:
             s = self.state
             payload_dict = {
                 "vin": self.vin,
-                "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(s.last_sync_timestamp)),
+                "timestamp_iso": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(s.last_sync_timestamp)
+                ),
                 "telemetry": {
                     "motor_rpm": round(s.motor_rpm, 2),
                     "motor_degraded": s.motor_degraded,
@@ -249,7 +271,9 @@ class DigitalTwinMirrorEngine:
             }
             # Cryptographic audit hash over telemetry
             raw_str = json.dumps(payload_dict["telemetry"], sort_keys=True)
-            payload_dict["audit_sha256"] = hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
+            payload_dict["audit_sha256"] = hashlib.sha256(
+                raw_str.encode("utf-8")
+            ).hexdigest()
             return payload_dict
 
 
@@ -270,24 +294,28 @@ if __name__ == "__main__":
     twin.register_hpc_subscriber(lambda s: hpc_received.append(s.motor_rpm))
 
     # 1. Sync Powertrain (CAN 0x280)
-    twin.sync_powertrain_telemetry(actual_torque_nm=150.0, torque_limit_pct=100.0, alive_counter=3)
+    twin.sync_powertrain_telemetry(
+        actual_torque_nm=150.0, torque_limit_pct=100.0, alive_counter=3
+    )
     # 2. Sync Sensors (CAN 0x380)
     twin.sync_sensor_telemetry(temperature_c=68.5, pressure_kpa=235.0, alive_counter=3)
 
     snap = twin.get_snapshot()
-    print(f"\n[1. In-Memory DigitalTwinState Snapshot]")
+    print("\n[1. In-Memory DigitalTwinState Snapshot]")
     print(f"   -> motor_rpm: {snap.motor_rpm:.1f} RPM")
     print(f"   -> motor_degraded: {snap.motor_degraded}")
-    print(f"   -> battery_voltage_mv: {snap.battery_voltage_mv} mV ({snap.battery_voltage_mv/1000:.2f} V)")
+    print(
+        f"   -> battery_voltage_mv: {snap.battery_voltage_mv} mV ({snap.battery_voltage_mv/1000:.2f} V)"
+    )
     print(f"   -> temperature_c: {snap.temperature_c:.1f} °C")
     print(f"   -> health_score: {snap.health_score:.1f}%")
 
-    print(f"\n[2. Cockpit IVI HUD Telemetry Feed]")
+    print("\n[2. Cockpit IVI HUD Telemetry Feed]")
     cockpit_feed = twin.to_cockpit_telemetry()
     print(f"   -> HUD Dials: {cockpit_feed['instrument_cluster']}")
     print(f"   -> Warning Lamps: {cockpit_feed['hud_warning_telltales']}")
 
-    print(f"\n[3. Cloud V2X Fleet Telematics Feed]")
+    print("\n[3. Cloud V2X Fleet Telematics Feed]")
     cloud_feed = twin.to_cloud_v2x_payload()
     print(f"   -> VIN: {cloud_feed['vin']} | Timestamp: {cloud_feed['timestamp_iso']}")
     print(f"   -> Telemetry: {cloud_feed['telemetry']}")

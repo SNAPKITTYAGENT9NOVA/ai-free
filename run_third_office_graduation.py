@@ -19,6 +19,7 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 from third_office_factory.factory import ThirdOfficeFactory
 from third_office_factory.media_engine.capcut_bridge import CapCutBridgeAdapter
 
+
 def main():
     print("=" * 70)
     print("🚀 [RULE 12 AUTOMATED RELAY] Initiating Third Office Graduation Pipeline")
@@ -32,7 +33,9 @@ def main():
         tagline="Zero-Trust Sovereign Multi-Sig & Self-Healing Automotive Core",
         script="MultiSigGovernanceGate dual-sig verification, TriTierMemoryEngine auto-solidification, SafetyWatchdog fail-silent/fail-operational, and AntiEntropyFilter purification.",
     )
-    print(f"✅ Stage 1 Passed: Certificate ID = {grad_res['certificate_id']}, Grade = {grad_res['grade']}")
+    print(
+        f"✅ Stage 1 Passed: Certificate ID = {grad_res['certificate_id']}, Grade = {grad_res['grade']}"
+    )
 
     # 2. CapCut Bridge Storyboard & Subtitle Ammunition
     capcut_dir = Path("third_office_factory/out_delivery/capcut_assets")
@@ -40,15 +43,51 @@ def main():
     bridge = CapCutBridgeAdapter(out_dir=str(capcut_dir))
 
     scenes = [
-        (4.0, "PHANTOM GRID Sovereign Governance: MultiSig Governance Gate & Runtime Architecture.", "High-tech futuristic command center with neon holographic shield and Jack Hu axiom crest."),
-        (6.0, "Proposal DIVINE_REWRITE_001 intercepts single signatures, unlocking exclusively upon Secretariat dual-signing.", "Dynamic cryptographic split-key interface locking down pending law until dual-sig convergence."),
-        (5.0, "Tri-Tier Memory Engine triggers instant blueprint solidification into 02_Knowledge upon spark_Aegis_Guardian birth.", "Geometric CAD wireframe of absolute defense aegis crystallizing into persistent memory layers."),
-        (5.0, "Safety Watchdog locks down hardware to SAFE_STATE_FAIL_SILENT within 0ms during PARADOX_CHAOS.", "Automotive ECU status board cutting PWM duty to 0% and power to 0% with millisecond latency."),
-        (4.0, "Anti-Entropy Filter purifies bus egress, stripping AI boilerplates for 100% actionable command density.", "Cyberpunk terminal data stream filtering out conversational noise, leaving pristine binary directives."),
-        (5.0, "Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.", "Automotive HIL test bench injecting fault frames into CAN bus with real-time waveform monitors and oscilloscope."),
-        (5.0, "Architecture Assets Solidification: 00_System roles, 01_Memory changelog, and 02_Knowledge specifications baseline complete.", "Holographic three-tier architectural blueprint crystallizing into immutable automotive standard assets."),
-        (6.0, "Scale & Productization: UDS dual-bank bootloader, XCP live calibration, telemetry dashboard, and SOME/IP 3-node cluster ignited.", "Automotive production plant with multi-node telemetry boards, flash bootloader programming status, and real-time dashboard."),
-        (6.0, "Embedded MCU C UDS FSM prototype and SocketCAN sliding-window telemetry backend online.", "Microcontroller C state machine flashing dual flash partitions with real-time sliding window telemetry."),
+        (
+            4.0,
+            "PHANTOM GRID Sovereign Governance: MultiSig Governance Gate & Runtime Architecture.",
+            "High-tech futuristic command center with neon holographic shield and Jack Hu axiom crest.",
+        ),
+        (
+            6.0,
+            "Proposal DIVINE_REWRITE_001 intercepts single signatures, unlocking exclusively upon Secretariat dual-signing.",
+            "Dynamic cryptographic split-key interface locking down pending law until dual-sig convergence.",
+        ),
+        (
+            5.0,
+            "Tri-Tier Memory Engine triggers instant blueprint solidification into 02_Knowledge upon spark_Aegis_Guardian birth.",
+            "Geometric CAD wireframe of absolute defense aegis crystallizing into persistent memory layers.",
+        ),
+        (
+            5.0,
+            "Safety Watchdog locks down hardware to SAFE_STATE_FAIL_SILENT within 0ms during PARADOX_CHAOS.",
+            "Automotive ECU status board cutting PWM duty to 0% and power to 0% with millisecond latency.",
+        ),
+        (
+            4.0,
+            "Anti-Entropy Filter purifies bus egress, stripping AI boilerplates for 100% actionable command density.",
+            "Cyberpunk terminal data stream filtering out conversational noise, leaving pristine binary directives.",
+        ),
+        (
+            5.0,
+            "Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.",
+            "Automotive HIL test bench injecting fault frames into CAN bus with real-time waveform monitors and oscilloscope.",
+        ),
+        (
+            5.0,
+            "Architecture Assets Solidification: 00_System roles, 01_Memory changelog, and 02_Knowledge specifications baseline complete.",
+            "Holographic three-tier architectural blueprint crystallizing into immutable automotive standard assets.",
+        ),
+        (
+            6.0,
+            "Scale & Productization: UDS dual-bank bootloader, XCP live calibration, telemetry dashboard, and SOME/IP 3-node cluster ignited.",
+            "Automotive production plant with multi-node telemetry boards, flash bootloader programming status, and real-time dashboard.",
+        ),
+        (
+            6.0,
+            "Embedded MCU C UDS FSM prototype and SocketCAN sliding-window telemetry backend online.",
+            "Microcontroller C state machine flashing dual flash partitions with real-time sliding window telemetry.",
+        ),
     ]
 
     _ = bridge.build_project_package(
@@ -56,10 +95,13 @@ def main():
         project_title="PHANTOM GRID Governance & Runtime Core Commercial Pitch",
         narration_scenes=scenes,
     )
-    print(f"🎬 Stage 2 Passed: CapCut Package Generated at {capcut_dir} (SRT + Storyboard JSON)")
+    print(
+        f"🎬 Stage 2 Passed: CapCut Package Generated at {capcut_dir} (SRT + Storyboard JSON)"
+    )
 
     # 3. Rebuild phantom_grid_core_v1.0.tar.gz
     import tarfile
+
     with tarfile.open("phantom_grid_core_v1.0.tar.gz", "w:gz") as tar:
         tar.add("phantom_grid_core", arcname="phantom_grid_core")
 
@@ -115,7 +157,11 @@ def main():
         "tests/test_telemetry_dashboard.py",
         "tests/test_multi_node_cluster.py",
         "tests/test_async_multi_node_cluster.py",
+        "tests/test_soa_gateway_integration.py",
         "tests/test_uds_c_and_backend.py",
+        "soa_gateway_twin.py",
+        "src/soa_gateway_twin.py",
+        "digital_twin_state.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
         "verify_10k_e2e_vectors.py",
@@ -137,13 +183,19 @@ def main():
         for f in files_to_pack:
             if os.path.exists(f):
                 zipf.write(f, arcname=f)
-    print(f"📦 Stage 3 Passed: Standalone Release Packaged at {zip_path} ({zip_path.stat().st_size} bytes)")
+    print(
+        f"📦 Stage 3 Passed: Standalone Release Packaged at {zip_path} ({zip_path.stat().st_size} bytes)"
+    )
 
     # Also copy tar.gz to packager dir
-    shutil.copy2("phantom_grid_core_v1.0.tar.gz", packager_dir / "phantom_grid_core_v1.0.tar.gz")
+    shutil.copy2(
+        "phantom_grid_core_v1.0.tar.gz", packager_dir / "phantom_grid_core_v1.0.tar.gz"
+    )
 
     # 4. G-Drive Vault Sync (Rule 11 & Rule 12)
-    gdrive_target = Path(r"G:\我的雲端硬碟\AI產出成品總庫\PHANTOM_GRID_AUTOMOTIVE_L3_L5")
+    gdrive_target = Path(
+        r"G:\我的雲端硬碟\AI產出成品總庫\PHANTOM_GRID_AUTOMOTIVE_L3_L5"
+    )
     if gdrive_target.exists():
         target_vault = gdrive_target / "GOVERNANCE_MULTISIG_CORE"
         target_vault.mkdir(parents=True, exist_ok=True)
@@ -153,14 +205,22 @@ def main():
                 dest = target_vault / Path(src).name
                 shutil.copy2(src, dest)
         shutil.copy2(zip_path, target_vault / zip_path.name)
-        shutil.copy2("phantom_grid_core_v1.0.tar.gz", target_vault / "phantom_grid_core_v1.0.tar.gz")
-        print(f"🏦 Stage 4 Passed: Deliverables fully synced to G-Drive Vault: {target_vault}")
+        shutil.copy2(
+            "phantom_grid_core_v1.0.tar.gz",
+            target_vault / "phantom_grid_core_v1.0.tar.gz",
+        )
+        print(
+            f"🏦 Stage 4 Passed: Deliverables fully synced to G-Drive Vault: {target_vault}"
+        )
     else:
-        print(f"⚠️ G-Drive Vault path {gdrive_target} not mounted; local artifacts retained in out_delivery and packager.")
+        print(
+            f"⚠️ G-Drive Vault path {gdrive_target} not mounted; local artifacts retained in out_delivery and packager."
+        )
 
     print("=" * 70)
     print("🏆 [RULE 12 COMPLETED] Third Office Autonomous Delivery Complete!")
     print("=" * 70)
+
 
 if __name__ == "__main__":
     main()

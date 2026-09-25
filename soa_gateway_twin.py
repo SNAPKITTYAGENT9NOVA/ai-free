@@ -52,15 +52,19 @@ from digital_twin_state import (
 DEFAULT_SOMEIP_PORT = 30490
 DEFAULT_SERVICE_ID_VEHICLE = 0x1234
 
+# SOME/IP 報文頭規範 (共 16 Bytes)
+# Message ID (4B) | Length (4B) | Request ID (4B) | Protocol Ver (1B) | Interface Ver (1B) | Msg Type (1B) | Return Code (1B)
+SOMEIP_HEADER_FORMAT = "!IIIBBBB"
+
 # Event IDs (Bit 15 is 1 for Events according to SOME/IP spec)
 EVENT_ID_ACTUATOR_STATUS = 0x8001  # Event 0x8001: 致動轉速與狀態
-EVENT_ID_SENSOR_TELEMETRY = 0x8002 # Event 0x8002: 電壓與溫度
+EVENT_ID_SENSOR_TELEMETRY = 0x8002  # Event 0x8002: 電壓與溫度
 
 
 class SOMEIPMessageType(enum.IntEnum):
     REQUEST = 0x00
     REQUEST_NO_RETURN = 0x01
-    NOTIFICATION = 0x02          # Asynchronous Event Notification
+    NOTIFICATION = 0x02  # Asynchronous Event Notification
     RESPONSE = 0x80
     ERROR = 0x81
     TP_REQUEST = 0x20
@@ -94,6 +98,7 @@ class SOMEIPHeader:
       - Message Type (8-bit)                                          [1 Byte]
       - Return Code (8-bit)                                           [1 Byte]
     """
+
     service_id: int
     event_or_method_id: int
     length: int
@@ -105,7 +110,9 @@ class SOMEIPHeader:
     return_code: SOMEIPReturnCode = SOMEIPReturnCode.E_OK
 
     def pack(self) -> bytes:
-        message_id = ((self.service_id & 0xFFFF) << 16) | (self.event_or_method_id & 0xFFFF)
+        message_id = ((self.service_id & 0xFFFF) << 16) | (
+            self.event_or_method_id & 0xFFFF
+        )
         request_id = ((self.client_id & 0xFFFF) << 16) | (self.session_id & 0xFFFF)
         return struct.pack(
             ">IIIBBBB",
@@ -125,8 +132,8 @@ class SOMEIPHeader:
         header_data = buffer[:16]
         payload = buffer[16:]
 
-        message_id, length, request_id, proto_ver, iface_ver, msg_type, ret_code = struct.unpack(
-            ">IIIBBBB", header_data
+        message_id, length, request_id, proto_ver, iface_ver, msg_type, ret_code = (
+            struct.unpack(">IIIBBBB", header_data)
         )
 
         service_id = (message_id >> 16) & 0xFFFF
@@ -151,6 +158,7 @@ class SOMEIPHeader:
 @dataclass
 class SOMEIPMessage:
     """Full SOME/IP Message container."""
+
     header: SOMEIPHeader
     payload: bytes
 
@@ -169,9 +177,11 @@ class SOMEIPMessage:
 # 2. Digital Twin State Models
 # ============================================================================
 
+
 @dataclass
 class PowertrainTwinState:
     """Digital Twin view of Powertrain Actuator (CAN ID 0x280)."""
+
     speed_rpm: float = 0.0
     torque_nm: float = 0.0
     torque_limit_pct: float = 100.0
@@ -183,6 +193,7 @@ class PowertrainTwinState:
 @dataclass
 class SensorTelemetryTwinState:
     """Digital Twin view of Vehicle Sensors (CAN ID 0x380)."""
+
     battery_voltage_v: float = 0.0
     temperature_c: float = 0.0
     pressure_kpa: float = 0.0
@@ -204,6 +215,7 @@ class VehicleDigitalTwinSnapshot:
 # 3. Signal-to-Service Gateway & Digital Twin Engine
 # ============================================================================
 
+
 class SOAGatewayTwin:
     """
     Service-Oriented Architecture Gateway Twin.
@@ -220,11 +232,18 @@ class SOAGatewayTwin:
         udp_host: str = "127.0.0.1",
         udp_port: int = DEFAULT_SOMEIP_PORT,
         enable_udp_broadcast: bool = False,
+        multicast_ip: Optional[str] = None,
+        port: Optional[int] = None,
     ):
+        if multicast_ip is not None:
+            udp_host = multicast_ip
+        if port is not None:
+            udp_port = port
         self.service_id = service_id
         self.udp_host = udp_host
         self.udp_port = udp_port
         self.enable_udp_broadcast = enable_udp_broadcast
+        self.target_addr = (self.udp_host, self.udp_port)
 
         # Codecs for CAN frames
         self.actuator_codec = E2EFrameCodec(data_id=0x28)
@@ -249,12 +268,40 @@ class SOAGatewayTwin:
 
         # UDP Socket for Ethernet broadcast
         self._sock: Optional[socket.socket] = None
-        if self.enable_udp_broadcast:
-            try:
-                self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            except Exception as e:
-                self._sock = None
+        try:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except Exception:
+            self._sock = None
+        self.sock = self._sock
+
+    @property
+    def twin(self) -> DigitalTwinState:
+        """Exposes the real-time DigitalTwinState model instance."""
+        return self.digital_twin_engine.state
+
+    def pack_someip_event(
+        self, service_id: int, event_id: int, payload: bytes
+    ) -> bytes:
+        """Serializes standard 16-byte SOME/IP header + payload for an event notification."""
+        message_id = (service_id << 16) | (event_id & 0xFFFF)
+        length = 8 + len(payload)
+        request_id = 0x00000000
+        protocol_version = 0x01
+        interface_version = 0x01
+        message_type = 0x02  # NOTIFICATION
+        return_code = 0x00  # E_OK
+        header = struct.pack(
+            SOMEIP_HEADER_FORMAT,
+            message_id,
+            length,
+            request_id,
+            protocol_version,
+            interface_version,
+            message_type,
+            return_code,
+        )
+        return header + payload
 
     def register_subscriber(self, callback: Callable[[SOMEIPMessage], None]) -> None:
         """Subscribes an observer callback to all emitted SOME/IP messages."""
@@ -270,7 +317,9 @@ class SOAGatewayTwin:
     # Signal-to-Service Translators
     # ------------------------------------------------------------------------
 
-    def translate_powertrain_signal(self, frame: CANFrame, now: Optional[float] = None) -> Optional[SOMEIPMessage]:
+    def translate_powertrain_signal(
+        self, frame: CANFrame, now: Optional[float] = None
+    ) -> Optional[SOMEIPMessage]:
         """
         Translates CAN 0x280 frame into SOME/IP Event 0x8001 (Actuator Speed, Torque, Status).
         CAN Payload: [Torque: int16 (2B)] + [TorqueLimitPct: uint8 (1B)]
@@ -294,7 +343,9 @@ class SOAGatewayTwin:
             self.twin_powertrain.torque_nm = float(actual_torque_nm)
             self.twin_powertrain.torque_limit_pct = float(torque_limit_pct)
             self.twin_powertrain.alive_counter = alive_cnt
-            self.twin_powertrain.status_flags = 0x01 if torque_limit_pct > 50 else 0x02  # 0x01: Optimal, 0x02: Degraded
+            self.twin_powertrain.status_flags = (
+                0x01 if torque_limit_pct > 50 else 0x02
+            )  # 0x01: Optimal, 0x02: Degraded
             self.twin_powertrain.last_update_ts = now
             self.total_translated_events += 1
 
@@ -331,7 +382,9 @@ class SOAGatewayTwin:
         self._publish(msg)
         return msg
 
-    def translate_sensor_signal(self, frame: CANFrame, now: Optional[float] = None) -> Optional[SOMEIPMessage]:
+    def translate_sensor_signal(
+        self, frame: CANFrame, now: Optional[float] = None
+    ) -> Optional[SOMEIPMessage]:
         """
         Translates CAN 0x380 frame into SOME/IP Event 0x8002 (Voltage, Temperature, Pressure).
         CAN Payload: [TempRaw: uint16 (temp_c * 10)] + [PresRaw: uint16 (kPa)]
@@ -348,7 +401,9 @@ class SOAGatewayTwin:
         temp_raw, pres_raw = struct.unpack(">HH", payload[:4])
         temperature_c = temp_raw / 10.0
         pressure_kpa = float(pres_raw)
-        battery_voltage_v = 398.5 - (temperature_c * 0.05)  # Realistic temperature-voltage droop curve
+        battery_voltage_v = 398.5 - (
+            temperature_c * 0.05
+        )  # Realistic temperature-voltage droop curve
 
         # Update Digital Twin
         with self._lock:
@@ -356,7 +411,9 @@ class SOAGatewayTwin:
             self.twin_telemetry.temperature_c = temperature_c
             self.twin_telemetry.pressure_kpa = pressure_kpa
             self.twin_telemetry.alive_counter = alive_cnt
-            self.twin_telemetry.status_flags = 0x01 if temperature_c < 90.0 else 0x04  # 0x04: Thermal Warning
+            self.twin_telemetry.status_flags = (
+                0x01 if temperature_c < 90.0 else 0x04
+            )  # 0x04: Thermal Warning
             self.twin_telemetry.last_update_ts = now
             self.total_translated_events += 1
 
@@ -393,13 +450,118 @@ class SOAGatewayTwin:
         self._publish(msg)
         return msg
 
-    def ingest_can_frame(self, frame: CANFrame, now: Optional[float] = None) -> Optional[SOMEIPMessage]:
-        """Unified entry point for CAN frame translation dispatch."""
-        if frame.can_id == CAN_ID_POWERTRAIN_ACT:
-            return self.translate_powertrain_signal(frame, now=now)
-        elif frame.can_id == CAN_ID_SENSOR_ACQ:
-            return self.translate_sensor_signal(frame, now=now)
+    def _ingest_raw_can(
+        self, can_id: int, data: bytes, now: Optional[float] = None
+    ) -> Optional[SOMEIPMessage]:
+        """Directly parses raw CAN payload bytes and synchronizes digital twin."""
+        if now is None:
+            now = time.time()
+        self.twin.last_updated = now
+
+        if can_id == 0x280 or can_id == CAN_ID_POWERTRAIN_ACT:
+            if len(data) >= 4:
+                status_flag = data[1]
+                raw_rpm = (data[2] << 8) | data[3]
+                self.twin.motor_degraded = status_flag != 0
+                self.twin.motor_rpm = float(raw_rpm)
+                with self._lock:
+                    self.twin_powertrain.speed_rpm = float(raw_rpm)
+                    self.twin_powertrain.status_flags = status_flag
+                    self.twin_powertrain.last_update_ts = now
+                    self.total_translated_events += 1
+
+                # 打包 SOME/IP Event 0x8001
+                payload = struct.pack("!HB", raw_rpm, status_flag)
+                pkt = self.pack_someip_event(0x1001, 0x8001, payload)
+                if self.sock and (self.enable_udp_broadcast or self.target_addr):
+                    try:
+                        self.sock.sendto(pkt, self.target_addr)
+                    except Exception:
+                        pass
+
+                header = SOMEIPHeader(
+                    service_id=0x1001,
+                    event_or_method_id=0x8001,
+                    length=len(payload) + 8,
+                    client_id=0x0001,
+                    session_id=self._next_session_id(0x8001),
+                    message_type=SOMEIPMessageType.NOTIFICATION,
+                    return_code=SOMEIPReturnCode.E_OK,
+                )
+                msg = SOMEIPMessage(header=header, payload=payload)
+                self._publish(msg)
+                return msg
+
+        elif can_id == 0x380 or can_id == CAN_ID_SENSOR_ACQ:
+            if len(data) >= 4:
+                voltage_mv = ((data[1] << 8) | data[2]) * 10
+                temp = data[3]
+                self.twin.battery_voltage_mv = voltage_mv
+                self.twin.temp_celsius = float(temp)
+                with self._lock:
+                    self.twin_telemetry.battery_voltage_v = voltage_mv / 1000.0
+                    self.twin_telemetry.temperature_c = float(temp)
+                    self.twin_telemetry.last_update_ts = now
+                    self.total_translated_events += 1
+
+                # 打包 SOME/IP Event 0x8002
+                payload = struct.pack("!IB", voltage_mv, temp)
+                pkt = self.pack_someip_event(0x1002, 0x8002, payload)
+                if self.sock and (self.enable_udp_broadcast or self.target_addr):
+                    try:
+                        self.sock.sendto(pkt, self.target_addr)
+                    except Exception:
+                        pass
+
+                header = SOMEIPHeader(
+                    service_id=0x1002,
+                    event_or_method_id=0x8002,
+                    length=len(payload) + 8,
+                    client_id=0x0001,
+                    session_id=self._next_session_id(0x8002),
+                    message_type=SOMEIPMessageType.NOTIFICATION,
+                    return_code=SOMEIPReturnCode.E_OK,
+                )
+                msg = SOMEIPMessage(header=header, payload=payload)
+                self._publish(msg)
+                return msg
+
         return None
+
+    def ingest_can_frame(
+        self,
+        frame_or_id: Any,
+        data: Optional[bytes] = None,
+        now: Optional[float] = None,
+    ) -> Optional[SOMEIPMessage]:
+        """
+        Unified entry point for CAN frame translation dispatch.
+        Supports:
+        1. ingest_can_frame(frame: CANFrame, now=...)
+        2. ingest_can_frame(can_id: int, data: bytes, now=...)
+        3. ingest_can_frame(msg: can.Message, now=...)
+        """
+        if isinstance(frame_or_id, int):
+            return self._ingest_raw_can(frame_or_id, data or b"", now=now)
+        elif hasattr(frame_or_id, "can_id"):
+            if frame_or_id.can_id == CAN_ID_POWERTRAIN_ACT:
+                return self.translate_powertrain_signal(frame_or_id, now=now)
+            elif frame_or_id.can_id == CAN_ID_SENSOR_ACQ:
+                return self.translate_sensor_signal(frame_or_id, now=now)
+        elif hasattr(frame_or_id, "arbitration_id"):
+            arb_id = int(frame_or_id.arbitration_id)
+            raw_d = bytes(getattr(frame_or_id, "data", b""))
+            return self._ingest_raw_can(arb_id, raw_d, now=now)
+        return None
+
+    def print_twin_telemetry(self) -> None:
+        """Prints formatted real-time digital twin telemetry to console."""
+        print(
+            f"[數位孿生實時鏡像] 轉速: {int(self.twin.motor_rpm)} RPM | "
+            f"降級標記: {self.twin.motor_degraded} | "
+            f"電壓: {self.twin.battery_voltage_mv / 1000.0:.2f} V | "
+            f"溫度: {int(self.twin.temp_celsius)}°C"
+        )
 
     # ------------------------------------------------------------------------
     # Event Publishing & Ethernet UDP Broadcaster
@@ -463,6 +625,10 @@ class SOAGatewayTwin:
             self._sock = None
 
 
+# Backward-compatible alias
+SOAGateway = SOAGatewayTwin
+
+
 # ============================================================================
 # 4. Standalone CLI & Signal-to-Service Demonstration
 # ============================================================================
@@ -480,16 +646,26 @@ if __name__ == "__main__":
     # 1. Simulate CAN ID 0x280 (Powertrain Actuator)
     act_codec = E2EFrameCodec(data_id=0x28)
     can_act_payload = struct.pack(">hB", 140, 100)  # 140 Nm torque, 100% limit
-    can_act_frame = act_codec.encode(can_id=CAN_ID_POWERTRAIN_ACT, payload=can_act_payload)
+    can_act_frame = act_codec.encode(
+        can_id=CAN_ID_POWERTRAIN_ACT, payload=can_act_payload
+    )
 
     msg_act = gateway.ingest_can_frame(can_act_frame)
     assert msg_act is not None
-    print(f"\n[CAN 0x280 -> SOME/IP Event 0x8001 Translation]")
-    print(f"   -> Service ID: 0x{msg_act.header.service_id:04X} | Event ID: 0x{msg_act.header.event_or_method_id:04X}")
-    print(f"   -> Message Type: {msg_act.header.message_type.name} (0x{int(msg_act.header.message_type):02X})")
+    print("\n[CAN 0x280 -> SOME/IP Event 0x8001 Translation]")
+    print(
+        f"   -> Service ID: 0x{msg_act.header.service_id:04X} | Event ID: 0x{msg_act.header.event_or_method_id:04X}"
+    )
+    print(
+        f"   -> Message Type: {msg_act.header.message_type.name} (0x{int(msg_act.header.message_type):02X})"
+    )
     print(f"   -> Total Packet Length: {len(msg_act.serialize())} Bytes")
-    speed_rpm, torque_nm, limit_pct, alive_c, status_c = struct.unpack(">fffBB", msg_act.payload)
-    print(f"   -> Payload Attributes: Speed={speed_rpm:.1f} RPM, Torque={torque_nm:.1f} Nm, Limit={limit_pct:.0f}%, Alive={alive_c}")
+    speed_rpm, torque_nm, limit_pct, alive_c, status_c = struct.unpack(
+        ">fffBB", msg_act.payload
+    )
+    print(
+        f"   -> Payload Attributes: Speed={speed_rpm:.1f} RPM, Torque={torque_nm:.1f} Nm, Limit={limit_pct:.0f}%, Alive={alive_c}"
+    )
 
     # 2. Simulate CAN ID 0x380 (Sensor Acquisition)
     sns_codec = E2EFrameCodec(data_id=0x38)
@@ -498,16 +674,28 @@ if __name__ == "__main__":
 
     msg_sns = gateway.ingest_can_frame(can_sns_frame)
     assert msg_sns is not None
-    print(f"\n[CAN 0x380 -> SOME/IP Event 0x8002 Translation]")
-    print(f"   -> Service ID: 0x{msg_sns.header.service_id:04X} | Event ID: 0x{msg_sns.header.event_or_method_id:04X}")
-    print(f"   -> Message Type: {msg_sns.header.message_type.name} (0x{int(msg_sns.header.message_type):02X})")
-    v_batt, temp_c, pres_kpa, alive_s, status_s = struct.unpack(">fffBB", msg_sns.payload)
-    print(f"   -> Payload Attributes: Voltage={v_batt:.2f}V, Temp={temp_c:.1f}°C, Pressure={pres_kpa:.1f} kPa, Alive={alive_s}")
+    print("\n[CAN 0x380 -> SOME/IP Event 0x8002 Translation]")
+    print(
+        f"   -> Service ID: 0x{msg_sns.header.service_id:04X} | Event ID: 0x{msg_sns.header.event_or_method_id:04X}"
+    )
+    print(
+        f"   -> Message Type: {msg_sns.header.message_type.name} (0x{int(msg_sns.header.message_type):02X})"
+    )
+    v_batt, temp_c, pres_kpa, alive_s, status_s = struct.unpack(
+        ">fffBB", msg_sns.payload
+    )
+    print(
+        f"   -> Payload Attributes: Voltage={v_batt:.2f}V, Temp={temp_c:.1f}°C, Pressure={pres_kpa:.1f} kPa, Alive={alive_s}"
+    )
 
     # 3. Query Digital Twin State
     snapshot = gateway.get_twin_snapshot()
-    print(f"\n[Digital Twin Real-Time State Synchronized]")
-    print(f"   -> Powertrain: {snapshot.powertrain.speed_rpm:.1f} RPM | {snapshot.powertrain.torque_nm:.1f} Nm | Limit: {snapshot.powertrain.torque_limit_pct:.0f}%")
-    print(f"   -> Telemetry: {snapshot.telemetry.battery_voltage_v:.2f} V | {snapshot.telemetry.temperature_c:.1f} °C | {snapshot.telemetry.pressure_kpa:.1f} kPa")
+    print("\n[Digital Twin Real-Time State Synchronized]")
+    print(
+        f"   -> Powertrain: {snapshot.powertrain.speed_rpm:.1f} RPM | {snapshot.powertrain.torque_nm:.1f} Nm | Limit: {snapshot.powertrain.torque_limit_pct:.0f}%"
+    )
+    print(
+        f"   -> Telemetry: {snapshot.telemetry.battery_voltage_v:.2f} V | {snapshot.telemetry.temperature_c:.1f} °C | {snapshot.telemetry.pressure_kpa:.1f} kPa"
+    )
     print(f"   -> Total Translated Events: {snapshot.total_translated_events}")
     print("=" * 70)

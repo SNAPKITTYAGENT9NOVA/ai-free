@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import can
+
     CAN_AVAILABLE = True
 except ImportError:
     can = None  # type: ignore[assignment]
@@ -122,7 +123,9 @@ class MasterGatewayNode:
     def step(self) -> bytes:
         self.alive_counter = (self.alive_counter + 1) & 0x0F
         # 6-byte functional payload: [system_mode, power_limit, timestamp, reserved...]
-        payload_6 = bytes([self.system_mode, int(self.power_limit_pct), 0x00, 0x00, 0x00, 0x00])
+        payload_6 = bytes(
+            [self.system_mode, int(self.power_limit_pct), 0x00, 0x00, 0x00, 0x00]
+        )
         return build_e2e_frame(payload_6, self.alive_counter)
 
 
@@ -136,7 +139,9 @@ class PowertrainActuatorNode:
     motor_rpm: int = 8000
     torque_nm: int = 150
     pwm_duty_pct: float = 100.0
-    state_machine: Iso26262SafetyStateMachine = field(default_factory=Iso26262SafetyStateMachine)
+    state_machine: Iso26262SafetyStateMachine = field(
+        default_factory=Iso26262SafetyStateMachine
+    )
 
     def step(self) -> bytes:
         self.alive_counter = (self.alive_counter + 1) & 0x0F
@@ -191,7 +196,9 @@ class MultiNodeClusterGateway:
         self.sensor_node = SensorAcquisitionNode()
 
         self.someip_session_counter = 0
-        self.event_subscribers: Dict[int, List[Callable[[SomeIpHeader, bytes], None]]] = {
+        self.event_subscribers: Dict[
+            int, List[Callable[[SomeIpHeader, bytes], None]]
+        ] = {
             self.EVENT_POWERTRAIN: [],
             self.EVENT_SENSOR: [],
             self.EVENT_UDS_BOOTLOADER: [],
@@ -309,7 +316,9 @@ class MultiNodeClusterGateway:
         """
         now = int(time.time())
         pubkey = "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0"
-        content_str = json.dumps(payload_dict, separators=(",", ":"), ensure_ascii=False)
+        content_str = json.dumps(
+            payload_dict, separators=(",", ":"), ensure_ascii=False
+        )
 
         serialized = json.dumps(
             [0, pubkey, now, event_kind, tags, content_str],
@@ -357,7 +366,9 @@ class MultiNodeClusterGateway:
             payload_dict=payload,
         )
 
-    def _notify_subscribers(self, event_id: int, header: SomeIpHeader, payload: bytes) -> None:
+    def _notify_subscribers(
+        self, event_id: int, header: SomeIpHeader, payload: bytes
+    ) -> None:
         for cb in self.event_subscribers.get(event_id, []):
             try:
                 cb(header, payload)
@@ -405,7 +416,9 @@ class BaseNode:
             return
         try:
             if CAN_AVAILABLE and can is not None and hasattr(can, "Message"):
-                msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=False)
+                msg = can.Message(
+                    arbitration_id=can_id, data=data, is_extended_id=False
+                )
             else:
                 msg = type(
                     "CANMessage",
@@ -443,7 +456,9 @@ class GatewayNode(BaseNode):
         while self.is_running and (stop_event is None or not stop_event.is_set()):
             cnt = self.next_counter()
             # 構造控制幀: ID 0x120, Byte 0 為 Counter, Byte 1 為目標功率 (75%)
-            data = bytes([cnt, self.target_power_pct, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA])
+            data = bytes(
+                [cnt, self.target_power_pct, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA]
+            )
             self._send_can_message(0x120, data)
             self.frames_sent += 1
 
@@ -542,16 +557,22 @@ class AsyncMultiNodeCluster:
     並透過協程讀取分發循環 (rx_loop) 自動串接致動節點消息接收回呼。
     """
 
-    def __init__(self, bus: Any, channel: str = "vcan0") -> None:
+    def __init__(
+        self,
+        bus: Any,
+        channel: str = "vcan0",
+        soa_gateway: Optional[Any] = None,
+    ) -> None:
         self.bus = bus
         self.channel = channel
+        self.soa_gateway = soa_gateway
         self.gw = GatewayNode("GW_NODE", 0x01, self.bus)
         self.act = ActuatorNode("ACTUATOR_NODE", 0x02, self.bus)
         self.telem = TelemetryNode("TELEM_NODE", 0x03, self.bus)
         self.stop_event = asyncio.Event()
 
     async def rx_loop(self) -> None:
-        """非同步輪詢或讀取總線消息並派發至節點。"""
+        """非同步輪詢或讀取總線消息並派發至節點與 SOA 數位孿生網關。"""
         while not self.stop_event.is_set():
             try:
                 # 兼容同步/非同步 bus.recv
@@ -559,6 +580,10 @@ class AsyncMultiNodeCluster:
                     msg = self.bus.recv(timeout=0.01)
                     if msg:
                         self.act.on_message_received(msg)
+                        if self.soa_gateway is not None:
+                            arb_id = getattr(msg, "arbitration_id", 0)
+                            data = getattr(msg, "data", b"")
+                            self.soa_gateway.ingest_can_frame(arb_id, data)
                 await asyncio.sleep(0.005)
             except Exception:
                 await asyncio.sleep(0.01)
@@ -573,9 +598,11 @@ class AsyncMultiNodeCluster:
         await asyncio.sleep(duration_sec)
         self.stop_event.set()
 
-        await asyncio.gather(task_gw, task_act, task_telem, task_rx, return_exceptions=True)
+        await asyncio.gather(
+            task_gw, task_act, task_telem, task_rx, return_exceptions=True
+        )
 
-        return {
+        res: Dict[str, Any] = {
             "gw_frames": self.gw.frames_sent,
             "act_frames": self.act.frames_sent,
             "telem_frames": self.telem.frames_sent,
@@ -583,3 +610,8 @@ class AsyncMultiNodeCluster:
             "degraded_transitions": self.act.degraded_transitions,
             "recovery_transitions": self.act.recovery_transitions,
         }
+        if self.soa_gateway is not None:
+            res["soa_translated_events"] = getattr(
+                self.soa_gateway, "total_translated_events", 0
+            )
+        return res

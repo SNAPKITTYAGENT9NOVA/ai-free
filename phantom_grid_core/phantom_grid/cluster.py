@@ -542,16 +542,22 @@ class AsyncMultiNodeCluster:
     並透過協程讀取分發循環 (rx_loop) 自動串接致動節點消息接收回呼。
     """
 
-    def __init__(self, bus: Any, channel: str = "vcan0") -> None:
+    def __init__(
+        self,
+        bus: Any,
+        channel: str = "vcan0",
+        soa_gateway: Optional[Any] = None,
+    ) -> None:
         self.bus = bus
         self.channel = channel
+        self.soa_gateway = soa_gateway
         self.gw = GatewayNode("GW_NODE", 0x01, self.bus)
         self.act = ActuatorNode("ACTUATOR_NODE", 0x02, self.bus)
         self.telem = TelemetryNode("TELEM_NODE", 0x03, self.bus)
         self.stop_event = asyncio.Event()
 
     async def rx_loop(self) -> None:
-        """非同步輪詢或讀取總線消息並派發至節點。"""
+        """非同步輪詢或讀取總線消息並派發至節點與 SOA 數位孿生網關。"""
         while not self.stop_event.is_set():
             try:
                 # 兼容同步/非同步 bus.recv
@@ -559,6 +565,10 @@ class AsyncMultiNodeCluster:
                     msg = self.bus.recv(timeout=0.01)
                     if msg:
                         self.act.on_message_received(msg)
+                        if self.soa_gateway is not None:
+                            arb_id = getattr(msg, "arbitration_id", 0)
+                            data = getattr(msg, "data", b"")
+                            self.soa_gateway.ingest_can_frame(arb_id, data)
                 await asyncio.sleep(0.005)
             except Exception:
                 await asyncio.sleep(0.01)
@@ -575,7 +585,7 @@ class AsyncMultiNodeCluster:
 
         await asyncio.gather(task_gw, task_act, task_telem, task_rx, return_exceptions=True)
 
-        return {
+        res: Dict[str, Any] = {
             "gw_frames": self.gw.frames_sent,
             "act_frames": self.act.frames_sent,
             "telem_frames": self.telem.frames_sent,
@@ -583,3 +593,8 @@ class AsyncMultiNodeCluster:
             "degraded_transitions": self.act.degraded_transitions,
             "recovery_transitions": self.act.recovery_transitions,
         }
+        if self.soa_gateway is not None:
+            res["soa_translated_events"] = getattr(
+                self.soa_gateway, "total_translated_events", 0
+            )
+        return res
