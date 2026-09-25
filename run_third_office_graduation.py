@@ -49,6 +49,7 @@ def main():
         (5.0, "Hardware-In-The-Loop Boundary Stress: 85% bus load, E2E counter tampering, and Bus-Off fast restart verified.", "Automotive HIL test bench injecting fault frames into CAN bus with real-time waveform monitors and oscilloscope."),
         (5.0, "Architecture Assets Solidification: 00_System roles, 01_Memory changelog, and 02_Knowledge specifications baseline complete.", "Holographic three-tier architectural blueprint crystallizing into immutable automotive standard assets."),
         (6.0, "Scale & Productization: UDS dual-bank bootloader, XCP live calibration, telemetry dashboard, and SOME/IP 3-node cluster ignited.", "Automotive production plant with multi-node telemetry boards, flash bootloader programming status, and real-time dashboard."),
+        (6.0, "Embedded MCU C UDS FSM prototype and SocketCAN sliding-window telemetry backend online.", "Microcontroller C state machine flashing dual flash partitions with real-time sliding window telemetry."),
     ]
 
     pkg = bridge.build_project_package(
@@ -82,6 +83,13 @@ def main():
         "phantom_grid_core/phantom_grid/bootloader.py",
         "phantom_grid_core/phantom_grid/calibration.py",
         "phantom_grid_core/phantom_grid/cluster.py",
+        "phantom_grid_core/phantom_grid/telemetry_backend.py",
+        "src/uds_bootloader_fsm.h",
+        "src/uds_bootloader_fsm.c",
+        "00_System/uds_bootloader_fsm.h",
+        "00_System/uds_bootloader_fsm.c",
+        "can_telemetry_backend.py",
+        "00_System/can_telemetry_backend.py",
         "pipeline_orchestrator.py",
         "tests/test_pipeline_orchestrator.py",
         "audit_governance.py",
@@ -105,6 +113,7 @@ def main():
         "tests/test_uds_bootloader_xcp.py",
         "tests/test_telemetry_dashboard.py",
         "tests/test_multi_node_cluster.py",
+        "tests/test_uds_c_and_backend.py",
         "e2e_state_matrix.py",
         "test_iso26262_e2e_state_matrix.py",
         "verify_10k_e2e_vectors.py",

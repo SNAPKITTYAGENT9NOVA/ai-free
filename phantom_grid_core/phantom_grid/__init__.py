@@ -59,6 +59,11 @@ from .cluster import (
     PowertrainActuatorNode,
     SensorAcquisitionNode,
 )
+from .telemetry_backend import (
+    SocketCANTelemetryBackend,
+    VehicleTelemetrySnapshot,
+    CANFrameMetrics,
+)
 
 __all__ = [
     "__version__",
@@ -94,4 +99,7 @@ __all__ = [
     "MasterGatewayNode",
     "PowertrainActuatorNode",
     "SensorAcquisitionNode",
+    "SocketCANTelemetryBackend",
+    "VehicleTelemetrySnapshot",
+    "CANFrameMetrics",
 ]
