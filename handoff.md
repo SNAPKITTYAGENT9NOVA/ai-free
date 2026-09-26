@@ -3044,6 +3044,22 @@ etlify-demo\public\2026_competitions_calendar.ics。
 
 ---
 
+## 🍎【2026-09-26 23:42 CST 里程碑 218】Anna 官方 App 第 7 章權限解鎖與 v0.1.1 正式送審 · In Review 綠燈鎖定
+
+依據**首席工程師 / 霸丸總指揮官（Jack 哥）**親自操作與小米整理之 Anna 第 7 章端到端 SOP 全線通關：
+
+1. **破譯「上傳暴斃」真正死穴**：
+   - 經實測排查，舊版被退件核心並非代碼問題，而是平台 UI Runtime 之 `PERMISSIONS`（`tools.invoke`、`llm.complete`、`storage.read`、`storage.write`）未被勾選，導致沙盒直接以安全違規阻斷點擊呼叫。
+   - 權限全面補齊解鎖，並在 `HOST API ALLOW-LISTS` 註冊全權限通配符。
+2. **商店實機截圖 CDN 化與官方資產補齊**：
+   - 在 GitHub 倉庫部署並產生永久公開 CDN 圖片連結（`screenshot_1_lesson_plan.png`、`screenshot_2_quiz_wordcloud.png`），補齊 Listing 缺截圖退件死穴。
+3. **v0.1.1 正式鎖定並提交審查（In Review）**：
+   - 官方控制台（App ID 280）成功觸發 `Submit v0.1.1 for admin review`。
+   - 狀態已正式切換為 **`● In review: v0.1.1`**（Review candidate locked），正式排入官方 Admin 審核佇列！
+
+---
+
+
 ## ⏰ 系統高優先級提醒 (Deadlines)
 - [x] **2026/09/26 06:32 CST**: 🏆 **【已圓滿交卷 100% 綠燈過關】IBM Bob 2.0 賽事平台已成功提交且動態影片替換為 1:54（114.55 秒）超標合規版！**
   - **參賽戰隊**：`PHANTOM GRID (Solo / Jack Hu)`
