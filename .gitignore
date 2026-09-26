@@ -66,6 +66,7 @@ firebase_deploy/
 *.jpeg
 *.png
 !bobflow/assets/*.png
+!teacher-ai-assistant-assets/*.png
 *.gif
 *.bmp
 *.tiff
