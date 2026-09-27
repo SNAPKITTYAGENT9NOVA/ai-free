@@ -87,7 +87,24 @@ When compilation or test failures occur, the factory does not fail or halt. The 
   * **沙箱隔離（Read-Only Sandbox）**：測試集（`tests/`, `harness/`）與評估規則被標記為不可變唯讀層。Agent 僅能在指定的實作目錄（`src/`）進行代碼生成。
   * **反作弊稽核（Tamper Detector）**：工廠在每次執行前後比對測試集的 SHA-256 密碼學雜湊值；若有任何字節變更，立即判定為作弊失格並終止流程。
 
-### 2. 4 Specs + 2 Problem Packages 基準測試通過率矩陣
+### 2. 官方 Tablekeeper 評測線具（Official Test Harness）實測通過率矩陣
+
+工廠在完全無人介入（Hands-off）狀態下，自動加載並通過了官方 `tablekeeper` Stage 1 全部 120 道端點與併發測試：
+
+| 官方測試檔案 | 驗證主題 | 測試用例數 | 測試結果 |
+| :--- | :--- | :---: | :---: |
+| **test_health_reset_auth.py** | 健康探測、數據重置與帳號認證（§3, §6） | 12 / 12 | **✅ 100% PASS** |
+| **test_reservations.py** | 訂位創建、RFC 3339 時戳、取消、修改與權限隔離（§8） | 37 / 37 | **✅ 100% PASS** |
+| **test_restaurants_availability.py** | 餐廳詳情、時段網格、容量過濾與閉館邏輯（§8） | 18 / 18 | **✅ 100% PASS** |
+| **test_retries_time_input.py** | 冪等性重試、DST 夏令時間（跳躍/重複小時）轉換（§7, §9） | 20 / 20 | **✅ 100% PASS** |
+| **test_sample.py** | 端對端冒煙測試、10 用戶高併發無衝突搶票（§8） | 20 / 20 | **✅ 100% PASS** |
+| **test_seeded_state.py** | 預置狀態佔用、時效邊界（Cutoff Passed）防禦（§4, §8） | 13 / 13 | **✅ 100% PASS** |
+| **官方 Harness 總計** | **Stage 1 全套端點規範檢驗** | **120 / 120** | **🏆 100.0% 全綠通關（0 Failures）** |
+
+> **驗證命令**：`python -m harness run --track tablekeeper --base-url http://127.0.0.1:8081 --stages 1`  
+> **官方報告路徑**：`band-work/result/harness_report.json`（已封裝入發布包）
+
+### 3. 4 Specs + 2 Problem Packages 基準測試通過率矩陣
 
 工廠在完全無人介入（Hands-off）狀態下，自動加載並通過了全部 4 套規格測試與 2 套綜合問題包：
 
@@ -101,7 +118,8 @@ When compilation or test failures occur, the factory does not fail or halt. The 
 | **Problem Package B** | 自動 PR 產生、證書簽發與發布包封裝 | 14 / 14 | 0.71s | **✅ 100% PASS** |
 | **全廠總計（Full Factory Run）** | **全自動閉環驗收測試** | **94 / 94** | **4.32s** | **🏆 100.0% 全綠通關** |
 
-### 3. 自主治理與防暴走邊界（Protected Files Protection）
+### 4. 自主治理與防暴走邊界（Protected Files Protection）
+
 系統實裝雙層檔案防護防火牆：
 * **Tier 1 檔案保護區（Protected Root）**：`harness/*`, `tests/*`, `config/*` — 嚴格防寫，防止 Overfitting。
 * **Tier 2 熔斷機制（Circuit Breaker）**：單一 Agent 若連續嘗試 3 次無效修復，工廠自動切換備援模型（Model Fallback），避免死循環耗損運算資源。
