@@ -8,3 +8,4 @@ import Wasm.Frame
 import Wasm.Guard
 import Wasm.SimAlu
 import Wasm.SimAlu2
+import Wasm.SimStack

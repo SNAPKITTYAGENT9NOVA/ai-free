@@ -56,9 +56,11 @@ section Write
 variable {c : Cfg} {s : State 64} {w : WState} {m' : WMem} {v : W}
 
 /-- Write into data-stack slot `j`. -/
-theorem wr_stack (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack.length)
-    (hw : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8 * j) v = some m') :
+theorem wr_stack_at (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack.length) {A : Nat}
+    (hA : A = c.dEnd - 8 * s.dstack.length + 8 * j)
+    (hw : w.mem.write64 A v = some m') :
     Rel0 c { s with dstack := s.dstack.set j v } { w with mem := m' } := by
+  subst hA
   have hcap := hs.capD
   have hdG := hg.dEnd_ge
   obtain ⟨hsz, _⟩ := write64_size hw
@@ -81,6 +83,11 @@ theorem wr_stack (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack.le
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
   · simpa using hs.capD
+
+theorem wr_stack (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack.length)
+    (hw : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8 * j) v = some m') :
+    Rel0 c { s with dstack := s.dstack.set j v } { w with mem := m' } :=
+  wr_stack_at hg hs hj rfl hw
 
 /-- Update one global. -/
 def setG (g : Nat → Val) (i : Nat) (v : Val) : Nat → Val := fun j => if j = i then v else g j
