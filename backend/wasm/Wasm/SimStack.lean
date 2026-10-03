@@ -315,6 +315,40 @@ theorem sim_select (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = 
     simp [ldS, spAdd, execL_append, execL, stepI, cmp64, bin32, hs.sp, ofN_toNat hX, hr0, hr1, hr2, bool32, hc, hm2, i32c, hsp16]
     rfl
 
+theorem sim_pop (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {r : Nat}
+    (hr : r < c.nregs) {a : W} {d : List W} (hd : s.dstack = a :: d) :
+    Sim1 c fs (lowerInstr c.layout n k (.pop r)) { s with dstack := d, regs := State.setReg s.regs r a } w (k + 1) := by
+  have hlen : s.dstack.length = d.length + 1 := by simp [hd]
+  have hX := sp_lt hg hs
+  have hcap := hs.capD
+  have hrf := hg.rf_le
+  have hsz := hg.msize_lt
+  have hr0 : w.mem.read64 (c.dEnd - 8 * s.dstack.length) = some a := by
+    have := hs.stack 0 a (by simp [hd]); simpa using this
+  have hrfl : c.rf + 8 * r < 2 ^ 32 := by omega
+  obtain ⟨m', hm'⟩ : ∃ m', w.mem.write64 (c.rf + 8 * r) a = some m' :=
+    write64_some (by rw [hs.size]; omega)
+  have hsp8 : ofN (c.dEnd - 8 * s.dstack.length) + 8#32 = ofN (c.dEnd - 8 * s.dstack.length + 8) :=
+    ofN_add _ _
+  have hexec : execL ([i32c (c.layout.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8) w = some { w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * s.dstack.length + 8))) } := by
+    simp [ldS, spAdd, execL_append, execL, stepI, bin32, hs.sp, ofN_toNat hX, hr0, i32c, Cfg.layout, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hrfl, hm', hsp8]
+    unfold setG
+    rfl
+  have hrel1 := wr_regs hg hs hr hm'
+  have hrel2 := adj_sp hg hrel1 (n := 1) (by simp [hd])
+  have e3 : ({ { s with regs := State.setReg s.regs r a } with dstack := ({ s with regs := State.setReg s.regs r a } : State 64).dstack.drop 1 } : State 64) = { s with dstack := d, regs := State.setReg s.regs r a } := by
+    simp [hd]
+  rw [e3] at hrel2
+  have hrel3 : Rel0 c { s with dstack := d, regs := State.setReg s.regs r a } { w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * s.dstack.length + 8))) } := by
+    refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_
+    · have e2 : c.dEnd - 8 * s.dstack.length + 8 = c.dEnd - 8 * (s.dstack.length - 1) := by omega
+      simp [setG, spG, e2]
+    · simp [setG, spG, rpG]
+  have := core_gen (fs := fs) (pre := uf c.layout 1) (uf1_pass hg hs hd)
+    (B := [i32c (c.layout.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8)
+    (allSimple_spec (by simp [allSimple, ldS, spAdd, WI.isCtl, i32c])) ⟨_, hexec, hrel3, hst⟩ (k + 1)
+  simpa [lowerInstr, List.append_assoc] using this
+
 end Sim
 
 end Wasm
