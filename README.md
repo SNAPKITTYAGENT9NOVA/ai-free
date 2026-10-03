@@ -1,6 +1,35 @@
 # 🔱 PHANTOM GRID: Autonomous Multi-Agent & Edge Engineering Systems
+
 > **Open Source Warfare & Engineering Flagship** | Lead: Jack Hu (`jackhu24@gmail.com`)  
 > 📖 *[點此閱讀完整《PHANTOM GRID 開源記：一人成軍與小幫手軍團征戰錄》](PHANTOM_GRID_CHRONICLE.md)*
+
+---
+
+## 📚 Featured Projects & Initiatives
+
+### 🌐 **Universal Word Dialect Stack** — Formally Verified Multi-Language Compiler
+Unified compiler infrastructure for BCPL, Forth, and Wolfram with formal verification via Lean 4. Features deterministic x86-64 code generation, graph-coloring register allocation, and clean-room architecture per ADR 001.
+
+- **Status:** Phase 3 Week 1 (Clean-room refactoring in progress)
+- **Test Coverage:** 115/115 tests passing
+- **Architecture:** Lexing → Parsing → Lowering → x86-64 Codegen
+- **Formalization:** 69 Lean theorems (0 sorry/axiom)
+- **[👉 View Full Documentation](#-universal-word-dialect-stack-multi-language-compiler--formal-verification)**
+
+### 🤖 **BobFlow** — Enterprise LLM Agentic Workflow Engine
+Four-agent orchestration (Orchestrator, Architect, Coder, Verifier) for hallucination-free software engineering. Accelerated by IBM Bob 2.0 and watsonx.ai.
+
+- **Status:** Official IBM Bob 2.0 Hackathon Submission
+- **Test Coverage:** 6/6 tests passing (100%)
+- **[👉 View BobFlow Documentation](bobflow/README.md)**
+
+### ⚡ **AutoCopilot** — Hands-Free Industrial & Automotive Voice Diagnostic Copilot
+Real-time voice agent with AssemblyAI Universal-3 Pro STT, CAN bus diagnostics, and vector RAG for maintenance procedures. Sub-second latency parallel tool execution with barge-in interruption.
+
+- **Status:** Official AssemblyAI Voice Agent Hackathon Submission
+- **Test Coverage:** 10/10 tests passing (100%)
+- **Audio:** 16kHz PCM, real-time streaming
+- **[👉 View AutoCopilot Documentation](#-autocopilot-hands-free-industrial--automotive-voice-diagnostic-copilot)**
 
 ---
 
