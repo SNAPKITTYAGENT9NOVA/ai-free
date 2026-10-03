@@ -87,3 +87,42 @@ theorem holds_ge (a b : W) : Cc.ge.holds (subFlags a b) = b.sle a := by
   rw [beq_eq_not_bne, hc, BitVec.slt_eq_decide, BitVec.sle_eq_decide]
   by_cases h : a.toInt < b.toInt <;> simp [h] <;> omega
 
+
+theorem holds_le (a b : W) : Cc.le.holds (subFlags a b) = a.sle b := by
+  unfold Cc.holds subFlags
+  simp only [sub_zero_iff]
+  rw [holds_signed_core a b, BitVec.slt_eq_decide, BitVec.sle_eq_decide]
+  by_cases h2 : a = b
+  · subst h2; simp
+  · have h3 : a.toInt ≠ b.toInt := fun h => h2 (BitVec.toInt_inj.mp h)
+    have h4 : (a == b) = false := beq_eq_false_iff_ne.mpr h2
+    by_cases h1 : a.toInt < b.toInt <;> simp [h1, h4] <;> omega
+
+theorem holds_g (a b : W) : Cc.g.holds (subFlags a b) = b.slt a := by
+  unfold Cc.holds subFlags
+  simp only [sub_zero_iff]
+  have hc := holds_signed_core a b
+  rw [beq_eq_not_bne, hc, BitVec.slt_eq_decide, BitVec.slt_eq_decide]
+  by_cases h2 : a = b
+  · subst h2; simp
+  · have h3 : a.toInt ≠ b.toInt := fun h => h2 (BitVec.toInt_inj.mp h)
+    have h4 : (a == b) = false := beq_eq_false_iff_ne.mpr h2
+    by_cases h1 : a.toInt < b.toInt <;> simp [h1, h4] <;> omega
+
+/-- `cmp a, b; jcc/cmovcc` evaluates exactly the IR comparison predicate. -/
+theorem holds_ccOf (c : WordDialect.Cond) (a b : W) :
+    (ccOf c).holds (subFlags a b) = c.eval a b := by
+  cases c <;> simp only [ccOf, WordDialect.Cond.eval]
+  · exact holds_e a b
+  · exact holds_ne a b
+  · exact holds_b a b
+  · exact holds_be a b
+  · exact holds_a a b
+  · exact holds_ae a b
+  · exact holds_l a b
+  · exact holds_le a b
+  · exact holds_g a b
+  · exact holds_ge a b
+
+end X86
+end WordDialect
