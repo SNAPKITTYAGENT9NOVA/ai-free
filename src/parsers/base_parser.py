@@ -54,49 +54,53 @@ class Expr(ASTNode):
 @dataclass
 class Literal(Expr):
     """Numeric or string literal."""
-    value: Any
+    value: Any = None
     type_hint: str = "unknown"  # "int", "float", "string", etc.
 
 
 @dataclass
 class Identifier(Expr):
     """Variable or symbol reference."""
-    name: str
+    name: str = ""
 
 
 @dataclass
 class BinaryOp(Expr):
     """Binary operation: left op right."""
-    op: str
-    left: Expr
-    right: Expr
+    op: str = ""
+    left: Optional['Expr'] = None
+    right: Optional['Expr'] = None
 
 
 @dataclass
 class UnaryOp(Expr):
     """Unary operation: op operand."""
-    op: str
-    operand: Expr
+    op: str = ""
+    operand: Optional['Expr'] = None
 
 
 @dataclass
 class Call(Expr):
     """Function/word call: name(args) or name arg1 arg2 ..."""
-    name: str
-    args: List[Expr]
+    name: str = ""
+    args: List['Expr'] = None
+
+    def __post_init__(self):
+        if self.args is None:
+            self.args = []
 
 
 @dataclass
 class Load(Expr):
     """Memory load: @address or deref(address)."""
-    address: Expr
+    address: Optional['Expr'] = None
 
 
 @dataclass
 class Index(Expr):
     """Array/list indexing: expr[index]."""
-    expr: Expr
-    index: Expr
+    expr: Optional['Expr'] = None
+    index: Optional['Expr'] = None
 
 
 # ============================================================================
@@ -112,72 +116,98 @@ class Stmt(ASTNode):
 @dataclass
 class ExprStmt(Stmt):
     """Expression statement."""
-    expr: Expr
+    expr: Optional['Expr'] = None
 
 
 @dataclass
 class Assignment(Stmt):
     """Assignment: lhs = rhs."""
-    target: str  # variable name
-    value: Expr
+    target: str = ""  # variable name
+    value: Optional['Expr'] = None
 
 
 @dataclass
 class Store(Stmt):
     """Memory store: @address = value or address! value."""
-    address: Expr
-    value: Expr
+    address: Optional['Expr'] = None
+    value: Optional['Expr'] = None
 
 
 @dataclass
 class Block(Stmt):
     """Block of statements: { stmts }."""
-    stmts: List[Stmt]
+    stmts: List['Stmt'] = None
+
+    def __post_init__(self):
+        if self.stmts is None:
+            self.stmts = []
 
 
 @dataclass
 class IfStmt(Stmt):
     """Conditional: if cond then consequent else alternate."""
-    condition: Expr
-    consequent: List[Stmt]
-    alternate: Optional[List[Stmt]] = None
+    condition: Optional['Expr'] = None
+    consequent: List['Stmt'] = None
+    alternate: Optional[List['Stmt']] = None
+
+    def __post_init__(self):
+        if self.consequent is None:
+            self.consequent = []
 
 
 @dataclass
 class WhileStmt(Stmt):
     """Loop: while condition do body."""
-    condition: Expr
-    body: List[Stmt]
+    condition: Optional['Expr'] = None
+    body: List['Stmt'] = None
+
+    def __post_init__(self):
+        if self.body is None:
+            self.body = []
 
 
 @dataclass
 class ForStmt(Stmt):
     """C-style for loop: for (init; cond; update) body."""
-    init: Optional[Stmt]
-    condition: Expr
-    update: Optional[Stmt]
-    body: List[Stmt]
+    init: Optional['Stmt'] = None
+    condition: Optional['Expr'] = None
+    update: Optional['Stmt'] = None
+    body: List['Stmt'] = None
+
+    def __post_init__(self):
+        if self.body is None:
+            self.body = []
 
 
 @dataclass
 class ReturnStmt(Stmt):
     """Return statement."""
-    value: Optional[Expr] = None
+    value: Optional['Expr'] = None
 
 
 @dataclass
 class FunctionDef(ASTNode):
     """Function definition."""
-    name: str
-    params: List[str]
-    body: List[Stmt]
+    name: str = ""
+    params: List[str] = None
+    body: List['Stmt'] = None
     return_type: Optional[str] = None
+
+    def __post_init__(self):
+        if self.params is None:
+            self.params = []
+        if self.body is None:
+            self.body = []
 
 
 @dataclass
 class Program(ASTNode):
     """Top-level program: list of definitions and statements."""
-    items: List[ASTNode]  # FunctionDef, Stmt, etc.
+    items: List['ASTNode'] = None  # FunctionDef, Stmt, etc.
+
+    def __post_init__(self):
+        if self.items is None:
+            self.items = []
 
 
 # ============================================================================

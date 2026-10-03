@@ -1,0 +1,2 @@
+timestamp,nodes,kwh_per_1k,scale_latency_s,status
+2026-10-03 06:51:30,10000,0.82,7.4,PASS
