@@ -9,3 +9,4 @@ import X86.Micro
 import X86.Guard
 import X86.SimBin
 import X86.SimOps
+import X86.SimStack
