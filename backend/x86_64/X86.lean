@@ -1,3 +1,11 @@
 import X86.Isa
 import X86.Lower
 import X86.Emit
+import X86.Flags
+import X86.Run
+import X86.Rel
+import X86.Seq
+import X86.Micro
+import X86.Guard
+import X86.SimBin
+import X86.SimOps
