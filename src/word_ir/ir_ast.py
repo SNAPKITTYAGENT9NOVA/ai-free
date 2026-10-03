@@ -34,7 +34,7 @@ class IRNodeType(Enum):
 @dataclass(frozen=True)
 class IRNode:
     """Base IR node: immutable, type-tagged"""
-    node_type: IRNodeType
+    node_type: IRNodeType = None
     operands: tuple = ()
     metadata: dict = None
 
@@ -234,8 +234,8 @@ def ir_store(addr: IRNode, val: IRNode) -> IRNode:
 
 
 def ir_word(val: int, width: int = 64) -> IRNode:
-    return IRWord(value=val, width=width)
+    return IRWord(node_type=None, value=val, width=width)
 
 
 def ir_ptr(addr: int) -> IRNode:
-    return IRPointer(address=addr)
+    return IRPointer(node_type=None, address=addr)
