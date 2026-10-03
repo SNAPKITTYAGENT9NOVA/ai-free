@@ -13,3 +13,4 @@ import X86.SimStack
 import X86.SimMem
 import X86.SimMemOps
 import X86.SimDiv
+import X86.SimCtl
