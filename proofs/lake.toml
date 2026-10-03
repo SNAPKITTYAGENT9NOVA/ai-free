@@ -1,0 +1,8 @@
+[package]
+name = "word_dialect_proofs"
+version = "0.1.0"
+description = "Formal verification of Universal Word Dialect Stack"
+authors = ["Ahmad Ali Parr"]
+
+[dependencies]
+mathlib = { git = "https://github.com/leanprover-community/mathlib4.git", rev = "master" }
