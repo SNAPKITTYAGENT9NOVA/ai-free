@@ -4,6 +4,94 @@
 
 ---
 
+## 🌐 Universal Word Dialect Stack: Multi-Language Compiler & Formal Verification
+
+### Project Status: Phase 3 Week 1 — Clean-Room Architecture Refactoring (In Progress)
+
+The **Universal Word Dialect Stack** is a formally verified, multi-language compiler infrastructure built on the principle of separating concerns across lexing, parsing, lowering, and code generation phases. It enables three distinct programming languages (BCPL, Forth, Wolfram) to compile to a unified intermediate representation (Word IR) and generate x86-64 assembly with deterministic guarantees.
+
+#### 🎯 Architecture Overview
+```
+BCPL/Forth/Wolfram Source
+  ↓ [Lexing Phase] → Tokens
+  ↓ [Parsing Phase] → AST with source location tracking
+  ↓ [Lowering Phase] → Universal Word IR (18 canonical node types)
+  ↓ [Analysis Phase] → Liveness analysis, interference graph
+  ↓ [Register Allocation] → Greedy graph coloring (per RegisterAllocation.lean proofs)
+  ↓ [Code Generation] → x86-64 Assembly (System V AMD64 ABI)
+```
+
+#### 📊 Current Status
+- **Phase 1B**: ✅ COMPLETE (69 Lean theorems formalized, 0 sorry/axiom)
+- **Phase 2A**: ✅ COMPLETE (37 integration tests, 115/115 tests passing)
+- **Phase 2B**: 🟢 IN PROGRESS (Lean proof CI workflow integration)
+- **Phase 3 Week 1**: 🟡 IN PROGRESS (Clean-room architecture refactoring)
+  - ✅ Base Lexer Framework Extracted (Universal Token + BaseLexer)
+  - 🟢 Parser AST Framework Initialized (Expr/Stmt nodes with source locations)
+  - ⏳ Language-Specific Parsers (BCPL, Forth, Wolfram)
+  - ⏳ Separated Lowering Phase (AST → IR)
+
+#### 📁 Core Directories
+```
+src/
+├── word_core/         # WORD32/64/128 types, PTR, bounded-value invariants
+├── word_machine/      # RegisterFile, Memory, Stack, ExecutionState, VM
+├── word_ir/           # Universal IR AST (18 node types)
+├── lexers/            # BaseLexer framework + language specializations
+├── parsers/           # BaseParser framework + AST nodes
+├── lowering/          # Lexing → Parsing → Lowering pipeline
+├── compilers/         # IR → x86-64 codegen with register allocation
+└── backends/          # ISA-specific backends (x86, ARM, RISC-V planned)
+tests/
+├── unit/              # WORD type tests, VM tests, lexer tests (78 tests)
+├── integration/       # Pipeline tests, register allocation, cross-frontend (37 tests)
+└── test_proofs.py     # Gatekeeper: verify all 69 Lean proofs type-check
+proofs/
+├── WordType.lean      # 14 theorems: WORD semantics, PTR compatibility
+├── WordMachine.lean   # 14 theorems: VM execution, determinism
+├── Semantics.lean     # 22 theorems: lowering correctness across 3 frontends
+└── RegisterAllocation.lean  # 19 theorems: graph coloring, spilling, determinism
+```
+
+#### ⚙️ Phase 3 Week 1 Deliverables
+
+**Days 1-2: Base Lexer Extraction** ✅
+- Created `src/lexers/base_lexer.py` with universal Token dataclass
+- Extracted common tokenization logic (position tracking, number/string parsing)
+- Reduced code duplication by 155 LOC (target: 300 LOC reduction across all 3 lexers)
+- All 19 lexer tests + 96 core tests passing (115/115 total)
+
+**Days 3-4: Parser AST Framework** 🟢
+- Created `src/parsers/base_parser.py` with AST node hierarchy
+- Expression nodes: Literal, Identifier, BinaryOp, UnaryOp, Call, Load, Index
+- Statement nodes: ExprStmt, Assignment, Store, Block, IfStmt, WhileStmt
+- Source location tracking (line, column, text) for error reporting
+- Ready for BCPL, Forth, Wolfram parser implementations
+
+**Day 5: Separated Lowering** ⏳
+- Refactor all 3 lowering passes to accept AST (not tokens)
+- Ensure identical IR output to current implementations
+- Validate all 115 tests continue passing (zero regression)
+
+#### 🧪 Test & Validation Framework
+```bash
+# Run all core Word Dialect tests
+pytest tests/unit/ tests/integration/ tests/test_lexers.py -v
+
+# Run Lean proof validation
+python tests/integration/test_proofs.py
+```
+
+**Results**: 115/115 tests passing, 0 regressions, all proofs type-check
+
+#### 📄 Documentation
+- **PHASE2A_COMPLETION_REPORT.md**: Phase 2A integration testing results
+- **PHASE1B_COMPLETION_REPORT.md**: Phase 1B proof formalization attestation
+- **CLEAN_ROOM_REFACTORING_ASSESSMENT.md**: Phase 3 technical debt inventory & 3-week plan
+- **ADR-001-CLEAN-ROOM-ARCHITECTURE.md**: Formal requirements (WIP, Phase 3 Week 3)
+
+---
+
 ## 🏆 Featured Submission: BobFlow Agentic Engine
 ### Official Entry for IBM Bob 2.0 Hackathon (Lablab.ai ✕ IBM)
 👉 **[Click Here to Enter Dedicated BobFlow Documentation & Code (bobflow/)](bobflow/README.md)**  
