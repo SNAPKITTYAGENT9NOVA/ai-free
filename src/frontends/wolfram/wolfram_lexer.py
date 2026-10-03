@@ -7,8 +7,9 @@ Full Wolfram parsing is deferred—this stub focuses on lexical structure.
 """
 
 from enum import Enum, auto
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
+
+from src.lexers import BaseLexer, Token
 
 
 class TokenType(Enum):
@@ -59,19 +60,7 @@ class TokenType(Enum):
     EOF = auto()
 
 
-@dataclass
-class Token:
-    """Lexical token with source location."""
-    type: TokenType
-    value: str
-    line: int
-    col: int
-
-    def __repr__(self):
-        return f"Token({self.type.name}, {self.value!r}, {self.line}:{self.col})"
-
-
-class WolframLexer:
+class WolframLexer(BaseLexer):
     """Wolfram lexical analyzer (stub).
 
     Provides basic tokenization for Wolfram mathematical expressions.
@@ -96,38 +85,8 @@ class WolframLexer:
         "GreaterEqual", "LessEqual",
     }
 
-    def __init__(self, source: str):
-        self.source = source
-        self.pos = 0
-        self.line = 1
-        self.col = 1
-        self.tokens: List[Token] = []
-
-    def current_char(self) -> Optional[str]:
-        if self.pos >= len(self.source):
-            return None
-        return self.source[self.pos]
-
-    def peek_char(self, offset: int = 1) -> Optional[str]:
-        pos = self.pos + offset
-        if pos >= len(self.source):
-            return None
-        return self.source[pos]
-
-    def advance(self):
-        if self.pos < len(self.source):
-            if self.source[self.pos] == "\n":
-                self.line += 1
-                self.col = 1
-            else:
-                self.col += 1
-            self.pos += 1
-
-    def skip_whitespace(self):
-        while self.current_char() and self.current_char() in " \t\r\n":
-            self.advance()
-
     def skip_comment(self):
+        """Skip Wolfram comments: (* ... *)."""
         if self.current_char() == "(" and self.peek_char() == "*":
             self.advance()
             self.advance()
@@ -139,17 +98,11 @@ class WolframLexer:
                 self.advance()
 
     def read_number(self) -> Token:
+        """Read a number with optional decimal point and scientific notation."""
         start_line, start_col = self.line, self.col
-        num_str = ""
-        while self.current_char() and self.current_char().isdigit():
-            num_str += self.current_char()
-            self.advance()
-        if self.current_char() == "." and self.peek_char() and self.peek_char().isdigit():
-            num_str += self.current_char()
-            self.advance()
-            while self.current_char() and self.current_char().isdigit():
-                num_str += self.current_char()
-                self.advance()
+        num_str = super().read_number()
+
+        # Handle scientific notation
         if self.current_char() and self.current_char() in "eE":
             num_str += self.current_char()
             self.advance()
@@ -159,9 +112,11 @@ class WolframLexer:
             while self.current_char() and self.current_char().isdigit():
                 num_str += self.current_char()
                 self.advance()
+
         return Token(TokenType.NUMBER, num_str, start_line, start_col)
 
     def read_symbol(self) -> Token:
+        """Read a symbol or built-in function."""
         start_line, start_col = self.line, self.col
         sym = ""
         while self.current_char() and (self.current_char().isalnum() or self.current_char() == "_"):
@@ -170,21 +125,10 @@ class WolframLexer:
         token_type = TokenType.FUNCTION if sym in self.BUILTIN_FUNCTIONS else TokenType.SYMBOL
         return Token(token_type, sym, start_line, start_col)
 
-    def read_string(self, quote: str) -> Token:
+    def read_string_literal(self) -> Token:
+        """Read a string literal."""
         start_line, start_col = self.line, self.col
-        self.advance()
-        value = ""
-        while self.current_char() and self.current_char() != quote:
-            if self.current_char() == "\\":
-                self.advance()
-                if self.current_char():
-                    value += self.current_char()
-                    self.advance()
-            else:
-                value += self.current_char()
-                self.advance()
-        if self.current_char() == quote:
-            self.advance()
+        value = super().read_string('"')
         return Token(TokenType.STRING, value, start_line, start_col)
 
     def tokenize(self) -> List[Token]:
@@ -203,7 +147,7 @@ class WolframLexer:
             start_line, start_col = self.line, self.col
 
             if ch == '"':
-                self.tokens.append(self.read_string('"'))
+                self.tokens.append(self.read_string_literal())
             elif ch.isdigit():
                 self.tokens.append(self.read_number())
             elif ch.isalpha() or ch == "_":

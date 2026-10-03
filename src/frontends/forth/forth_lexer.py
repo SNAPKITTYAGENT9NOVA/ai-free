@@ -148,7 +148,7 @@ class ForthLexer(BaseLexer):
     }
 
     def skip_comment(self):
-        """Skip Forth comments: \ line-comments and ( block-comments )."""
+        r"""Skip Forth comments: \ line-comments and ( block-comments )."""
         if self.current_char() == "\\":
             while self.current_char() and self.current_char() != "\n":
                 self.advance()
