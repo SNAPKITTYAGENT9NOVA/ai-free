@@ -1,6 +1,6 @@
 name = "UniversalWord"
 version = "0.1.0"
-defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram"]
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "X86", "wordc"]
 
 [[lean_lib]]
 name = "WordDialect"
@@ -21,3 +21,12 @@ srcDir = "bcpl"
 [[lean_lib]]
 name = "Wolfram"
 srcDir = "wolfram"
+
+[[lean_lib]]
+name = "X86"
+srcDir = "backend/x86_64"
+
+[[lean_exe]]
+name = "wordc"
+root = "Main"
+srcDir = "backend/x86_64"
