@@ -1,6 +1,6 @@
 name = "UniversalWord"
 version = "0.1.0"
-defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL"]
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram"]
 
 [[lean_lib]]
 name = "WordDialect"
@@ -17,3 +17,7 @@ srcDir = "forth"
 [[lean_lib]]
 name = "BCPL"
 srcDir = "bcpl"
+
+[[lean_lib]]
+name = "Wolfram"
+srcDir = "wolfram"

@@ -14,6 +14,6 @@ jobs:
         run: lake build
       - name: Forbidden constructs
         run: |
-          if grep -rnE '\bsorry\b|\badmit\b|native_decide|^\s*axiom ' formal word-ir forth bcpl --include='*.lean'; then exit 1; fi
+          if grep -rnE '\bsorry\b|\badmit\b|native_decide|^\s*axiom ' formal word-ir forth bcpl wolfram --include='*.lean'; then exit 1; fi
       - name: Axiom audit
         run: lake env lean formal/Audit.lean
