@@ -68,9 +68,23 @@ def binBody (op : List WI) : List WI :=
 def binOp (L : Layout) (op : List WI) : List WI := uf L 2 ++ binBody op
 
 /-- Shifts: a count of 64 or more yields 0. -/
-def shiftOp (L : Layout) (op : WI) : List WI :=
-  uf L 2 ++ [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ ldS 0 ++ [op] ++
+def shiftBody (op : WI) : List WI :=
+  [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ ldS 0 ++ [op] ++
     ldS 0 ++ [.i64const 64#64, .i64geu, .select, .i64store 8] ++ spAdd 8
+
+def shiftOp (L : Layout) (op : WI) : List WI := uf L 2 ++ shiftBody op
+
+/-- Trap `divideByZero` when the divisor `[sp+0]` is zero. -/
+def zeroGuard : List WI := ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]]
+
+/-- Signed division of `[sp+8]` by `[sp+0]` (non-zero), result in `[sp+8]`, pop one. A divisor of -1
+yields `0 - a` and the divisor passed to `i64.div_s` is then 1, so the spec's `INT64_MIN / -1` trap
+cannot occur. -/
+def sdivBody : List WI :=
+  [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ [.i64sub] ++
+    ldS 8 ++ [.i64const 1#64] ++ ldS 0 ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select,
+      .i64divs] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select, .i64store 8] ++
+    spAdd 8
 
 def cmpOp : WordDialect.Cond → WI
   | .eq => .i64eq | .ne => .i64ne | .ult => .i64ltu | .ule => .i64leu | .ugt => .i64gtu
@@ -91,14 +105,8 @@ def lowerInstr (L : Layout) (n k : Nat) : WordDialect.Instr 64 → List WI
   | .and => binOp L [.i64and] ++ [i32c (k + 1)]
   | .or => binOp L [.i64or] ++ [i32c (k + 1)]
   | .xor => binOp L [.i64xor] ++ [i32c (k + 1)]
-  | .div =>
-    uf L 2 ++ ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]] ++ binBody [.i64divu] ++ [i32c (k + 1)]
-  | .sdiv =>
-    uf L 2 ++ ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]] ++
-      [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ [.i64sub] ++
-      ldS 8 ++ [.i64const 1#64] ++ ldS 0 ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select,
-        .i64divs] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select, .i64store 8] ++
-      spAdd 8 ++ [i32c (k + 1)]
+  | .div => uf L 2 ++ zeroGuard ++ binBody [.i64divu] ++ [i32c (k + 1)]
+  | .sdiv => uf L 2 ++ zeroGuard ++ sdivBody ++ [i32c (k + 1)]
   | .not =>
     uf L 1 ++ [.globalGet spG] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64xor, .i64store 0] ++
       [i32c (k + 1)]

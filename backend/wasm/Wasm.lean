@@ -7,3 +7,4 @@ import Wasm.Seq
 import Wasm.Frame
 import Wasm.Guard
 import Wasm.SimAlu
+import Wasm.SimAlu2

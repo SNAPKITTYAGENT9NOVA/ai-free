@@ -53,5 +53,13 @@ theorem run_ite_exit {fs : Funcs} {w : WState} {r : List Val} {c : W32} {k : Nat
     (hs : w.stack = .i32 c :: r) (hc : c ≠ 0#32) : Run fs [.ite [.exitTrap k]] w (.exit k) :=
   .consAbrupt (.iteThen hs hc (.consAbrupt .exitTrap trivial) .exit) trivial
 
+/-- All instructions are non-control. -/
+def allSimple (l : List WI) : Bool := l.all fun i => !i.isCtl
+
+theorem allSimple_spec {l : List WI} (h : allSimple l = true) : ∀ i ∈ l, i.isCtl = false := by
+  intro i hi
+  have := List.all_eq_true.mp h i hi
+  simpa using this
+
 end Wasm
 end WordDialect
