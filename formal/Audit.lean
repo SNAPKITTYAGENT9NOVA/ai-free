@@ -1,4 +1,6 @@
 import WordDialect
+import WordIR
+import Forth
 import Lean
 open Lean Elab Command
 

@@ -1,0 +1,19 @@
+name = "UniversalWord"
+version = "0.1.0"
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL"]
+
+[[lean_lib]]
+name = "WordDialect"
+srcDir = "formal"
+
+[[lean_lib]]
+name = "WordIR"
+srcDir = "word-ir"
+
+[[lean_lib]]
+name = "Forth"
+srcDir = "forth"
+
+[[lean_lib]]
+name = "BCPL"
+srcDir = "bcpl"

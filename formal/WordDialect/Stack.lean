@@ -21,14 +21,14 @@ namespace Instr
 def pops {n : Nat} : Instr n → Nat
   | .word _ | .ptr _ | .jmp _ | .call _ | .ret | .push _ | .halt => 0
   | .load | .not | .branch _ | .pop _ | .dup | .drop => 1
-  | .store | .add | .sub | .mul | .div | .and | .or | .xor
+  | .store | .add | .sub | .mul | .div | .sdiv | .and | .or | .xor
   | .shl | .shr | .rotl | .rotr | .cmp _ | .swap | .over => 2
   | .select | .rot => 3
 
 /-- Results produced on the data stack. -/
 def pushes {n : Nat} : Instr n → Nat
   | .word _ | .ptr _ | .load | .push _ => 1
-  | .add | .sub | .mul | .div | .and | .or | .xor | .not
+  | .add | .sub | .mul | .div | .sdiv | .and | .or | .xor | .not
   | .shl | .shr | .rotl | .rotr | .cmp _ | .select => 1
   | .store | .jmp _ | .branch _ | .call _ | .ret | .pop _ | .drop | .halt => 0
   | .dup => 2

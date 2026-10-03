@@ -1,0 +1,19 @@
+name: lean
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+          sh elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: lake build
+      - name: Forbidden constructs
+        run: |
+          if grep -rnE '\bsorry\b|\badmit\b|native_decide|^\s*axiom ' formal word-ir forth bcpl --include='*.lean'; then exit 1; fi
+      - name: Axiom audit
+        run: lake env lean formal/Audit.lean

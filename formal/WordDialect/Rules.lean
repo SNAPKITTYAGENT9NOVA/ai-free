@@ -33,6 +33,11 @@ theorem exec_div {a b : Word n} (h : s.dstack = b :: a :: d) (hb : b ≠ 0#n) :
 theorem exec_div_zero {a : Word n} (h : s.dstack = 0#n :: a :: d) :
     exec .div s = .trapped .divideByZero := by simp [exec, h]
 
+theorem exec_sdiv {a b : Word n} (h : s.dstack = b :: a :: d) (hb : b ≠ 0#n) :
+    exec .sdiv s = s.fall (a.sdiv b :: d) := by simp [exec, h, hb]
+theorem exec_sdiv_zero {a : Word n} (h : s.dstack = 0#n :: a :: d) :
+    exec .sdiv s = .trapped .divideByZero := by simp [exec, h]
+
 theorem exec_and {a b : Word n} (h : s.dstack = b :: a :: d) :
     exec .and s = s.fall ((a &&& b) :: d) := by simp [exec, h]
 theorem exec_or {a b : Word n} (h : s.dstack = b :: a :: d) :

@@ -22,7 +22,7 @@ inductive Instr (n : Nat) where
   | word   (w : Word n)
   | ptr    (p : Ptr n)
   | load | store
-  | add | sub | mul | div
+  | add | sub | mul | div | sdiv
   | and | or | xor | not
   | shl | shr | rotl | rotr
   | cmp    (c : Cond)
@@ -85,6 +85,8 @@ def exec {n : Nat} (i : Instr n) (s : State n) : Outcome n :=
   | .add, b :: a :: d => s.fall ((a + b) :: d)
   | .sub, b :: a :: d => s.fall ((a - b) :: d)
   | .mul, b :: a :: d => s.fall ((a * b) :: d)
+  | .sdiv, b :: a :: d =>
+      if b = 0#n then .trapped .divideByZero else s.fall (a.sdiv b :: d)
   | .div, b :: a :: d =>
       if b = 0#n then .trapped .divideByZero else s.fall (a.udiv b :: d)
   | .and, b :: a :: d => s.fall ((a &&& b) :: d)

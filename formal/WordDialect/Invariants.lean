@@ -71,7 +71,7 @@ theorem exec_trap {n : Nat} (i : Instr n) (s : State n) (t : Trap)
     (h : exec i s = .trapped t) :
     (t = .stackUnderflow ∧ s.dstack.length < i.pops) ∨
     (t = .badAddress ∧ (i = .load ∨ i = .store)) ∨
-    (t = .divideByZero ∧ i = .div) ∨
+    (t = .divideByZero ∧ (i = .div ∨ i = .sdiv)) ∨
     (t = .returnUnderflow ∧ i = .ret) := by
   obtain ⟨pc, d, rs, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>

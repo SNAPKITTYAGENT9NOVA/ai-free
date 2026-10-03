@@ -1,6 +1,0 @@
-name = "WordDialect"
-version = "0.1.0"
-defaultTargets = ["WordDialect"]
-
-[[lean_lib]]
-name = "WordDialect"
