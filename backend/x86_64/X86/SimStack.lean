@@ -47,12 +47,13 @@ theorem adj_step (hg : Geom c) (hs : Rel0 c p s x) {n : Nat} (hn : n ≤ s.dstac
 theorem movimm_step (hs : Rel0 c p s x) {rd : Reg} (hrd : rd = rax ∨ rd = rcx ∨ rd = rdx ∨ rd = rbx)
     {v : W} (hf : code[x.pc]? = some (.movImm rd v)) :
     ∃ x', XSteps code x x' ∧ Rel0 c p s x' ∧ x'.pc = x.pc + 1 ∧ x'.regs rd = v ∧
-      (∀ r, r ≠ rd → x'.regs r = x.regs r) := by
+      (∀ r, r ≠ rd → x'.regs r = x.regs r) ∧ x'.mem = x.mem := by
   refine ⟨x.mov rd v, XSteps.single (by rw [xstep_of_fetch hf]; rfl),
-    mov_rel0 hs rd (scratch_ne rd hrd) v, ?_, ?_, ?_⟩
+    mov_rel0 hs rd (scratch_ne rd hrd) v, ?_, ?_, ?_, ?_⟩
   · simp [M.mov, M.setReg, M.adv]
   · simp [M.mov, M.setReg, M.adv]
   · intro r hr; simp [M.mov, M.setReg, M.adv, hr]
+  · simp [M.mov, M.setReg, M.adv]
 
 theorem not_step (hs : Rel0 c p s x) (hf : code[x.pc]? = some (.not rax)) :
     ∃ x', XSteps code x x' ∧ Rel0 c p s x' ∧ x'.pc = x.pc + 1 ∧ x'.regs rax = ~~~x.regs rax := by

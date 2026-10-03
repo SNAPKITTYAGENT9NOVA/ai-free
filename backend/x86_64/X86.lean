@@ -10,3 +10,5 @@ import X86.Guard
 import X86.SimBin
 import X86.SimOps
 import X86.SimStack
+import X86.SimMem
+import X86.SimMemOps
