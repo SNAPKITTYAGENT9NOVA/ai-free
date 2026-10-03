@@ -6,19 +6,20 @@ import Wasm.Isa
 
 Lowering of Universal Word IR (64-bit words) to WebAssembly.
 
-The IR has arbitrary jumps, calls and returns; WebAssembly has structured control. Standard
-solution: a dispatch loop. The program is one `loop` whose body is `n + 1` nested blocks with a
-`br_table` on the local `pc` at the centre; label `i` of the table leaves block `i`, which
-lands on the code for IR instruction `i`. Each instruction's code ends by setting `pc` and
-branching back to the loop, or falls through into the next instruction's code. Index `n` is a
-bad-pc stub; every jump target is clamped to `n` at lowering time, so a jump past the end traps
-`badPc` exactly as in the IR semantics.
+The IR has arbitrary jumps, calls and returns; WebAssembly has structured control. Solution: every
+IR instruction `k` becomes its own function `f_k : () → i32` that performs the instruction and
+returns the index of the next IR instruction; the module is a dispatch loop
 
-Locals: `0 = pc` (i32), `1 = sp` data-stack pointer (i32, grows down, empty = `dEnd`), `2 = rp`
+    loop { pc := call_indirect (table[pc]) ; br 0 }
+
+Function `n` (past the last instruction) is the bad-pc stub. Every jump target is clamped to `n` at
+lowering time, so a jump past the end traps `badPc` exactly as in the IR semantics.
+
+Globals: `0 = pc` (i32), `1 = sp` data-stack pointer (i32, grows down, empty = `dEnd`), `2 = rp`
 return-stack pointer (i32, grows down, empty = `rEnd`). The register file, IR memory and both stacks
 live in linear memory at the static addresses of `Layout`; the operand stack is used only for
-temporaries and is empty between IR instructions. `call` pushes the IR index of the return
-instruction onto the return stack; `ret` pops it.
+temporaries. `call` pushes the IR index of the return instruction onto the return stack; `ret` pops
+it.
 
 Every `load`/`store` is bounds-checked against the IR memory size, and every popping instruction
 checks the operand count against `dEnd`, so traps match the IR semantics.
@@ -34,116 +35,118 @@ structure Layout where
   mb : Nat        -- IR memory, word `a` at `mb + 8a`
   M : Nat         -- IR memory size in words
 
-def pcL : Nat := 0
-def spL : Nat := 1
-def rpL : Nat := 2
+def pcG : Nat := 0
+def spG : Nat := 1
+def rpG : Nat := 2
 
 def i32c (n : Nat) : WI := .i32const (BitVec.ofNat 32 n)
 def i64c (n : Nat) : WI := .i64const (BitVec.ofNat 64 n)
 
-def spAdd (d : Nat) : List WI := [.localGet spL, i32c d, .i32add, .localSet spL]
-def spSub (d : Nat) : List WI := [.localGet spL, i32c d, .i32sub, .localSet spL]
+def spAdd (d : Nat) : List WI := [.globalGet spG, i32c d, .i32add, .globalSet spG]
+def spSub (d : Nat) : List WI := [.globalGet spG, i32c d, .i32sub, .globalSet spG]
 
 /-- Operand-count guard for `k` operands: trap `stackUnderflow` unless `sp ≤ dEnd - 8k`. -/
 def uf (L : Layout) (k : Nat) : List WI :=
-  if k = 0 then [] else [.localGet spL, i32c (L.dEnd - 8 * k), .i32gtu, .ite [.exitTrap 1]]
+  if k = 0 then [] else [.globalGet spG, i32c (L.dEnd - 8 * k), .i32gtu, .ite [.exitTrap 1]]
 
-/-- Push `v` (a word whose bits are on the operand stack as the last thing in `val`). -/
+/-- Push the word computed by `val`. -/
 def pushWith (val : List WI) : List WI :=
-  spSub 8 ++ [.localGet spL] ++ val ++ [.i64store 0]
+  spSub 8 ++ [.globalGet spG] ++ val ++ [.i64store 0]
 
 /-- `[sp + off]` as an `i64` on the operand stack. -/
-def ldS (off : Nat) : List WI := [.localGet spL, .i64load off]
+def ldS (off : Nat) : List WI := [.globalGet spG, .i64load off]
 
 /-- Address of IR memory word `[sp+0]`, bounds-checked first. -/
 def memAddr (L : Layout) : List WI :=
   ldS 0 ++ [.i64const (BitVec.ofNat 64 L.M), .i64geu, .ite [.exitTrap 2]] ++
     ldS 0 ++ [.i32wrap, i32c 3, .i32shl, i32c L.mb, .i32add]
 
-def jumpTo (n t dep : Nat) : List WI := [i32c (min t n), .localSet pcL, .br dep]
-
-/-- Binary operation `f` on `[sp+8] (op) [sp+0]`, result in `[sp+8]`, then pop one. -/
+/-- Binary operation on `[sp+8] (op) [sp+0]`, result in `[sp+8]`, then pop one. -/
 def binBody (op : List WI) : List WI :=
-  [.localGet spL] ++ ldS 8 ++ ldS 0 ++ op ++ [.i64store 8] ++ spAdd 8
+  [.globalGet spG] ++ ldS 8 ++ ldS 0 ++ op ++ [.i64store 8] ++ spAdd 8
 
-def binOp (L : Layout) (op : List WI) : List WI :=
-  uf L 2 ++ binBody op
+def binOp (L : Layout) (op : List WI) : List WI := uf L 2 ++ binBody op
 
 /-- Shifts: a count of 64 or more yields 0. -/
 def shiftOp (L : Layout) (op : WI) : List WI :=
-  uf L 2 ++ [.localGet spL, .i64const 0#64] ++ ldS 8 ++ ldS 0 ++ [op] ++
+  uf L 2 ++ [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ ldS 0 ++ [op] ++
     ldS 0 ++ [.i64const 64#64, .i64geu, .select, .i64store 8] ++ spAdd 8
 
 def cmpOp : WordDialect.Cond → WI
   | .eq => .i64eq | .ne => .i64ne | .ult => .i64ltu | .ule => .i64leu | .ugt => .i64gtu
   | .uge => .i64geu | .slt => .i64lts | .sle => .i64les | .sgt => .i64gts | .sge => .i64ges
 
-/-- Code for IR instruction number `k` of a program of `n` instructions; `n - k` is the label
-depth of the dispatch loop from the top level of this code. -/
+/-- Code for IR instruction number `k` of a program of `n` instructions: performs it and leaves
+the next instruction index on the operand stack. -/
 def lowerInstr (L : Layout) (n k : Nat) : WordDialect.Instr 64 → List WI
-  | .word w => pushWith [.i64const w]
-  | .ptr p => pushWith [.i64const p.toWord]
+  | .word w => pushWith [.i64const w] ++ [i32c (k + 1)]
+  | .ptr p => pushWith [.i64const p.toWord] ++ [i32c (k + 1)]
   | .load =>
-    uf L 1 ++ [.localGet spL] ++ memAddr L ++ [.i64load 0, .i64store 0]
+    uf L 1 ++ [.globalGet spG] ++ memAddr L ++ [.i64load 0, .i64store 0] ++ [i32c (k + 1)]
   | .store =>
-    uf L 2 ++ memAddr L ++ ldS 8 ++ [.i64store 0] ++ spAdd 16
-  | .add => binOp L [.i64add]
-  | .sub => binOp L [.i64sub]
-  | .mul => binOp L [.i64mul]
-  | .and => binOp L [.i64and]
-  | .or => binOp L [.i64or]
-  | .xor => binOp L [.i64xor]
+    uf L 2 ++ memAddr L ++ ldS 8 ++ [.i64store 0] ++ spAdd 16 ++ [i32c (k + 1)]
+  | .add => binOp L [.i64add] ++ [i32c (k + 1)]
+  | .sub => binOp L [.i64sub] ++ [i32c (k + 1)]
+  | .mul => binOp L [.i64mul] ++ [i32c (k + 1)]
+  | .and => binOp L [.i64and] ++ [i32c (k + 1)]
+  | .or => binOp L [.i64or] ++ [i32c (k + 1)]
+  | .xor => binOp L [.i64xor] ++ [i32c (k + 1)]
   | .div =>
-    uf L 2 ++ ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]] ++ binBody [.i64divu]
+    uf L 2 ++ ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]] ++ binBody [.i64divu] ++ [i32c (k + 1)]
   | .sdiv =>
     uf L 2 ++ ldS 0 ++ [.i64eqz, .ite [.exitTrap 3]] ++
-      [.localGet spL, .i64const 0#64] ++ ldS 8 ++ [.i64sub] ++
+      [.globalGet spG, .i64const 0#64] ++ ldS 8 ++ [.i64sub] ++
       ldS 8 ++ [.i64const 1#64] ++ ldS 0 ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select,
-        .i64divs] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select, .i64store 8] ++ spAdd 8
-  | .not => uf L 1 ++ [.localGet spL] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64xor, .i64store 0]
-  | .shl => shiftOp L .i64shl
-  | .shr => shiftOp L .i64shru
-  | .rotl => binOp L [.i64rotl]
-  | .rotr => binOp L [.i64rotr]
-  | .cmp c => binOp L [cmpOp c, .i64extu]
+        .i64divs] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64eq, .select, .i64store 8] ++
+      spAdd 8 ++ [i32c (k + 1)]
+  | .not =>
+    uf L 1 ++ [.globalGet spG] ++ ldS 0 ++ [.i64const (BitVec.allOnes 64), .i64xor, .i64store 0] ++
+      [i32c (k + 1)]
+  | .shl => shiftOp L .i64shl ++ [i32c (k + 1)]
+  | .shr => shiftOp L .i64shru ++ [i32c (k + 1)]
+  | .rotl => binOp L [.i64rotl] ++ [i32c (k + 1)]
+  | .rotr => binOp L [.i64rotr] ++ [i32c (k + 1)]
+  | .cmp c => binOp L [cmpOp c, .i64extu] ++ [i32c (k + 1)]
   | .select =>
-    uf L 3 ++ [.localGet spL] ++ ldS 16 ++ ldS 8 ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select,
-      .i64store 16] ++ spAdd 16
-  | .jmp t => jumpTo n t (n - k)
+    uf L 3 ++ [.globalGet spG] ++ ldS 16 ++ ldS 8 ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select,
+      .i64store 16] ++ spAdd 16 ++ [i32c (k + 1)]
+  | .jmp t => [i32c (min t n)]
   | .branch t =>
-    uf L 1 ++ ldS 0 ++ spAdd 8 ++ [.i64const 0#64, .i64ne, .ite (jumpTo n t (n - k + 1))]
+    uf L 1 ++ [i32c (min t n), i32c (k + 1)] ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select] ++ spAdd 8
   | .call t =>
-    [.localGet rpL, i32c 8, .i32sub, .localSet rpL, .localGet rpL, i64c (k + 1), .i64store 0] ++
-      jumpTo n t (n - k)
+    [.globalGet rpG, i32c 8, .i32sub, .globalSet rpG, .globalGet rpG, i64c (k + 1), .i64store 0,
+      i32c (min t n)]
   | .ret =>
-    [.localGet rpL, i32c L.rEnd, .i32eq, .ite [.exitTrap 5], .localGet rpL, .i64load 0, .i32wrap,
-      .localSet pcL, .localGet rpL, i32c 8, .i32add, .localSet rpL, .br (n - k)]
-  | .push r => pushWith [i32c (L.rf + 8 * r), .i64load 0]
-  | .pop r => uf L 1 ++ [i32c (L.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8
-  | .dup => uf L 1 ++ spSub 8 ++ [.localGet spL] ++ ldS 8 ++ [.i64store 0]
-  | .drop => uf L 1 ++ spAdd 8
-  | .swap => uf L 2 ++ [.localGet spL] ++ ldS 8 ++ [.localGet spL] ++ ldS 0 ++ [.i64store 8, .i64store 0]
-  | .over => uf L 2 ++ spSub 8 ++ [.localGet spL, .localGet spL, .i64load 16, .i64store 0]
+    [.globalGet rpG, i32c L.rEnd, .i32eq, .ite [.exitTrap 5], .globalGet rpG, .i64load 0, .i32wrap,
+      .globalGet rpG, i32c 8, .i32add, .globalSet rpG]
+  | .push r => pushWith [i32c (L.rf + 8 * r), .i64load 0] ++ [i32c (k + 1)]
+  | .pop r =>
+    uf L 1 ++ [i32c (L.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8 ++ [i32c (k + 1)]
+  | .dup => uf L 1 ++ spSub 8 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 0] ++ [i32c (k + 1)]
+  | .drop => uf L 1 ++ spAdd 8 ++ [i32c (k + 1)]
+  | .swap =>
+    uf L 2 ++ [.globalGet spG] ++ ldS 8 ++ [.globalGet spG] ++ ldS 0 ++ [.i64store 8, .i64store 0] ++
+      [i32c (k + 1)]
+  | .over =>
+    uf L 2 ++ spSub 8 ++ [.globalGet spG, .globalGet spG, .i64load 16, .i64store 0] ++ [i32c (k + 1)]
   | .rot =>
-    uf L 3 ++ [.localGet spL] ++ ldS 16 ++ [.localGet spL] ++ ldS 0 ++ [.localGet spL] ++ ldS 8 ++
-      [.i64store 16, .i64store 8, .i64store 0]
+    uf L 3 ++ [.globalGet spG] ++ ldS 16 ++ [.globalGet spG] ++ ldS 0 ++ [.globalGet spG] ++ ldS 8 ++
+      [.i64store 16, .i64store 8, .i64store 0] ++ [i32c (k + 1)]
   | .halt => [.exitHalt]
 
-/-- Code for IR instruction `k`, or the bad-pc stub when `k` is past the end. -/
+/-- Function `k`: the code of IR instruction `k`, or the bad-pc stub past the end. -/
 def instrCode (L : Layout) (p : Prog 64) (k : Nat) : List WI :=
   match p[k]? with
   | some i => lowerInstr L p.length k i
   | none => [.exitTrap 4]
 
-/-- Body of block `L_j`: the dispatch (`j = 0`) or block `L_{j-1}` followed by the code of
-instruction `j - 1`. -/
-def nestC (n : Nat) (code : Nat → List WI) : Nat → List WI
-  | 0 => [.localGet pcL, .brTable (List.range n) n]
-  | j + 1 => .block (nestC n code j) :: code j
+/-- The function table: one function per IR instruction, then the bad-pc stub. -/
+def funcsOf (L : Layout) (p : Prog 64) : Funcs :=
+  (List.range (p.length + 1)).map (instrCode L p)
 
-/-- The whole program: one dispatch loop. -/
-def lowerProg (L : Layout) (p : Prog 64) : List WI :=
-  [.loop (.block (nestC p.length (instrCode L p) p.length) :: instrCode L p p.length)]
+/-- The module's start function: the dispatch loop. -/
+def mainBody : List WI :=
+  [.loop [.globalGet pcG, .callIndirect, .globalSet pcG, .br 0]]
 
 end Wasm
 end WordDialect

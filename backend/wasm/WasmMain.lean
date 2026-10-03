@@ -20,7 +20,7 @@ def runtimeFor (s : Sample) : Wasm.Emit.Runtime := { memImage := s.mem, nregs :=
 
 def watFor (s : Sample) : String :=
   let r := runtimeFor s
-  Wasm.Emit.program r (Wasm.lowerProg r.layout s.prog)
+  Wasm.Emit.program r s.prog
 
 def workDir : String := "/tmp/wasmw"
 

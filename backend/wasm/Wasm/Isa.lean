@@ -4,20 +4,21 @@
 A model of the WebAssembly subset the backend emits, following the WebAssembly core
 specification:
 
-* typed operand stack (`i32` / `i64`), numbered locals, structured control
-  (`block`, `loop`, `if`, `br`, `br_if`, `br_table`) with the spec's label discipline, including
-  unwinding the operand stack to the label's height when a branch is taken;
-* linear memory as **bytes**; `i64.load`/`i64.store` are little-endian, take an `i32` address plus a
-  static offset computed in unbounded arithmetic, and fault (trap) if any accessed byte is outside
-  the memory. There is no aliasing assumption: overlapping accesses are modelled exactly;
-* `i64.div_s` faults on division by zero and on `INT64_MIN / -1` (the spec's two traps);
-  `i64.div_u` faults on division by zero; shifts and rotates take the count modulo 64.
+* typed operand stack (`i32` / `i64`), mutable globals, linear memory, a function table;
+* `i64.load`/`i64.store` on **bytes** (little-endian), taking an `i32` address plus a static offset
+  computed in unbounded arithmetic; an access with any byte outside the memory traps. There is no
+  aliasing assumption: overlapping accesses are modelled exactly;
+* `i64.div_s` traps on division by zero and on `INT64_MIN / -1`; `i64.div_u` traps on division by
+  zero; shifts and rotates take the count modulo 64 (the spec's definition);
+* `if` (without `else`) and `loop`/`br` with the spec's label discipline, including unwinding the
+  operand stack to the label height on a branch; `call_indirect` through the function table (a
+  callee runs on a fresh operand stack and returns the single value it leaves).
 
-Two host calls are modelled as terminal pseudo-instructions: `exitTrap c` (`i32.const c; call
-$proc_exit`) and `exitHalt` (`local.get sp; call $halt`, which dumps the machine state and exits 0).
+Two host calls are terminal pseudo-instructions: `exitTrap c` (`i32.const c; call $proc_exit`) and
+`exitHalt` (`global.get sp; call $halt`, which dumps the machine state and exits 0).
 
-Semantics is a big-step relation (`Run`), so loops need no fuel. That the model matches a real
-WebAssembly engine is an assumption, tested by differential execution (see `wasmw`).
+Semantics is a big-step relation, so loops need no fuel. That the model matches a real
+WebAssembly engine is an assumption, tested by differential execution (`wasmw`).
 -/
 
 namespace WordDialect
@@ -50,14 +51,14 @@ def WMem.write64 (m : WMem) (a : Nat) (v : W) : Option WMem :=
 
 structure WState where
   stack : List Val
-  locals : Nat → Val
+  globals : Nat → Val
   mem : WMem
 
 inductive WI where
   | i32const (v : W32)
   | i64const (v : W)
-  | localGet (i : Nat)
-  | localSet (i : Nat)
+  | globalGet (i : Nat)
+  | globalSet (i : Nat)
   | i64load (off : Nat)
   | i64store (off : Nat)
   | i64add | i64sub | i64mul | i64and | i64or | i64xor
@@ -68,18 +69,16 @@ inductive WI where
   | i32wrap
   | i64extu
   | select
-  | block (body : List WI)
   | loop (body : List WI)
   | ite (thn : List WI)
   | br (l : Nat)
-  | brIf (l : Nat)
-  | brTable (ls : List Nat) (dflt : Nat)
+  | callIndirect
   | exitTrap (code : Nat)
   | exitHalt
 
-/-- Control constructs and terminal pseudo-instructions (handled by `RunI`, not `stepI`). -/
+/-- Control constructs, calls and terminal pseudo-instructions (handled by `RunI`, not `stepI`). -/
 def WI.isCtl : WI → Bool
-  | .block _ | .loop _ | .ite _ | .br _ | .brIf _ | .brTable _ _ | .exitTrap _ | .exitHalt => true
+  | .loop _ | .ite _ | .br _ | .callIndirect | .exitTrap _ | .exitHalt => true
   | _ => false
 
 def bool32 (b : Bool) : W32 := if b then 1#32 else 0#32
@@ -103,10 +102,10 @@ def bin32 (f : W32 → W32 → W32) (s : WState) : Option WState :=
 def stepI : WI → WState → Option WState
   | .i32const v, s => some { s with stack := .i32 v :: s.stack }
   | .i64const v, s => some { s with stack := .i64 v :: s.stack }
-  | .localGet i, s => some { s with stack := s.locals i :: s.stack }
-  | .localSet i, s =>
+  | .globalGet i, s => some { s with stack := s.globals i :: s.stack }
+  | .globalSet i, s =>
     match s.stack with
-    | v :: r => some { s with stack := r, locals := fun j => if j = i then v else s.locals j }
+    | v :: r => some { s with stack := r, globals := fun j => if j = i then v else s.globals j }
     | _ => none
   | .i64load off, s =>
     match s.stack with
@@ -191,8 +190,9 @@ inductive Res where
   | halted (s : WState)
   | fault
 
-/-- Leaving a labelled block (or `if`) entered with operand stack `entry`: a branch to label 0 is
-consumed and the operand stack is unwound to its height at entry; other branches propagate. -/
+/-- Leaving a labelled construct entered with operand stack `entry`: a branch to label 0 is
+consumed (for `if`; `loop` re-enters) and the operand stack is unwound to its height at entry;
+other branches propagate outward. -/
 inductive BlockOut (entry : List Val) : Res → Res → Prop where
   | norm {s} : BlockOut entry (.normal s) (.normal s)
   | br0 {s} : BlockOut entry (.br 0 s) (.normal { s with stack := entry })
@@ -206,42 +206,50 @@ def Res.abrupt : Res → Prop
   | .normal _ => False
   | _ => True
 
-mutual
-inductive RunI : WI → WState → Res → Prop where
-  | simple {i s s'} : i.isCtl = false → stepI i s = some s' → RunI i s (.normal s')
-  | simpleFault {i s} : i.isCtl = false → stepI i s = none → RunI i s .fault
-  | block {body s r r'} : Run body s r → BlockOut s.stack r r' → RunI (.block body) s r'
-  | loopNormal {body s s'} : Run body s (.normal s') → RunI (.loop body) s (.normal s')
-  | loopBr0 {body s s' r} :
-      Run body s (.br 0 s') → RunI (.loop body) { s' with stack := s.stack } r →
-      RunI (.loop body) s r
-  | loopBrS {body s n s'} : Run body s (.br (n + 1) s') → RunI (.loop body) s (.br n s')
-  | loopExit {body s c} : Run body s (.exit c) → RunI (.loop body) s (.exit c)
-  | loopHalted {body s s'} : Run body s (.halted s') → RunI (.loop body) s (.halted s')
-  | loopFault {body s} : Run body s .fault → RunI (.loop body) s .fault
-  | iteThen {thn s r c res res'} :
-      s.stack = .i32 c :: r → c ≠ 0#32 → Run thn { s with stack := r } res →
-      BlockOut r res res' → RunI (.ite thn) s res'
-  | iteElse {thn s r c} :
-      s.stack = .i32 c :: r → c = 0#32 → RunI (.ite thn) s (.normal { s with stack := r })
-  | iteFault {thn s} : (∀ c r, s.stack ≠ .i32 c :: r) → RunI (.ite thn) s .fault
-  | br {l s} : RunI (.br l) s (.br l s)
-  | brIfTaken {l s r c} :
-      s.stack = .i32 c :: r → c ≠ 0#32 → RunI (.brIf l) s (.br l { s with stack := r })
-  | brIfNot {l s r c} :
-      s.stack = .i32 c :: r → c = 0#32 → RunI (.brIf l) s (.normal { s with stack := r })
-  | brIfFault {l s} : (∀ c r, s.stack ≠ .i32 c :: r) → RunI (.brIf l) s .fault
-  | brTable {ls d s r i} :
-      s.stack = .i32 i :: r →
-      RunI (.brTable ls d) s (.br (ls.getD i.toNat d) { s with stack := r })
-  | brTableFault {ls d s} : (∀ i r, s.stack ≠ .i32 i :: r) → RunI (.brTable ls d) s .fault
-  | exitTrap {c s} : RunI (.exitTrap c) s (.exit c)
-  | exitHalt {s} : RunI .exitHalt s (.halted s)
+/-- A function table: entry `i` is the body of function `i`. -/
+abbrev Funcs := List (List WI)
 
-inductive Run : List WI → WState → Res → Prop where
-  | nil {s} : Run [] s (.normal s)
-  | consNormal {i is s s' r} : RunI i s (.normal s') → Run is s' r → Run (i :: is) s r
-  | consAbrupt {i is s r} : RunI i s r → r.abrupt → Run (i :: is) s r
+mutual
+inductive RunI (fs : Funcs) : WI → WState → Res → Prop where
+  | simple {i s s'} : i.isCtl = false → stepI i s = some s' → RunI fs i s (.normal s')
+  | simpleFault {i s} : i.isCtl = false → stepI i s = none → RunI fs i s .fault
+  | loopNormal {body s s'} : Run fs body s (.normal s') → RunI fs (.loop body) s (.normal s')
+  | loopBr0 {body s s' r} :
+      Run fs body s (.br 0 s') → RunI fs (.loop body) { s' with stack := s.stack } r →
+      RunI fs (.loop body) s r
+  | loopBrS {body s n s'} : Run fs body s (.br (n + 1) s') → RunI fs (.loop body) s (.br n s')
+  | loopExit {body s c} : Run fs body s (.exit c) → RunI fs (.loop body) s (.exit c)
+  | loopHalted {body s s'} : Run fs body s (.halted s') → RunI fs (.loop body) s (.halted s')
+  | loopFault {body s} : Run fs body s .fault → RunI fs (.loop body) s .fault
+  | iteThen {thn s r c res res'} :
+      s.stack = .i32 c :: r → c ≠ 0#32 → Run fs thn { s with stack := r } res →
+      BlockOut r res res' → RunI fs (.ite thn) s res'
+  | iteElse {thn s r c} :
+      s.stack = .i32 c :: r → c = 0#32 → RunI fs (.ite thn) s (.normal { s with stack := r })
+  | iteFault {thn s} : (∀ c r, s.stack ≠ .i32 c :: r) → RunI fs (.ite thn) s .fault
+  | br {l s} : RunI fs (.br l) s (.br l s)
+  | callNormal {s r i body s' v} :
+      s.stack = .i32 i :: r → fs[i.toNat]? = some body →
+      Run fs body { s with stack := [] } (.normal s') → s'.stack = [.i32 v] →
+      RunI fs .callIndirect s (.normal { s' with stack := .i32 v :: r })
+  | callBad {s r i body s'} :
+      s.stack = .i32 i :: r → fs[i.toNat]? = some body →
+      Run fs body { s with stack := [] } (.normal s') → (∀ v, s'.stack ≠ [.i32 v]) →
+      RunI fs .callIndirect s .fault
+  | callAbrupt {s r i body res} :
+      s.stack = .i32 i :: r → fs[i.toNat]? = some body →
+      Run fs body { s with stack := [] } res → res.abrupt →
+      RunI fs .callIndirect s (match res with | .br _ _ => .fault | other => other)
+  | callMissing {s r i} :
+      s.stack = .i32 i :: r → fs[i.toNat]? = none → RunI fs .callIndirect s .fault
+  | callBadStack {s} : (∀ i r, s.stack ≠ .i32 i :: r) → RunI fs .callIndirect s .fault
+  | exitTrap {c s} : RunI fs (.exitTrap c) s (.exit c)
+  | exitHalt {s} : RunI fs .exitHalt s (.halted s)
+
+inductive Run (fs : Funcs) : List WI → WState → Res → Prop where
+  | nil {s} : Run fs [] s (.normal s)
+  | consNormal {i is s s' r} : RunI fs i s (.normal s') → Run fs is s' r → Run fs (i :: is) s r
+  | consAbrupt {i is s r} : RunI fs i s r → r.abrupt → Run fs (i :: is) s r
 end
 
 end Wasm

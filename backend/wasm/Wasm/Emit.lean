@@ -36,8 +36,8 @@ def line (d : Nat) (s : String) : String := ind d ++ s ++ "\n"
 partial def instr (d : Nat) : WI → String
   | .i32const v => line d s!"i32.const {v.toNat}"
   | .i64const v => line d s!"i64.const {v.toNat}"
-  | .localGet i => line d s!"local.get {i}"
-  | .localSet i => line d s!"local.set {i}"
+  | .globalGet i => line d s!"global.get {i}"
+  | .globalSet i => line d s!"global.set {i}"
   | .i64load off => line d s!"i64.load offset={off}"
   | .i64store off => line d s!"i64.store offset={off}"
   | .i64add => line d "i64.add" | .i64sub => line d "i64.sub" | .i64mul => line d "i64.mul"
@@ -56,14 +56,12 @@ partial def instr (d : Nat) : WI → String
   | .i32wrap => line d "i32.wrap_i64"
   | .i64extu => line d "i64.extend_i32_u"
   | .select => line d "select"
-  | .block b => line d "block" ++ String.join (b.map (instr (d + 1))) ++ line d "end"
   | .loop b => line d "loop" ++ String.join (b.map (instr (d + 1))) ++ line d "end"
   | .ite t => line d "if" ++ String.join (t.map (instr (d + 1))) ++ line d "end"
   | .br l => line d s!"br {l}"
-  | .brIf l => line d s!"br_if {l}"
-  | .brTable ls dflt => line d s!"br_table {String.intercalate " " (ls.map toString)} {dflt}"
-  | .exitTrap c => line d s!"i32.const {c}" ++ line d "call $proc_exit"
-  | .exitHalt => line d "local.get 1" ++ line d "call $halt"
+  | .exitTrap c => line d s!"i32.const {c}" ++ line d "call $proc_exit" ++ line d "unreachable"
+  | .exitHalt => line d "global.get 1" ++ line d "call $halt" ++ line d "unreachable"
+  | .callIndirect => line d "call_indirect (type $step)"
 
 def hexByte (n : Nat) : String :=
   let s := String.ofList (Nat.toDigits 16 n)
@@ -72,12 +70,18 @@ def hexByte (n : Nat) : String :=
 def wordBytes (w : Nat) : String :=
   String.join ((List.range 8).map fun i => hexByte ((w / 256 ^ i) % 256))
 
-def program (r : Runtime) (code : List WI) : String :=
+def program (r : Runtime) (p : Prog 64) : String :=
   let m := r.memImage.length
+  let L := r.layout
+  let fs := funcsOf L p
   "(module\n" ++
+  "  (type $step (func (result i32)))\n" ++
   "  (import \"wasi_snapshot_preview1\" \"fd_write\" (func $fd_write (param i32 i32 i32 i32) (result i32)))\n" ++
   "  (import \"wasi_snapshot_preview1\" \"proc_exit\" (func $proc_exit (param i32)))\n" ++
   s!"  (memory (export \"memory\") {r.pages})\n" ++
+  "  (global $pc (mut i32) (i32.const 0))\n" ++
+  s!"  (global $sp (mut i32) (i32.const {r.dEnd}))\n" ++
+  s!"  (global $rp (mut i32) (i32.const {r.rEnd}))\n" ++
   (if m = 0 then "" else
     s!"  (data (i32.const {r.mb}) \"{String.join (r.memImage.map wordBytes)}\")\n") ++
   "  (func $write (param $p i32) (param $n i32)\n" ++
@@ -91,10 +95,12 @@ def program (r : Runtime) (code : List WI) : String :=
   s!"    (call $write (i32.const {r.mb}) (i32.const {8 * m}))\n" ++
   s!"    (call $write (i32.const {r.rf}) (i32.const {8 * r.nregs}))\n" ++
   "    (call $proc_exit (i32.const 0)))\n" ++
-  "  (func $main (export \"_start\") (local $pc i32) (local $sp i32) (local $rp i32)\n" ++
-  s!"    (local.set $sp (i32.const {r.dEnd}))\n" ++
-  s!"    (local.set $rp (i32.const {r.rEnd}))\n" ++
-  String.join (code.map (instr 2)) ++
+  String.join ((fs.zipIdx).map fun (b, k) =>
+    s!"  (func $f{k} (type $step)\n" ++ String.join (b.map (instr 2)) ++ "  )\n") ++
+  s!"  (table {fs.length} funcref)\n" ++
+  s!"  (elem (i32.const 0) {String.intercalate " " ((List.range fs.length).map fun k => s!"$f{k}")})\n" ++
+  "  (func $main (export \"_start\")\n" ++
+  String.join (mainBody.map (instr 2)) ++
   "  )\n)\n"
 
 end Emit
