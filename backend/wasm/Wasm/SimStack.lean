@@ -195,6 +195,126 @@ theorem sim_over (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
     (allSimple_spec (by simp [allSimple, pushWith, spSub, WI.isCtl, i32c])) ⟨w1, he, hr, by rw [hst1, hst]⟩ (k + 1)
   simpa [lowerInstr, pushWith, List.append_assoc] using this
 
+theorem sim_swap (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {a b : W} {d : List W}
+    (hd : s.dstack = b :: a :: d) :
+    Sim1 c fs (lowerInstr c.layout n k .swap) { s with dstack := a :: b :: d } w (k + 1) := by
+  have hlen : s.dstack.length = d.length + 2 := by simp [hd]
+  have hX := sp_lt hg hs
+  have hcap := hs.capD
+  have hdE := hg.dEnd_le
+  have hr1 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 8) = some a := by
+    have := hs.stack 1 a (by simp [hd]); simpa using this
+  have hr0 : w.mem.read64 (c.dEnd - 8 * s.dstack.length) = some b := by
+    have := hs.stack 0 b (by simp [hd]); simpa using this
+  obtain ⟨m1, hm1⟩ : ∃ m1, w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8) b = some m1 :=
+    write64_some (by rw [hs.size]; omega)
+  obtain ⟨hsz1, _⟩ := write64_size hm1
+  obtain ⟨m2, hm2⟩ : ∃ m2, m1.write64 (c.dEnd - 8 * s.dstack.length) a = some m2 :=
+    write64_some (by rw [hsz1, hs.size]; omega)
+  have hexec : execL ([.globalGet spG] ++ ldS 8 ++ [.globalGet spG] ++ ldS 0 ++ [.i64store 8, .i64store 0]) w = some { w with mem := m2 } := by
+    simp [ldS, execL, stepI, hs.sp, ofN_toNat hX, hr0, hr1, hm1, hm2]
+  have hrel1 := wr_stack hg hs (j := 1) (by omega) (v := b) (m' := m1) (by simpa using hm1)
+  have hrel2 := wr_stack_at hg hrel1 (j := 0) (by simp; omega) (v := a) (m' := m2) (A := c.dEnd - 8 * s.dstack.length)
+    (by simp) (by simpa using hm2)
+  have e : (({ s with dstack := s.dstack.set 1 b } : State 64).dstack.set 0 a) = a :: b :: d := by simp [hd]
+  have e3 : ({ { s with dstack := s.dstack.set 1 b } with dstack := (({ s with dstack := s.dstack.set 1 b } : State 64).dstack.set 0 a) } : State 64) = { s with dstack := a :: b :: d } := by
+    simp [hd]
+  rw [e3] at hrel2
+  have := core_gen (fs := fs) (pre := uf c.layout 2) (uf2_pass hg hs hd)
+    (B := [.globalGet spG] ++ ldS 8 ++ [.globalGet spG] ++ ldS 0 ++ [.i64store 8, .i64store 0])
+    (allSimple_spec (by simp [allSimple, ldS, WI.isCtl])) ⟨_, hexec, hrel2, hst⟩ (k + 1)
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_rot (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {cc b a : W} {d : List W}
+    (hd : s.dstack = cc :: b :: a :: d) :
+    Sim1 c fs (lowerInstr c.layout n k .rot) { s with dstack := a :: cc :: b :: d } w (k + 1) := by
+  have hlen : s.dstack.length = d.length + 3 := by simp [hd]
+  have hX := sp_lt hg hs
+  have hcap := hs.capD
+  have hdE := hg.dEnd_le
+  have hr2 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 16) = some a := by
+    have := hs.stack 2 a (by simp [hd]); simpa using this
+  have hr1 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 8) = some b := by
+    have := hs.stack 1 b (by simp [hd]); simpa using this
+  have hr0 : w.mem.read64 (c.dEnd - 8 * s.dstack.length) = some cc := by
+    have := hs.stack 0 cc (by simp [hd]); simpa using this
+  obtain ⟨m1, hm1⟩ : ∃ m1, w.mem.write64 (c.dEnd - 8 * s.dstack.length + 16) b = some m1 :=
+    write64_some (by rw [hs.size]; omega)
+  obtain ⟨hsz1, _⟩ := write64_size hm1
+  obtain ⟨m2, hm2⟩ : ∃ m2, m1.write64 (c.dEnd - 8 * s.dstack.length + 8) cc = some m2 :=
+    write64_some (by rw [hsz1, hs.size]; omega)
+  obtain ⟨hsz2, _⟩ := write64_size hm2
+  obtain ⟨m3, hm3⟩ : ∃ m3, m2.write64 (c.dEnd - 8 * s.dstack.length) a = some m3 :=
+    write64_some (by rw [hsz2, hsz1, hs.size]; omega)
+  have hexec : execL ([.globalGet spG] ++ ldS 16 ++ [.globalGet spG] ++ ldS 0 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 16, .i64store 8, .i64store 0]) w = some { w with mem := m3 } := by
+    simp [ldS, execL, stepI, hs.sp, ofN_toNat hX, hr0, hr1, hr2, hm1, hm2, hm3]
+  have hrel1 := wr_stack_at hg hs (j := 2) (by omega) (v := b) (m' := m1) (A := c.dEnd - 8 * s.dstack.length + 16) (by simp) hm1
+  have hrel2 := wr_stack_at hg hrel1 (j := 1) (by simp; omega) (v := cc) (m' := m2) (A := c.dEnd - 8 * s.dstack.length + 8)
+    (by simp) (by simpa using hm2)
+  have hrel3 := wr_stack_at hg hrel2 (j := 0) (by simp; omega) (v := a) (m' := m3) (A := c.dEnd - 8 * s.dstack.length)
+    (by simp) (by simpa using hm3)
+  have e3 : ({ { { s with dstack := s.dstack.set 2 b } with dstack := (({ s with dstack := s.dstack.set 2 b } : State 64).dstack.set 1 cc) } with dstack := ((({ s with dstack := s.dstack.set 2 b } : State 64).dstack.set 1 cc).set 0 a) } : State 64) = { s with dstack := a :: cc :: b :: d } := by
+    simp [hd]
+  rw [e3] at hrel3
+  have := core_gen (fs := fs) (pre := uf c.layout 3) (uf3_pass hg hs hd)
+    (B := [.globalGet spG] ++ ldS 16 ++ [.globalGet spG] ++ ldS 0 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 16, .i64store 8, .i64store 0])
+    (allSimple_spec (by simp [allSimple, ldS, WI.isCtl])) ⟨_, hexec, hrel3, hst⟩ (k + 1)
+  simpa [lowerInstr, List.append_assoc] using this
+
+/-- Core of instructions that overwrite slot `j` with `y` and then pop `n` words. -/
+theorem sim_wa_core (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {pre : List WI}
+    (hpre : Run fs pre w (.normal w)) {j n : Nat} {y : W} {L' : List W}
+    (hj : j < s.dstack.length) (hn : n ≤ s.dstack.length) (hL' : (s.dstack.set j y).drop n = L')
+    {B : List WI} (hctlB : ∀ i ∈ B, i.isCtl = false)
+    (hB : ∀ m', w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8 * j) y = some m' →
+      execL B w = some { w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * s.dstack.length + 8 * n))) })
+    (nxt : Nat) :
+    ∃ w', Run fs (pre ++ (B ++ [i32c nxt])) w (.normal w') ∧
+      Rel0 c { s with dstack := L' } w' ∧ w'.stack = [.i32 (ofN nxt)] := by
+  have hcap := hs.capD
+  obtain ⟨m', hm'⟩ : ∃ m', w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8 * j) y = some m' :=
+    write64_some (by rw [hs.size]; have := hg.dEnd_le; omega)
+  have hbR := run_of_execL (fs := fs) hctlB (hB m' hm')
+  have hrel1 := wr_stack hg hs (j := j) hj (v := y) (m' := m') hm'
+  have hrel2 := adj_sp hg hrel1 (n := n) (by simpa using hn)
+  have e3 : ({ { s with dstack := s.dstack.set j y } with dstack := ({ s with dstack := s.dstack.set j y } : State 64).dstack.drop n } : State 64) = { s with dstack := L' } := by
+    rw [← hL']
+  rw [e3] at hrel2
+  have e2 : c.dEnd - 8 * s.dstack.length + 8 * n = c.dEnd - 8 * (s.dstack.length - n) := by omega
+  rw [e2] at hbR
+  refine ⟨_, run_append _ hpre (run_append _ hbR (run_finish nxt)), ?_, ?_⟩
+  · refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_
+    · simp [setG, spG, List.length_set]
+    · simp [setG, spG, rpG]
+  · simp [hst]
+
+theorem sim_select (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {cc y x : W} {d : List W}
+    (hd : s.dstack = cc :: y :: x :: d) :
+    Sim1 c fs (lowerInstr c.layout n k .select) { s with dstack := (if Word.isTrue cc then x else y) :: d } w (k + 1) := by
+  have hlen : s.dstack.length = d.length + 3 := by simp [hd]
+  have hX := sp_lt hg hs
+  have hr2 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 16) = some x := by
+    have := hs.stack 2 x (by simp [hd]); simpa using this
+  have hr1 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 8) = some y := by
+    have := hs.stack 1 y (by simp [hd]); simpa using this
+  have hr0 : w.mem.read64 (c.dEnd - 8 * s.dstack.length) = some cc := by
+    have := hs.stack 0 cc (by simp [hd]); simpa using this
+  have hsp16 : ofN (c.dEnd - 8 * s.dstack.length) + 16#32 = ofN (c.dEnd - 8 * s.dstack.length + 16) :=
+    ofN_add (c.dEnd - 8 * s.dstack.length) 16
+  have := sim_wa_core (fs := fs) hg hs hst (uf3_pass hg hs hd) (j := 2) (n := 2)
+    (y := if Word.isTrue cc then x else y) (L' := (if Word.isTrue cc then x else y) :: d)
+    (by omega) (by omega) (by simp [hd]) (B := [.globalGet spG] ++ ldS 16 ++ ldS 8 ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select, .i64store 16] ++ spAdd 16)
+    (allSimple_spec (by simp [allSimple, ldS, spAdd, WI.isCtl, i32c])) ?_ (k + 1)
+  · simpa [lowerInstr, List.append_assoc] using this
+  intro m' hm'
+  by_cases hc : cc = 0#64
+  · have hm2 : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 16) y = some m' := by simpa [hc, Word.isTrue] using hm'
+    simp [ldS, spAdd, execL_append, execL, stepI, cmp64, bin32, hs.sp, ofN_toNat hX, hr0, hr1, hr2, bool32, hc, hm2, i32c, hsp16]
+    rfl
+  · have hm2 : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 16) x = some m' := by simpa [hc, Word.isTrue] using hm'
+    simp [ldS, spAdd, execL_append, execL, stepI, cmp64, bin32, hs.sp, ofN_toNat hX, hr0, hr1, hr2, bool32, hc, hm2, i32c, hsp16]
+    rfl
+
 end Sim
 
 end Wasm
