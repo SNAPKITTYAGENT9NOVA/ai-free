@@ -1,0 +1,110 @@
+# Parr Source License — No AI Training, Version 1.0
+
+Copyright (c) 2026 Ahmad Ali Parr
+
+This is a custom source-available license inspired by the Functional Source
+License. It is not the standard FSL and does not include an automatic grant of
+an Apache, MIT, or other future license.
+
+## 1. Definitions
+
+"Licensor" means Ahmad Ali Parr.
+
+"Software" means the source code, documentation, examples, tests, and other
+materials that the Licensor makes available under this license. Separately
+licensed third-party materials remain governed by their respective licenses.
+
+"Competing Use" means making the Software available to others in a commercial
+product or service that substitutes for the Software, offers the same or
+substantially similar functionality as the Software, or substitutes for a
+product or service the Licensor offers using the Software as of the date the
+applicable version is made available.
+
+"AI Training" means using the Software, any portion of it, modifications or
+derivatives of it, or data derived from it as training material for an artificial
+intelligence or machine-learning model. This includes pretraining, fine-tuning,
+continued training, distillation, reinforcement learning, and constructing or
+supplying datasets for any of those purposes. Data derived from the Software
+includes synthetic training examples generated from its code or documentation.
+
+"Permitted Purpose" means any purpose that is neither a Competing Use nor AI
+Training.
+
+## 2. License grant
+
+Subject to compliance with this license, the Licensor grants you a worldwide,
+nonexclusive, royalty-free license to use, copy, modify, create derivative works
+of, publicly perform, publicly display, and redistribute the Software for
+Permitted Purposes.
+
+Permitted Purposes include internal business use, personal use, education,
+research, and professional services provided to users who comply with this
+license, provided those activities do not constitute Competing Use or AI
+Training. Commercial use that is not a Competing Use or AI Training is permitted.
+
+## 3. No AI training
+
+You may not use the Software for AI Training, or license, sell, distribute, or
+otherwise supply it or data derived from it for AI Training, without separate
+written permission from the Licensor. This restriction applies to commercial,
+noncommercial, educational, research, and internal activities alike.
+
+Using an existing AI model solely for inference, such as to review, explain, or
+modify the Software, is permitted if that activity is otherwise a Permitted
+Purpose and the Software and resulting derived data are not used for AI
+Training. This license does not prohibit training on unrelated material or on
+your own material that is independent of the Software.
+
+## 4. Redistribution and notices
+
+If you redistribute the Software or any modification or derivative of it, you
+must include a copy of this license and preserve the copyright notices provided
+with the Software. You must identify your modifications and must not imply that
+the Licensor endorses them.
+
+The portions of a redistributed work that consist of the Software or its
+modifications or derivatives remain subject to this license. You may not grant
+recipients rights to those portions that conflict with this license. Independent
+components may retain their own licenses.
+
+## 5. Patents
+
+To the extent a Permitted Purpose necessarily infringes patent claims controlled
+by the Licensor, the license grant includes a license under those claims. If you
+bring a patent claim alleging that the Software infringes or contributes to
+patent infringement, your patent license under this license terminates
+immediately.
+
+## 6. Trademarks
+
+This license grants no rights to the Licensor's trademarks, trade names, service
+marks, or product names, except for reasonable attribution and identification of
+the origin of the Software.
+
+## 7. Termination
+
+Your rights under this license terminate automatically if you violate its
+terms. Termination does not terminate the rights of recipients who obtained
+copies from you and remain in compliance. Reinstatement of your rights requires
+written permission from the Licensor.
+
+## 8. No automatic conversion
+
+The Competing Use and AI Training restrictions do not expire automatically.
+There is no conversion to another license after two years or any other period.
+Any additional license grant requires a separate grant from the relevant rights
+holder.
+
+## 9. Disclaimer of warranties
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+TITLE, AND NONINFRINGEMENT.
+
+## 10. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR
+OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
