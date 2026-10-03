@@ -30,3 +30,7 @@ srcDir = "backend/x86_64"
 name = "wordc"
 root = "Main"
 srcDir = "backend/x86_64"
+
+[[lean_lib]]
+name = "Harness"
+srcDir = "backend/common"
