@@ -120,6 +120,69 @@ theorem zg_trap (hg : Geom c) (hs : Rel0 c s w) {d : List W} (hd : s.dstack = 0#
   have h3 := run_ite_exit (fs := fs) (w := { w with stack := .i32 (bool32 true) :: w.stack }) (r := w.stack) (c := bool32 true) (k := 3) rfl (by simp [bool32])
   simpa [zeroGuard, List.append_assoc] using run_append _ h2 h3
 
+theorem sim_div (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {a b : W} {d : List W}
+    (hd : s.dstack = b :: a :: d) (hb : b ≠ 0#64) :
+    Sim1 c fs (lowerInstr c.layout n k .div) { s with dstack := a.udiv b :: d } w (k + 1) := by
+  have hpre : Run fs (uf c.layout 2 ++ zeroGuard) w (.normal w) :=
+    run_append _ (uf2_pass hg hs hd) (zg_pass hg hs (d := a :: d) hd hb)
+  have := sim_binop (fs := fs) hg hs hst hpre hd (op := [.i64divu]) (by simp [WI.isCtl])
+    (y := a.udiv b) (by intro u r h; simp [execL, stepI, h, hb, BitVec.udiv_def]) (k + 1)
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_div_trap (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) {a : W} {d : List W}
+    (hd : s.dstack = 0#64 :: a :: d) :
+    Run fs (lowerInstr c.layout n k .div) w (.exit 3) := by
+  have h := run_append (fs := fs) _ (uf2_pass hg hs hd)
+    (run_append_abrupt _ (zg_trap hg hs (d := a :: d) hd) (b := binBody [.i64divu] ++ [i32c (k + 1)]) trivial)
+  simpa [lowerInstr, List.append_assoc] using h
+
+theorem ctl_sdivBody : ∀ i ∈ sdivBody, i.isCtl = false :=
+  allSimple_spec (by decide)
+
+theorem sdiv_allOnes (a : W) : a.sdiv (BitVec.allOnes 64) = 0#64 - a := by
+  rw [← BitVec.neg_one_eq_allOnes, show (-1#64 : W) = -(1#64) from rfl, BitVec.sdiv_neg (by decide), BitVec.sdiv_one]
+  simp
+
+theorem sdiv_ne (a b : W) (hm : b ≠ BitVec.allOnes 64) :
+    BitVec.ofInt 64 (Int.tdiv a.toInt b.toInt) = a.sdiv b := by
+  have hq : (a.sdiv b).toInt = Int.tdiv a.toInt b.toInt :=
+    BitVec.toInt_sdiv_of_ne_or_ne a b (Or.inr (by rwa [BitVec.neg_one_eq_allOnes]))
+  rw [← hq]; simp
+
+theorem sim_sdiv (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {a b : W} {d : List W}
+    (hd : s.dstack = b :: a :: d) (hb : b ≠ 0#64) :
+    Sim1 c fs (lowerInstr c.layout n k .sdiv) { s with dstack := a.sdiv b :: d } w (k + 1) := by
+  have hpre : Run fs (uf c.layout 2 ++ zeroGuard) w (.normal w) :=
+    run_append _ (uf2_pass hg hs hd) (zg_pass hg hs (d := a :: d) hd hb)
+  have hlen : s.dstack.length = d.length + 2 := by simp [hd]
+  have hX := sp_lt hg hs
+  have hr1 : w.mem.read64 (c.dEnd - 8 * s.dstack.length + 8) = some a := by
+    have := hs.stack 1 a (by simp [hd]); simpa using this
+  have hr0 : w.mem.read64 (c.dEnd - 8 * s.dstack.length) = some b := by
+    have := hs.stack 0 b (by simp [hd]); simpa using this
+  have hsp8 : ofN (c.dEnd - 8 * s.dstack.length) + 8#32 = ofN (c.dEnd - 8 * s.dstack.length + 8) :=
+    ofN_add _ _
+  have := sim_bin_core (fs := fs) hg hs hst hpre hd ctl_sdivBody (y := a.sdiv b) ?_ (k + 1)
+  · simpa [lowerInstr, List.append_assoc] using this
+  intro m' hm'
+  by_cases hbm : b = BitVec.allOnes 64
+  · subst hbm
+    rw [sdiv_allOnes] at hm'
+    have hm2 : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8) (-a) = some m' := by simpa using hm'
+    simp [sdivBody, ldS, spAdd, execL_append, execL, stepI, bin64, cmp64, bin32, hs.sp, ofN_toNat hX, hr0, hr1, bool32, hm2, i32c, hsp8]
+    rfl
+  · have hbm' : ¬ b = 18446744073709551615#64 := by simpa using hbm
+    rw [← sdiv_ne a b hbm] at hm'
+    simp [sdivBody, ldS, spAdd, execL_append, execL, stepI, bin64, cmp64, bin32, hs.sp, ofN_toNat hX, hr0, hr1, bool32, hm', i32c, hsp8, hbm', hb]
+    rfl
+
+theorem sim_sdiv_trap (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) {a : W} {d : List W}
+    (hd : s.dstack = 0#64 :: a :: d) :
+    Run fs (lowerInstr c.layout n k .sdiv) w (.exit 3) := by
+  have h := run_append (fs := fs) _ (uf2_pass hg hs hd)
+    (run_append_abrupt _ (zg_trap hg hs (d := a :: d) hd) (b := sdivBody ++ [i32c (k + 1)]) trivial)
+  simpa [lowerInstr, List.append_assoc] using h
+
 end Sim
 
 end Wasm
