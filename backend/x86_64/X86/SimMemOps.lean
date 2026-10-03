@@ -239,6 +239,36 @@ theorem sim_store_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize =
   exact ⟨x6, (((((hs1.trans hs2).trans hs3).trans hs4).trans (XSteps.single hst5))).trans hs6, hr6',
     by simp [M.adv, isize, ufSize] at *; omega⟩
 
+theorem sim_store_trap (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
+    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : XAt code base (lowerInstr L base off .store))
+    {a v : W} {d : List W} (hd : s.dstack = a :: v :: d) (hw : s.mem.write? a v = none) :
+    XExec code x (.trapped .badAddress) := by
+  have hat' : XAt code base (uf L 2 base ++ [.load rax Reg.r15 0, .load rcx Reg.r15 8,
+      .movImm rdx (BitVec.ofNat 64 L.memSize), .cmp rax rdx, .jcc .b (base + ufSize 2 + 6),
+      .exitTrap .badAddress, .storeIdx Reg.r13 rax rcx, .addImm Reg.r15 16]) := hat
+  obtain ⟨hatuf, hatr⟩ := xat_append.mp hat'
+  have hufl : (uf L 2 base).length = 4 := by simp [uf]
+  rw [hufl] at hatr
+  obtain ⟨f0, f1, f2, f3, f4, f5, _⟩ := hatr
+  have hk : 2 ≤ s.dstack.length := by simp [hd]
+  have hMlt : c.M < 2 ^ 64 := by have := hg.mb_lt; omega
+  have hge : ¬ a.toNat < c.M := by
+    have hvv := (Memory.write?_none_iff s.mem a v).mp hw
+    have := hs.irvalid a
+    rw [hvv] at this
+    simpa using this
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x2, hs2, hr2, hpc2, hv2, ho2, hm2⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
+    (by simp [hd]) (rd := rax) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
+  obtain ⟨x3, hs3, hr3, hpc3, hv3, ho3, hm3⟩ := ld_step (code := code) hr2 (j := 1) (v := v)
+    (by simp [hd]) (rd := rcx) (by simp) (disp := 8) (by simp) (fetch_cast f1 (by omega))
+  have hax3 : x3.regs rax = a := by rw [ho3 rax (by decide), hv2]
+  exact XExec.of_steps ((hs1.trans hs2).trans hs3) (addr_trap (code := code) hr3 (rt := rdx)
+    (by simp) (n := c.M) hMlt (t := base + ufSize 2 + 6) (by simp [ufSize]; omega) hax3 hge (by
+      rw [← hMs]
+      refine ⟨fetch_cast f2 (by omega), fetch_cast f3 (by omega), fetch_cast f4 (by omega),
+        fetch_cast f5 (by omega), trivial⟩))
+
 end Ops
 
 end X86

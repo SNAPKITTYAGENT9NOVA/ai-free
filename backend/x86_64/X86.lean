@@ -14,3 +14,4 @@ import X86.SimMem
 import X86.SimMemOps
 import X86.SimDiv
 import X86.SimCtl
+import X86.SimStep
