@@ -5,3 +5,5 @@ import Wasm.Mem
 import Wasm.Rel
 import Wasm.Seq
 import Wasm.Frame
+import Wasm.Guard
+import Wasm.SimAlu
