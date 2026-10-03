@@ -4,10 +4,10 @@ Forth is a stack-based language where words are separated by whitespace.
 Syntax: words (identifiers), numbers, string literals, comments (\ and ( ... )).
 """
 
-import re
 from enum import Enum, auto
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
+
+from src.lexers import BaseLexer, Token
 
 
 class TokenType(Enum):
@@ -81,19 +81,7 @@ class TokenType(Enum):
     EOF = auto()
 
 
-@dataclass
-class Token:
-    """Lexical token with source location."""
-    type: TokenType
-    value: str
-    line: int
-    col: int
-
-    def __repr__(self):
-        return f"Token({self.type.name}, {self.value!r}, {self.line}:{self.col})"
-
-
-class ForthLexer(object):
+class ForthLexer(BaseLexer):
     """Forth lexical analyzer.
 
     Converts Forth source text into a stream of tokens.
@@ -159,39 +147,9 @@ class ForthLexer(object):
         "spaces": TokenType.SPACES,
     }
 
-    def __init__(self, source: str):
-        self.source = source
-        self.pos = 0
-        self.line = 1
-        self.col = 1
-        self.tokens: List[Token] = []
-
-    def current_char(self) -> Optional[str]:
-        if self.pos >= len(self.source):
-            return None
-        return self.source[self.pos]
-
-    def peek_char(self, offset: int = 1) -> Optional[str]:
-        pos = self.pos + offset
-        if pos >= len(self.source):
-            return None
-        return self.source[pos]
-
-    def advance(self):
-        if self.pos < len(self.source):
-            if self.source[self.pos] == "\n":
-                self.line += 1
-                self.col = 1
-            else:
-                self.col += 1
-            self.pos += 1
-
-    def skip_whitespace(self):
-        while self.current_char() and self.current_char() in " \t\r\n":
-            self.advance()
-
     def skip_comment(self):
-        if self.current_char() == "\\" :
+        """Skip Forth comments: \ line-comments and ( block-comments )."""
+        if self.current_char() == "\\":
             while self.current_char() and self.current_char() != "\n":
                 self.advance()
             if self.current_char() == "\n":
@@ -205,24 +163,29 @@ class ForthLexer(object):
                     break
                 self.advance()
 
-    def read_number(self) -> Token:
-        start_line, start_col = self.line, self.col
+    def read_hex_number(self) -> str:
+        """Read a hexadecimal number starting with 0x or 0X."""
         num_str = ""
+        num_str += self.current_char()  # '0'
+        self.advance()
+        num_str += self.current_char()  # 'x' or 'X'
+        self.advance()
+        while self.current_char() and self.current_char() in "0123456789abcdefABCDEF":
+            num_str += self.current_char()
+            self.advance()
+        return num_str
+
+    def read_number(self) -> Token:
+        """Read a number (decimal or hexadecimal)."""
+        start_line, start_col = self.line, self.col
         if self.current_char() == "0" and self.peek_char() and self.peek_char() in "xX":
-            num_str += self.current_char()
-            self.advance()
-            num_str += self.current_char()
-            self.advance()
-            while self.current_char() and self.current_char() in "0123456789abcdefABCDEF":
-                num_str += self.current_char()
-                self.advance()
+            num_str = self.read_hex_number()
         else:
-            while self.current_char() and self.current_char().isdigit():
-                num_str += self.current_char()
-                self.advance()
+            num_str = super().read_number()
         return Token(TokenType.NUMBER, num_str, start_line, start_col)
 
     def read_word(self) -> Token:
+        """Read a word (built-in or custom)."""
         start_line, start_col = self.line, self.col
         word = ""
         while self.current_char() and not self.current_char().isspace() and self.current_char() not in "()[]":
@@ -236,21 +199,10 @@ class ForthLexer(object):
         token_type = self.BUILTIN_WORDS.get(word, TokenType.WORD)
         return Token(token_type, word, start_line, start_col)
 
-    def read_string(self) -> Token:
+    def read_string_literal(self) -> Token:
+        """Read a string literal."""
         start_line, start_col = self.line, self.col
-        self.advance()
-        value = ""
-        while self.current_char() and self.current_char() != '"':
-            if self.current_char() == "\\":
-                self.advance()
-                if self.current_char():
-                    value += self.current_char()
-                    self.advance()
-            else:
-                value += self.current_char()
-                self.advance()
-        if self.current_char() == '"':
-            self.advance()
+        value = super().read_string('"')
         return Token(TokenType.STRING, value, start_line, start_col)
 
     def tokenize(self) -> List[Token]:
@@ -262,14 +214,14 @@ class ForthLexer(object):
                 break
 
             ch = self.current_char()
-            if ch in ("\\" ) or (ch == "(" and self.peek_char() == " "):
+            if ch == "\\" or (ch == "(" and self.peek_char() == " "):
                 self.skip_comment()
                 continue
 
             start_line, start_col = self.line, self.col
 
             if ch == '"':
-                self.tokens.append(self.read_string())
+                self.tokens.append(self.read_string_literal())
             elif ch.isdigit():
                 self.tokens.append(self.read_number())
             elif ch == "(":

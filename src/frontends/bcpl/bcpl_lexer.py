@@ -4,10 +4,10 @@ BCPL (Basic Combined Programming Language) is a procedural language from the 196
 Syntax: keywords (let, and, or, not, if, while, for, etc.), operators, identifiers, numbers.
 """
 
-import re
 from enum import Enum, auto
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
+
+from src.lexers import BaseLexer, Token
 
 
 class TokenType(Enum):
@@ -76,19 +76,7 @@ class TokenType(Enum):
     NEWLINE = auto()
 
 
-@dataclass
-class Token:
-    """Lexical token with source location."""
-    type: TokenType
-    value: str
-    line: int
-    col: int
-
-    def __repr__(self):
-        return f"Token({self.type.name}, {self.value!r}, {self.line}:{self.col})"
-
-
-class BCPLLexer:
+class BCPLLexer(BaseLexer):
     """BCPL lexical analyzer.
 
     Converts BCPL source text into a stream of tokens.
@@ -121,38 +109,8 @@ class BCPLLexer:
         "routine": TokenType.ROUTINE,
     }
 
-    def __init__(self, source: str):
-        self.source = source
-        self.pos = 0
-        self.line = 1
-        self.col = 1
-        self.tokens: List[Token] = []
-
-    def current_char(self) -> Optional[str]:
-        if self.pos >= len(self.source):
-            return None
-        return self.source[self.pos]
-
-    def peek_char(self, offset: int = 1) -> Optional[str]:
-        pos = self.pos + offset
-        if pos >= len(self.source):
-            return None
-        return self.source[pos]
-
-    def advance(self):
-        if self.pos < len(self.source):
-            if self.source[self.pos] == "\n":
-                self.line += 1
-                self.col = 1
-            else:
-                self.col += 1
-            self.pos += 1
-
-    def skip_whitespace(self):
-        while self.current_char() and self.current_char() in " \t\r\n":
-            self.advance()
-
     def skip_comment(self):
+        """Skip BCPL comments: // line-comments and /* block-comments */."""
         if self.current_char() == "/" and self.peek_char() == "/":
             while self.current_char() and self.current_char() != "\n":
                 self.advance()
@@ -168,21 +126,8 @@ class BCPLLexer:
                     break
                 self.advance()
 
-    def read_number(self) -> Token:
-        start_line, start_col = self.line, self.col
-        num_str = ""
-        while self.current_char() and self.current_char().isdigit():
-            num_str += self.current_char()
-            self.advance()
-        if self.current_char() == "." and self.peek_char() and self.peek_char().isdigit():
-            num_str += self.current_char()
-            self.advance()
-            while self.current_char() and self.current_char().isdigit():
-                num_str += self.current_char()
-                self.advance()
-        return Token(TokenType.NUMBER, num_str, start_line, start_col)
-
     def read_identifier(self) -> Token:
+        """Read an identifier or keyword."""
         start_line, start_col = self.line, self.col
         ident = ""
         while self.current_char() and (self.current_char().isalnum() or self.current_char() == "_"):
@@ -191,21 +136,10 @@ class BCPLLexer:
         token_type = self.KEYWORDS.get(ident, TokenType.IDENTIFIER)
         return Token(token_type, ident, start_line, start_col)
 
-    def read_string(self, quote: str) -> Token:
+    def read_string_or_char(self, quote: str) -> Token:
+        """Read a string or character literal."""
         start_line, start_col = self.line, self.col
-        self.advance()
-        value = ""
-        while self.current_char() and self.current_char() != quote:
-            if self.current_char() == "\\":
-                self.advance()
-                if self.current_char():
-                    value += self.current_char()
-                    self.advance()
-            else:
-                value += self.current_char()
-                self.advance()
-        if self.current_char() == quote:
-            self.advance()
+        value = super().read_string(quote)
         token_type = TokenType.CHAR if quote == "'" else TokenType.STRING
         return Token(token_type, value, start_line, start_col)
 
@@ -218,18 +152,19 @@ class BCPLLexer:
                 break
 
             ch = self.current_char()
-            if ch in ("/" ) and self.peek_char() in ("/", "*"):
+            if ch == "/" and self.peek_char() in ("/", "*"):
                 self.skip_comment()
                 continue
 
             start_line, start_col = self.line, self.col
 
             if ch.isdigit():
-                self.tokens.append(self.read_number())
+                num_str = self.read_number()
+                self.tokens.append(Token(TokenType.NUMBER, num_str, start_line, start_col))
             elif ch.isalpha() or ch == "_":
                 self.tokens.append(self.read_identifier())
             elif ch in ('"', "'"):
-                self.tokens.append(self.read_string(ch))
+                self.tokens.append(self.read_string_or_char(ch))
             elif ch == "+" and self.peek_char() == "=":
                 self.advance()
                 self.advance()
