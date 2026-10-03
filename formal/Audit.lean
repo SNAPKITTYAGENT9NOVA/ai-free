@@ -1,6 +1,7 @@
 import WordDialect
 import WordIR
 import Forth
+import BCPL
 import Lean
 open Lean Elab Command
 

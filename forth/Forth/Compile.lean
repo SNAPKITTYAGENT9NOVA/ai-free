@@ -14,8 +14,6 @@ namespace Forth
 
 open IR
 
-/-- `CMP c` gives 1/0; `0 - x` turns that into Forth's -1/0. -/
-def cmpFlagCode {n : Nat} (c : Cond) : List (Instr n) := [.cmp c, .word 0#n, .swap, .sub]
 
 def compileOp {n : Nat} : Op → List (Instr n)
   | .lit z => [.word (BitVec.ofInt n z)]

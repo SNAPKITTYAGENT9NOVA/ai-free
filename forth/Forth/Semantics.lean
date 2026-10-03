@@ -1,4 +1,5 @@
 import WordDialect
+import WordIR
 
 /-!
 # Forth.Semantics
@@ -17,6 +18,8 @@ Conventions (ANS Forth):
 namespace WordDialect
 namespace Forth
 
+open IR
+
 inductive Op where
   | lit (z : Int)
   | dup | drop | swap | over | rot
@@ -29,8 +32,6 @@ structure FState (n : Nat) where
   stack : List (Word n)
   mem   : Memory n
 
-/-- Forth truth value: `-1` (all bits set) for true, `0` for false. -/
-def flag {n : Nat} (b : Bool) : Word n := 0#n - Word.ofBool b
 
 namespace Op
 
