@@ -1,3 +1,7 @@
 import Wasm.Isa
 import Wasm.Lower
 import Wasm.Emit
+import Wasm.Mem
+import Wasm.Rel
+import Wasm.Seq
+import Wasm.Frame
