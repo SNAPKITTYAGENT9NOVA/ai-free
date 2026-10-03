@@ -81,7 +81,7 @@ def ofBool {n : Nat} (b : Bool) : Word n := if b then 1#n else 0#n
 /-- Truthiness used by `BRANCH` and `SELECT`: a word is true iff it is nonzero. -/
 def isTrue {n : Nat} (w : Word n) : Bool := w != 0#n
 
-def shl {n : Nat} (a b : Word n) : Word n := a <<< b.toNat
+def shl {n : Nat} (a b : Word n) : Word n := if b.toNat < n then a <<< b.toNat else 0#n
 def shr {n : Nat} (a b : Word n) : Word n := a >>> b.toNat
 def rotl {n : Nat} (a b : Word n) : Word n := a.rotateLeft b.toNat
 def rotr {n : Nat} (a b : Word n) : Word n := a.rotateRight b.toNat
@@ -97,11 +97,17 @@ theorem ofBool_isTrue {n : Nat} (w : Word n) (h : w = 0#n ∨ w = 1#n) :
     ofBool (isTrue w) = w := by
   rcases h with rfl | rfl <;> simp [ofBool, isTrue]
 
-theorem shl_zero {n : Nat} (a : Word n) : shl a 0#n = a := by simp [shl]
+theorem shl_eq {n : Nat} (a b : Word n) : shl a b = a <<< b.toNat := by
+  unfold shl
+  split
+  · rfl
+  · rename_i h; exact (BitVec.shiftLeft_eq_zero (by omega)).symm
+
+theorem shl_zero {n : Nat} (a : Word n) : shl a 0#n = a := by rw [shl_eq]; simp
 theorem shr_zero {n : Nat} (a : Word n) : shr a 0#n = a := by simp [shr]
 
 theorem shl_toNat {n : Nat} (a b : Word n) : (shl a b).toNat = (a.toNat * 2 ^ b.toNat) % 2 ^ n := by
-  simp [shl, BitVec.toNat_shiftLeft, Nat.shiftLeft_eq]
+  rw [shl_eq]; simp [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq]
 
 theorem shr_toNat {n : Nat} (a b : Word n) : (shr a b).toNat = a.toNat / 2 ^ b.toNat := by
   simp [shr, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]

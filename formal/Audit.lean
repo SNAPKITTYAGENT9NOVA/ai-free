@@ -3,6 +3,7 @@ import WordIR
 import Forth
 import BCPL
 import Wolfram
+import X86
 import Lean
 open Lean Elab Command
 
