@@ -15,6 +15,19 @@ def execL : List WI → WState → Option WState
   | [], s => some s
   | i :: is, s => (stepI i s).bind (execL is)
 
+/-- Result of WASM execution (polymorphic in state type). -/
+inductive WOutcome (S : Type) where
+  | next (s : S)
+  | halted (s : S)
+  | trapped (t : Trap)
+
+/-- Execution of WASM code to a specific outcome shape. -/
+def XExec (code : List WI) (x : WState) (o : WOutcome WState) : Prop :=
+  match o with
+  | .next x' => execL code x = some x'
+  | .halted x' => execL code x = some x'
+  | .trapped _ => execL code x = none
+
 theorem run_of_execL {fs : Funcs} : ∀ {is : List WI} {s s' : WState},
     (∀ i ∈ is, i.isCtl = false) → execL is s = some s' → Run fs is s (.normal s')
   | [], s, s', _, h => by simp [execL] at h; subst h; exact .nil
