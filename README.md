@@ -20,7 +20,7 @@ run or emit built-in samples; they do not parse arbitrary source files.
 | `wolfram/` | Wolfram-style integer scalar expressions and matrix dot products |
 | `backend/common/` | Shared samples and differential-testing harness |
 | `backend/x86_64/` | x86-64 model, lowering, assembly emission, simulation proofs, and `wordc` |
-| `backend/wasm/` | WebAssembly model, lowering, WAT emission, partial simulation proofs, and `wasmw` |
+| `backend/wasm/` | WebAssembly model, lowering, WAT emission, simulation and whole-program preservation proofs, and `wasmw` |
 
 The authoritative IR semantics are in
 [`formal/WordDialect/Machine.lean`](formal/WordDialect/Machine.lean).
@@ -86,9 +86,25 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
   [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). Its assumptions include
   valid memory geometry, bounded code addresses, valid register indices, and
   sufficient stack capacity throughout execution.
-- WebAssembly has arithmetic and stack simulation proofs. Whole-program
-  preservation is a remaining milestone; it is not currently exported by
-  `Wasm.lean`.
+- The WebAssembly model has a whole-program preservation theorem,
+  `WordDialect.Wasm.lowerProg_correct`, in
+  [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
+  loop from a related state halts in a related state when the IR halts, and
+  exits with the matching trap code (1 underflow, 2 bad address, 3 divide by
+  zero, 4 bad pc, 5 return underflow) when the IR traps. Its assumptions are
+  valid memory geometry within 32-bit linear memory, fewer than `2^32`
+  instructions, valid register indices, and sufficient stack capacity
+  throughout execution. The proof modules, all exported by `Wasm.lean`:
+
+  | Module | Contents |
+  | --- | --- |
+  | `Wasm/Mem.lean`, `Wasm/Rel.lean`, `Wasm/Frame.lean` | Byte-memory read/write lemmas, the IR–WebAssembly state relation, and per-region write framing |
+  | `Wasm/Seq.lean`, `Wasm/Guard.lean` | Straight-line execution, sequencing, and the operand-count guard |
+  | `Wasm/SimAlu.lean`, `Wasm/SimAlu2.lean`, `Wasm/SimStack.lean` | Arithmetic, comparison, shift, division, and stack/register instructions |
+  | `Wasm/SimMem.lean` | Address bounds check, `load`, `store`, and their bad-address traps |
+  | `Wasm/SimCtl.lean` | `jmp`, `branch`, `call`, `ret` (and its underflow trap), `halt`, and the bad-pc stub |
+  | `Wasm/SimExec.lean` | One-step simulation for every instruction and outcome (`sim_step`) |
+  | `Wasm/Correct.lean` | Dispatch-loop induction (`loop_correct`, `lowerProg_correct`) and entry relation (`init_rel`) |
 - Proofs concern the defined machine models. The emitted artifacts are also
   tested through real assemblers/runtimes; those execution checks are separate
   evidence from the formal proofs.
