@@ -3,7 +3,8 @@ import Wasm.Seq
 /-!
 # Wasm.Frame
 
-How a write of one 8-byte cell into one region affects the four views `StackRel RegRel MemRel RsRel`:
+How a write of one 8-byte cell into one region affects the five views
+`StackRel RegRel MemRel RsRel AuxRel`:
 the views of the other regions are unchanged, and the view of the written region changes in the
 expected way. All statements are about `Rel0` and the byte memory only.
 -/
@@ -49,6 +50,17 @@ theorem keep_rs (hs : Rel0 c s w) (hw : w.mem.write64 A v = some m')
   rw [read64_write64_other hw (by omega)]
   exact hs.rs i a hi
 
+theorem keep_aux (hs : Rel0 c s w) (hw : w.mem.write64 A v = some m')
+    (hA : A + 8 ≤ c.aBase ∨ c.aEnd ≤ A) : AuxRel c m' s.astack := by
+  have hcap := hs.capA
+  intro i x hi
+  have hik : i < s.astack.length := by
+    by_cases hh : i < s.astack.length
+    · exact hh
+    · rw [List.getElem?_eq_none (by omega)] at hi; simp at hi
+  rw [read64_write64_other hw (by omega)]
+  exact hs.aux i x hi
+
 end Keep
 
 section Write
@@ -65,7 +77,7 @@ theorem wr_stack_at (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack
   have hdG := hg.dEnd_ge
   obtain ⟨hsz, _⟩ := write64_size hw
   refine { sp := ?_, rp := hs.rp, stack := ?_, regs := ?_, mem := ?_, rs := ?_, irvalid := hs.irvalid,
-           size := ?_, capD := ?_, capR := hs.capR }
+           size := ?_, capD := ?_, capR := hs.capR, ap := hs.ap, aux := ?_, capA := hs.capA }
   · simpa using hs.sp
   · intro i x hi
     simp only [List.length_set] at hi ⊢
@@ -83,6 +95,7 @@ theorem wr_stack_at (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
   · simpa using hs.capD
+  · exact keep_aux (s := s) hs hw (by rcases hg.dS_A with h | h <;> omega)
 
 theorem wr_stack (hg : Geom c) (hs : Rel0 c s w) {j : Nat} (hj : j < s.dstack.length)
     (hw : w.mem.write64 (c.dEnd - 8 * s.dstack.length + 8 * j) v = some m') :
@@ -98,7 +111,8 @@ theorem wr_regs (hg : Geom c) (hs : Rel0 c s w) {r : Nat} (hr : r < c.nregs)
     Rel0 c { s with regs := State.setReg s.regs r v } { w with mem := m' } := by
   obtain ⟨hsz, _⟩ := write64_size hw
   refine { sp := hs.sp, rp := hs.rp, stack := ?_, regs := ?_, mem := ?_, rs := ?_,
-           irvalid := hs.irvalid, size := ?_, capD := hs.capD, capR := hs.capR }
+           irvalid := hs.irvalid, size := ?_, capD := hs.capD, capR := hs.capR, ap := hs.ap,
+           aux := ?_, capA := hs.capA }
   · exact keep_stack (s := s) hs hw (by rcases hg.dS_F with h | h <;> omega)
   · intro r' hr'
     by_cases h : r' = r
@@ -110,6 +124,7 @@ theorem wr_regs (hg : Geom c) (hs : Rel0 c s w) {r : Nat} (hr : r < c.nregs)
   · exact keep_rs (s := s) hs hw (by rcases hg.dF_K with h | h <;> omega)
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
+  · exact keep_aux (s := s) hs hw (by rcases hg.dF_A with h | h <;> omega)
 
 /-- Write IR memory word `a`, mirroring an IR store. -/
 theorem wr_mem (hg : Geom c) (hs : Rel0 c s w) {a : W} {im : WordDialect.Memory 64}
@@ -126,7 +141,7 @@ theorem wr_mem (hg : Geom c) (hs : Rel0 c s w) {a : W} {im : WordDialect.Memory 
     rw [hvalid] at this
     simpa using this.symm
   refine { sp := hs.sp, rp := hs.rp, stack := ?_, regs := ?_, mem := ?_, rs := ?_, irvalid := ?_,
-           size := ?_, capD := hs.capD, capR := hs.capR }
+           size := ?_, capD := hs.capD, capR := hs.capR, ap := hs.ap, aux := ?_, capA := hs.capA }
   · exact keep_stack (s := s) hs hw (by rcases hg.dS_M with h | h <;> omega)
   · exact keep_regs (s := s) hs hw (by rcases hg.dF_M with h | h <;> omega)
   · intro a' ha'
@@ -149,6 +164,7 @@ theorem wr_mem (hg : Geom c) (hs : Rel0 c s w) {a : W} {im : WordDialect.Memory 
   · intro a'; rw [Memory.write?_valid hv]; exact hs.irvalid a'
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
+  · exact keep_aux (s := s) hs hw (by rcases hg.dM_A with h | h <;> omega)
 
 /-- Adjust the data-stack pointer upward by `n` words (popping `n` elements). -/
 theorem adj_sp (hg : Geom c) (hs : Rel0 c s w) {n : Nat} (hn : n ≤ s.dstack.length) :
@@ -156,7 +172,8 @@ theorem adj_sp (hg : Geom c) (hs : Rel0 c s w) {n : Nat} (hn : n ≤ s.dstack.le
       { w with globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length - n)))) } := by
   have hcap := hs.capD
   refine { sp := ?_, rp := ?_, stack := ?_, regs := hs.regs, mem := hs.mem, rs := hs.rs,
-           irvalid := hs.irvalid, size := hs.size, capD := ?_, capR := hs.capR }
+           irvalid := hs.irvalid, size := hs.size, capD := ?_, capR := hs.capR, ap := ?_,
+           aux := hs.aux, capA := hs.capA }
   · simp [setG, spG]
   · have : rpG ≠ spG := by decide
     simpa [setG, this] using hs.rp
@@ -168,6 +185,8 @@ theorem adj_sp (hg : Geom c) (hs : Rel0 c s w) {n : Nat} (hn : n ≤ s.dstack.le
       omega
     rw [e]; exact this
   · simp only [List.length_drop]; omega
+  · have : apG ≠ spG := by decide
+    simpa [setG, this] using hs.ap
 
 /-- Push: the stack pointer moved down one word and the new top written. -/
 theorem push_rel (hg : Geom c) (hs : Rel0 c s w)
@@ -178,7 +197,7 @@ theorem push_rel (hg : Geom c) (hs : Rel0 c s w)
   have hcap := hs.capD
   obtain ⟨hsz, _⟩ := write64_size hw
   refine { sp := ?_, rp := ?_, stack := ?_, regs := ?_, mem := ?_, rs := ?_, irvalid := hs.irvalid,
-           size := ?_, capD := ?_, capR := hs.capR }
+           size := ?_, capD := ?_, capR := hs.capR, ap := ?_, aux := ?_, capA := hs.capA }
   · simp [setG, spG]
   · have : rpG ≠ spG := by decide
     simpa [setG, this] using hs.rp
@@ -202,6 +221,9 @@ theorem push_rel (hg : Geom c) (hs : Rel0 c s w)
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
   · simp only [List.length_cons]; omega
+  · have : apG ≠ spG := by decide
+    simpa [setG, this] using hs.ap
+  · exact keep_aux (s := s) hs hw (by rcases hg.dS_A with h | h <;> omega)
 
 /-- Call: the return-stack pointer moved down and the return index written. -/
 theorem push_rs (hg : Geom c) (hs : Rel0 c s w) {a : Nat}
@@ -212,7 +234,7 @@ theorem push_rs (hg : Geom c) (hs : Rel0 c s w) {a : Nat}
   have hcap := hs.capR
   obtain ⟨hsz, _⟩ := write64_size hw
   refine { sp := ?_, rp := ?_, stack := ?_, regs := ?_, mem := ?_, rs := ?_, irvalid := hs.irvalid,
-           size := ?_, capD := hs.capD, capR := ?_ }
+           size := ?_, capD := hs.capD, capR := ?_, ap := ?_, aux := ?_, capA := hs.capA }
   · have : spG ≠ rpG := by decide
     simpa [setG, this] using hs.sp
   · simp [setG, rpG]
@@ -236,6 +258,9 @@ theorem push_rs (hg : Geom c) (hs : Rel0 c s w) {a : Nat}
   · show m'.size = c.msize
     rw [hsz]; exact hs.size
   · simp only [List.length_cons]; omega
+  · have : apG ≠ rpG := by decide
+    simpa [setG, this] using hs.ap
+  · exact keep_aux (s := s) hs hw (by rcases hg.dK_A with h | h <;> omega)
 
 /-- Return: the return-stack pointer moved up one entry. -/
 theorem pop_rs (hs : Rel0 c s w) {a : Nat} {rs : List Nat} (hr : s.rstack = a :: rs) :
@@ -245,7 +270,8 @@ theorem pop_rs (hs : Rel0 c s w) {a : Nat} {rs : List Nat} (hr : s.rstack = a ::
   rw [hr] at hcap
   simp only [List.length_cons] at hcap
   refine { sp := ?_, rp := ?_, stack := hs.stack, regs := hs.regs, mem := hs.mem, rs := ?_,
-           irvalid := hs.irvalid, size := hs.size, capD := hs.capD, capR := ?_ }
+           irvalid := hs.irvalid, size := hs.size, capD := hs.capD, capR := ?_, ap := ?_,
+           aux := hs.aux, capA := hs.capA }
   · have : spG ≠ rpG := by decide
     simpa [setG, this] using hs.sp
   · simp [setG, rpG]
@@ -257,6 +283,70 @@ theorem pop_rs (hs : Rel0 c s w) {a : Nat} {rs : List Nat} (hr : s.rstack = a ::
     rw [e] at h
     exact h
   · show c.rBase + 8 * rs.length ≤ c.rEnd
+    omega
+  · have : apG ≠ rpG := by decide
+    simpa [setG, this] using hs.ap
+
+/-- `tor`: the auxiliary-stack pointer moved down one word and the new top written. -/
+theorem push_aux (hg : Geom c) (hs : Rel0 c s w) {a : W}
+    (hfit : c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd)
+    (hw : w.mem.write64 (c.aEnd - 8 * (s.astack.length + 1)) a = some m') :
+    Rel0 c { s with astack := a :: s.astack }
+      { w with mem := m', globals := setG w.globals apG (.i32 (ofN (c.aEnd - 8 * (s.astack.length + 1)))) } := by
+  have hcap := hs.capA
+  obtain ⟨hsz, _⟩ := write64_size hw
+  refine { sp := ?_, rp := ?_, stack := ?_, regs := ?_, mem := ?_, rs := ?_, irvalid := hs.irvalid,
+           size := ?_, capD := hs.capD, capR := hs.capR, ap := ?_, aux := ?_, capA := ?_ }
+  · have : spG ≠ apG := by decide
+    simpa [setG, this] using hs.sp
+  · have : rpG ≠ apG := by decide
+    simpa [setG, this] using hs.rp
+  · exact keep_stack (s := s) hs hw (by rcases hg.dS_A with h | h <;> omega)
+  · exact keep_regs (s := s) hs hw (by rcases hg.dF_A with h | h <;> omega)
+  · exact keep_mem (s := s) hs hw (by rcases hg.dM_A with h | h <;> omega)
+  · exact keep_rs (s := s) hs hw (by rcases hg.dK_A with h | h <;> omega)
+  · show m'.size = c.msize
+    rw [hsz]; exact hs.size
+  · simp [setG, apG]
+  · intro i x hi
+    simp only [List.length_cons] at hi ⊢
+    cases i with
+    | zero =>
+      simp at hi; subst hi
+      simpa using read64_write64_same hw
+    | succ i =>
+      simp only [List.getElem?_cons_succ] at hi
+      have hik : i < s.astack.length := by
+        have := (List.getElem?_eq_some_iff.mp hi).1; simpa using this
+      have e : c.aEnd - 8 * (s.astack.length + 1) + 8 * (i + 1) = c.aEnd - 8 * s.astack.length + 8 * i := by
+        omega
+      rw [e, read64_write64_other hw (by omega)]
+      exact hs.aux i x hi
+  · simp only [List.length_cons]; omega
+
+/-- `fromr`: the auxiliary-stack pointer moved up one word. -/
+theorem pop_aux (hs : Rel0 c s w) {a : W} {as : List W} (hr : s.astack = a :: as) :
+    Rel0 c { s with astack := as }
+      { w with globals := setG w.globals apG (.i32 (ofN (c.aEnd - 8 * as.length))) } := by
+  have hcap := hs.capA
+  rw [hr] at hcap
+  simp only [List.length_cons] at hcap
+  refine { sp := ?_, rp := ?_, stack := hs.stack, regs := hs.regs, mem := hs.mem, rs := hs.rs,
+           irvalid := hs.irvalid, size := hs.size, capD := hs.capD, capR := hs.capR, ap := ?_,
+           aux := ?_, capA := ?_ }
+  · have : spG ≠ apG := by decide
+    simpa [setG, this] using hs.sp
+  · have : rpG ≠ apG := by decide
+    simpa [setG, this] using hs.rp
+  · simp [setG, apG]
+  · intro i x hi
+    have h := hs.aux (i + 1) x (by simpa [hr] using hi)
+    rw [hr] at h
+    simp only [List.length_cons] at h
+    have e : c.aEnd - 8 * (as.length + 1) + 8 * (i + 1) = c.aEnd - 8 * as.length + 8 * i := by omega
+    rw [e] at h
+    exact h
+  · show c.aBase + 8 * as.length ≤ c.aEnd
     omega
 
 end Write

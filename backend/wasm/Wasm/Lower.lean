@@ -16,14 +16,17 @@ Function `n` (past the last instruction) is the bad-pc stub. Every jump target i
 lowering time, so a jump past the end traps `badPc` exactly as in the IR semantics.
 
 Globals: `0 = pc` (i32), `1 = sp` data-stack pointer (i32, grows down, empty = `dEnd`), `2 = rp`
-return-stack pointer (i32, grows down, empty = `rEnd`). The register file, IR memory and both stacks
-live in linear memory at the static addresses of `Layout`; the operand stack is used only for
-temporaries. `call` pushes the IR index of the return instruction onto the return stack; `ret` pops
-it.
+return-stack pointer (i32, grows down, empty = `rEnd`), `3 = ap` auxiliary-stack pointer (i32, grows
+down, empty = `aEnd`). The register file, IR memory and the three stacks live in linear memory at the
+static addresses of `Layout`; the operand stack is used only for temporaries. `call` pushes the IR
+index of the return instruction onto the return stack; `ret` pops it. `tor`/`fromr`/`rfetch` move or
+copy words between the data stack and the auxiliary stack; taking from an empty auxiliary stack
+exits 5 (`returnUnderflow`), as `ret` does on an empty return stack.
 
 Every `load`/`store` is bounds-checked against the IR memory size, and every popping instruction
 checks the operand count against `dEnd`, so traps match the IR semantics. Every instruction that
-grows the data stack checks for room above `dBase`, and `call` checks for room above `rBase`; on
+grows the data stack checks for room above `dBase`, `call` checks for room above `rBase`, and `tor`
+checks for room above `aBase`; on
 overflow the module exits with code 6. The IR has unbounded stacks, so this exit has no IR
 counterpart: it reports that the run exceeded the target's stack capacity.
 -/
@@ -39,10 +42,13 @@ structure Layout where
   M : Nat         -- IR memory size in words
   dBase : Nat     -- data stack: full at `dBase`
   rBase : Nat     -- return stack: full at `rBase`
+  aEnd : Nat      -- auxiliary stack: empty at `aEnd`
+  aBase : Nat     -- auxiliary stack: full at `aBase`
 
 def pcG : Nat := 0
 def spG : Nat := 1
 def rpG : Nat := 2
+def apG : Nat := 3
 
 def i32c (n : Nat) : WI := .i32const (BitVec.ofNat 32 n)
 def i64c (n : Nat) : WI := .i64const (BitVec.ofNat 64 n)
@@ -149,6 +155,16 @@ def lowerInstr (L : Layout) (n k : Nat) : WordDialect.Instr 64 → List WI
   | .rot =>
     uf L 3 ++ [.globalGet spG] ++ ldS 16 ++ [.globalGet spG] ++ ldS 0 ++ [.globalGet spG] ++ ldS 8 ++
       [.i64store 16, .i64store 8, .i64store 0] ++ [i32c (k + 1)]
+  | .tor =>
+    uf L 1 ++ ovf apG L.aBase ++ [.globalGet apG, i32c 8, .i32sub, .globalSet apG, .globalGet apG] ++
+      ldS 0 ++ [.i64store 0] ++ spAdd 8 ++ [i32c (k + 1)]
+  | .fromr =>
+    [.globalGet apG, i32c L.aEnd, .i32eq, .ite [.exitTrap 5]] ++ ovf spG L.dBase ++
+      pushWith [.globalGet apG, .i64load 0] ++ [.globalGet apG, i32c 8, .i32add, .globalSet apG] ++
+      [i32c (k + 1)]
+  | .rfetch =>
+    [.globalGet apG, i32c L.aEnd, .i32eq, .ite [.exitTrap 5]] ++ ovf spG L.dBase ++
+      pushWith [.globalGet apG, .i64load 0] ++ [i32c (k + 1)]
   | .halt => [.exitHalt]
 
 /-- Function `k`: the code of IR instruction `k`, or the bad-pc stub past the end. -/

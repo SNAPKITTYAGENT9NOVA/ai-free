@@ -142,6 +142,7 @@ theorem loop_step (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : R
       refine ⟨{ w' with stack := [], globals := setG w'.globals pcG (.i32 (ofN (min s'.pc p.length))) },
         ⟨?_, rfl, by simp [setG], hrs'⟩, fun r hr' => loop_next hst hpc hf hr hst' hr'⟩
       exact Rel0.congr (h0'.setStack []) rfl (by simp [setG, pcG, spG]) (by simp [setG, pcG, rpG])
+        (by simp [setG, pcG, apG])
     | halted s' =>
       obtain ⟨w', hr, h0'⟩ := hss
       exact ⟨w', loop_abrupt hpc hf hr (.inr ⟨w', rfl⟩), h0'⟩
@@ -262,12 +263,13 @@ theorem lowerProg_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (
 end Loop
 
 /-- The state the runtime establishes before the dispatch loop (`Wasm.Emit`): empty operand stack,
-`pc = 0`, `sp = dEnd`, `rp = rEnd`, and the register file and IR memory regions holding the IR
+`pc = 0`, `sp = dEnd`, `rp = rEnd`, `ap = aEnd` (empty auxiliary stack), and the register file and IR memory regions holding the IR
 state's initial contents. `RelD` then holds at entry, so `lowerProg_correct` applies. -/
 theorem init_rel {c : Cfg} (n : Nat) {s0 : State 64} {w0 : WState} (hg : Geom c)
     (hpc0 : s0.pc = 0) (hd : s0.dstack = []) (hr : s0.rstack = [])
     (hst : w0.stack = []) (hpc : w0.globals pcG = .i32 (ofN 0))
     (hsp : w0.globals spG = .i32 (ofN c.dEnd)) (hrp : w0.globals rpG = .i32 (ofN c.rEnd))
+    (ha : s0.astack = []) (hap : w0.globals apG = .i32 (ofN c.aEnd))
     (hregs : RegRel c w0.mem s0.regs) (hmem : MemRel c w0.mem s0.mem)
     (hiv : ∀ a : Word 64, s0.mem.valid a = decide (a.toNat < c.M)) (hsize : w0.mem.size = c.msize) :
     RelD c n s0 w0 :=
@@ -280,7 +282,10 @@ theorem init_rel {c : Cfg} (n : Nat) {s0 : State 64} {w0 : WState} (hg : Geom c)
      irvalid := hiv
      size := hsize
      capD := by simp [hd]; exact hg.dBase_le
-     capR := by simp [hr]; exact hg.rBase_le },
+     capR := by simp [hr]; exact hg.rBase_le
+     ap := by simpa [ha] using hap
+     aux := by intro i v h; simp [ha] at h
+     capA := by simp [ha]; have := hg.aBase_8; omega },
    hst, by simpa [hpc0] using hpc, by simp [hr]⟩
 
 end Wasm

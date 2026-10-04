@@ -132,17 +132,21 @@ word and a trap two calls deep.
   [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
   loop from a related state halts in a related state when the IR halts, and
   exits with the matching trap code (1 underflow, 2 bad address, 3 divide by
-  zero, 4 bad pc, 5 return underflow) when the IR traps. The generated code
-  checks for room before every instruction that grows the data or return
-  stack, and exits with code 6 when the stack is full (IR stacks are
-  unbounded, so code 6 has no IR counterpart).
+  zero, 4 bad pc, 5 return underflow, also for `fromr`/`rfetch` on an empty
+  auxiliary stack) when the IR traps. The auxiliary stack (`tor`/`fromr`/
+  `rfetch`) lives in its own linear-memory region with pointer global `$ap`,
+  disjoint from the data stack, return stack, register file and IR memory. The
+  generated code checks for room before every instruction that grows the data,
+  return or auxiliary stack, and exits with code 6 when the stack is full (IR
+  stacks are unbounded, so code 6 has no IR counterpart).
   `WordDialect.Wasm.lowerProg_correct_or_overflow` has no stack-capacity
   assumption: the module reaches the IR outcome or exits 6.
   `WordDialect.Wasm.lowerProg_correct` adds the assumption that the run stays
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry within 32-bit linear memory, fewer than `2^32` instructions,
-  and valid register indices. `wasmw check` also runs three unbounded programs
-  and requires exit 6.
+  and valid register indices. `wasmw check` also runs raw IR programs for the
+  auxiliary stack against the Lean semantics, and four unbounded programs
+  (including an unbounded `tor` loop) that must exit 6.
   `WordDialect.Wasm.Emit.module_correct` closes the loop from the emitted
   module: from the state WebAssembly instantiation produces for its
   declarations (globals, zeroed memory, the IR memory image as a data segment),
@@ -158,6 +162,7 @@ word and a trap two calls deep.
   | `Wasm/SimAlu.lean`, `Wasm/SimAlu2.lean`, `Wasm/SimStack.lean` | Arithmetic, comparison, shift, division, and stack/register instructions |
   | `Wasm/SimMem.lean` | Address bounds check, `load`, `store`, and their bad-address traps |
   | `Wasm/SimCtl.lean` | `jmp`, `branch`, `call`, `ret` (and its underflow trap), `halt`, and the bad-pc stub |
+  | `Wasm/SimAux.lean` | Auxiliary stack: `tor`, `fromr`, `rfetch`, their empty-stack traps and overflow exits |
   | `Wasm/SimExec.lean` | One-step simulation for every instruction and outcome (`sim_step`) |
   | `Wasm/Correct.lean` | Dispatch-loop induction (`lowerProg_correct_or_overflow`, `lowerProg_correct`) and entry relation (`init_rel`) |
   | `Wasm/Init.lean` | The instantiated module's state, the runtime layout's geometry, and the end-to-end `module_correct` |
