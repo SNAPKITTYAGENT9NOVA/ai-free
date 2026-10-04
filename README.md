@@ -78,7 +78,15 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
 
 ## Proof and validation status
 
-- Forth and BCPL have compilation correctness proofs for their modeled subsets.
+- Forth has a compilation correctness proof for its modeled subset, including
+  colon definitions (`: name ... ;`, recursion allowed) lowered to IR
+  `call`/`ret`: `WordDialect.Forth.Program.compile_correct` in
+  [`Forth/Correct.lean`](forth/Forth/Correct.lean). Forth source text is parsed
+  by `Forth.parse` ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); the parser
+  is not verified, only checked on concrete inputs
+  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the
+  harness samples written as source text.
+  BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.
 - The x86-64 model has whole-program preservation theorems in
