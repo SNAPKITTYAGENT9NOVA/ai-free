@@ -79,14 +79,14 @@ theorem sim_halt (hs : Rel0 c p s x) (hpc : x.pc = base)
   obtain ⟨f0, _⟩ := hat'
   exact XExec.halt (by rw [xstep_of_fetch (by rw [hpc]; exact f0)]; rfl)
 
-/-- `call t`: pushes the x86 index of the return instruction onto the native stack. -/
-theorem sim_call_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
-    (hat : XAt code base (lowerInstr L base off (.call t)))
+/-- The native `call` itself: pushes the x86 index of the return instruction onto the native
+stack. -/
+theorem sim_call_core (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
+    (hat : XAt code base [.call (off t)])
     (hret : base + 1 = offs p (s.pc + 1)) (hfitR : s.rstack.length + 2 ≤ c.rcap) :
     ∃ x', XSteps code x x' ∧ Rel0 c p { s with rstack := (s.pc + 1) :: s.rstack } x' ∧
       x'.pc = off t := by
-  have hat' : XAt code base [.call (off t)] := hat
-  obtain ⟨f0, _⟩ := hat'
+  obtain ⟨f0, _⟩ := hat
   have hcapR := hs.capR
   have hrc := hg.rcap_le
   have hsp := hg.sp0_lt
@@ -249,6 +249,27 @@ theorem sim_ret_trap (hs : Rel0 c p s x) (hpc : x.pc = base)
   exact XExec.of_steps (XSteps.single hst1)
     (guard_trap (code := code) (pc := base + 1) (m := x1) (c := .ne) (t := .returnUnderflow)
       (f := subFlags (x.regs rsp) (x.regs rsp)) ⟨f1, f2, trivial⟩ hpc1 hfl hhold)
+
+/-- `call t`: the return-stack guard, then the native `call`. -/
+theorem sim_call_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
+    (hLr : L.rGap = ofN (8 * c.rcap - 16)) (hat : XAt code base (lowerInstr L base off (.call t)))
+    (hret : base + isize (.call t : WordDialect.Instr 64) = offs p (s.pc + 1))
+    (hfitR : s.rstack.length + 2 ≤ c.rcap) :
+    ∃ x', XSteps code x x' ∧ Rel0 c p { s with rstack := (s.pc + 1) :: s.rstack } x' ∧
+      x'.pc = off t := by
+  have hat' : XAt code base (ovfR L base ++ [.call (off t)]) := hat
+  obtain ⟨hato, hatc⟩ := xat_append.mp hat'
+  have hl : (ovfR L base).length = 6 := rfl
+  rw [hl] at hatc
+  obtain ⟨x1, hs1, hr1, hpc1, _⟩ := ovfR_pass hg hs hLr hfitR hpc hato
+  obtain ⟨x', hs', hr', hpc'⟩ := sim_call_core hg hr1 hpc1 hatc (by simpa [isize] using hret) hfitR
+  exact ⟨x', hs1.trans hs', hr', hpc'⟩
+
+theorem sim_call_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
+    (hLr : L.rGap = ofN (8 * c.rcap - 16)) (hat : XAt code base (lowerInstr L base off (.call t)))
+    (h : ¬ s.rstack.length + 2 ≤ c.rcap) : XExec code x .overflow := by
+  have hat' : XAt code base (ovfR L base ++ [.call (off t)]) := hat
+  exact ovfR_trap hg hs hLr h hpc (xat_append.mp hat').1
 
 end Ctl
 

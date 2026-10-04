@@ -39,6 +39,8 @@ structure Geom (c : Cfg) : Prop where
   dBase_le : c.dBase ≤ c.dEnd
   dEnd_ge : 24 ≤ c.dEnd
   rcap_le : 8 * c.rcap ≤ c.sp0
+  dBase_8 : c.dBase + 8 ≤ c.dEnd
+  rcap_ge : 2 ≤ c.rcap
   dS_F : c.dEnd ≤ c.rf ∨ c.rf + 8 * c.nregs ≤ c.dBase
   dS_M : c.dEnd ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.dBase
   dS_K : c.dEnd ≤ c.sp0 - 8 * c.rcap ∨ c.sp0 ≤ c.dBase

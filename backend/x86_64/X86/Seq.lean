@@ -13,7 +13,7 @@ namespace X86
 open Reg
 
 def Instr.straightX : Instr Nat → Bool
-  | .jmp _ | .jcc _ _ | .call _ | .ret | .exitHalt | .exitTrap _ => false
+  | .jmp _ | .jcc _ _ | .call _ | .ret | .exitHalt | .exitTrap _ | .exitOvf => false
   | _ => true
 
 def xseq : List (Instr Nat) → M → Out
@@ -50,6 +50,7 @@ theorem xseq_steps {code : List (Instr Nat)} :
       exact ⟨.cons hst h1, by rw [h2, hpc]; simp; omega⟩
     | halted _ => rw [hx] at h; simp at h
     | trapped _ => rw [hx] at h; simp at h
+    | overflow => rw [hx] at h; simp at h
     | fault => rw [hx] at h; simp at h
 
 theorem guard_pass {code : List (Instr Nat)} {pc : Nat} {m : M} {c : Cc} {t : Trap} {f : Flags}

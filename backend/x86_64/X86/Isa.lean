@@ -16,7 +16,8 @@ Scope and trust boundary:
 * Faults (invalid memory access, divide error, undefined flags, jumping outside the code)
   are a distinct outcome, never a silent state.
 * `exitHalt` / `exitTrap t` stand for the runtime stubs that dump state and `exit`; they are
-  terminal here.
+  terminal here. `exitOvf` is the stub for a stack-overflow guard (`exit(6)`); it has no IR
+  counterpart, since IR stacks are unbounded.
 
 That the model matches the hardware is the stated assumption of this backend.
 -/
@@ -97,6 +98,7 @@ inductive Instr (L : Type) where
   | ret
   | exitHalt
   | exitTrap (t : Trap)
+  | exitOvf
 
 structure M where
   regs  : Reg → W
@@ -108,6 +110,7 @@ inductive Out where
   | next    (m : M)
   | halted  (m : M)
   | trapped (t : Trap)
+  | overflow
   | fault
 
 def M.setReg (m : M) (r : Reg) (v : W) : M :=
@@ -204,6 +207,7 @@ def exec (i : Instr Nat) (m : M) : Out :=
       | none => .fault
   | .exitHalt => .halted m
   | .exitTrap t => .trapped t
+  | .exitOvf => .overflow
 
 /-- One machine step over a code array; leaving the code is a fault. -/
 def step (code : List (Instr Nat)) (m : M) : Out :=
