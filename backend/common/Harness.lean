@@ -210,7 +210,7 @@ def genInstr (depth : Nat) : IO (List (Instr 64) × Int) := do
     else if k = 1 then do let q ← IO.rand 0 3; return ([.push q], 1)
     else do let w ← randWord; return ([.word (BitVec.ofNat 64 w)], 1)
   else
-    let k ← IO.rand 0 27
+    let k ← IO.rand 0 30
     match k with
     | 0 => do let w ← randWord; return ([.word (BitVec.ofNat 64 w)], 1)
     | 1 => return ([.add], -1) | 2 => return ([.sub], -1) | 3 => return ([.mul], -1)
@@ -229,6 +229,7 @@ def genInstr (depth : Nat) : IO (List (Instr 64) × Int) := do
                return ([.word (BitVec.ofNat 64 v), .word (BitVec.ofNat 64 a), .store], 0)
     | 24 => do let a ← IO.rand 0 17; return ([.word (BitVec.ofNat 64 a), .load], 1)
     | 25 => do let v ← randWord; return ([.word (BitVec.ofNat 64 v), .word 0, .select], 0)
+    | 26 => return ([.tor], -1) | 27 => return ([.fromr], 1) | 28 => return ([.rfetch], 1)
     | _ => do let w ← randWord; return ([.word (BitVec.ofNat 64 w)], 1)
 
 def genProg (len : Nat) : IO (List (Instr 64)) := do
