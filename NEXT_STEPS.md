@@ -2,18 +2,7 @@
 
 Suggested development order. Each item names the gap it closes in the current code.
 
-## 1. Prove the x86-64 runtime establishes the entry relation
-
-The WebAssembly side is done: `Wasm.Emit.module_correct` starts from the state instantiation
-produces for the emitted module. `X86.init_rel` still takes the initial machine state as
-hypotheses: `r12 = rsp = sp0`, `r13 r14 r15` at the conventions, the register file zeroed and the
-IR memory region holding the image, and the data-stack, register-file, IR-memory and native-stack
-regions addressable. Unlike WebAssembly these depend on the operating system (the entry `rsp`,
-zero-filled `.bss`, the `.data` and `.dstack` placement), so the step is to model the prologue in
-`X86/Emit.lean` and state, as explicit assumptions about the loader, exactly what the ELF image
-guarantees at `_start`.
-
-## 2. Forth: word definitions and a text frontend
+## 1. Forth: word definitions and a text frontend
 
 The Forth subset has no colon definitions, and programs are built as Lean
 values; neither command-line tool parses source files.
