@@ -19,6 +19,8 @@ jobs:
         run: lake env lean formal/Audit.lean
       - name: Native x86-64 execution check
         run: .lake/build/bin/wordc check 300
+      - name: Forth source files (x86-64)
+        run: for f in examples/forth/*.fs; do .lake/build/bin/wordc forth "$f" || exit 1; done
       - name: Install wasmtime
         run: |
           curl -sSfL -o wasmtime.tar.xz https://github.com/bytecodealliance/wasmtime/releases/download/v30.0.2/wasmtime-v30.0.2-x86_64-linux.tar.xz
@@ -26,3 +28,5 @@ jobs:
           echo "$PWD/wasmtime-v30.0.2-x86_64-linux" >> "$GITHUB_PATH"
       - name: WebAssembly execution check
         run: .lake/build/bin/wasmw check 300
+      - name: Forth source files (WebAssembly)
+        run: for f in examples/forth/*.fs; do .lake/build/bin/wasmw forth "$f" || exit 1; done

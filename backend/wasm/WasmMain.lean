@@ -11,7 +11,8 @@ semantics, and compares the exit status and the dumped data stack, IR memory and
 
 `wasmtime` is found through the `WASMTIME` environment variable, else on `PATH`.
 
-Usage: `wasmw check [fuzzCount]`, `wasmw emit <sample>`.
+Usage: `wasmw check [fuzzCount]`, `wasmw emit <sample>`, `wasmw forth <file.fs> [memWords]` (run a
+Forth source file under wasmtime and compare with the Lean semantics), `wasmw emit-forth <file.fs>`.
 -/
 
 open WordDialect
@@ -58,15 +59,41 @@ def checkOverflow : IO Bool := do
     | .error e => IO.println s!"ERROR {s.name}: {e}"; ok := false
   return ok
 
+/-- A Forth source file as a sample: named after the file, `memWords` zero words of IR memory. -/
+def forthFileSample (path : String) (memWords : Nat) : IO Sample := do
+  let src ← IO.FS.readFile path
+  let name := (System.FilePath.mk path).fileStem.getD "forth"
+  return forthTextSample name src (List.replicate memWords 0)
+
+def parseMem (rest : List String) : Option Nat :=
+  match rest with
+  | [] => some 16
+  | [m] => m.toNat?
+  | _ => none
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["emit", name] =>
     match allSamples.find? (·.name == name) with
     | some s => IO.println (watFor s); return 0
     | none => IO.eprintln "unknown sample"; return 1
+  | "forth" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: wasmw forth <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample path m
+      return (if ← check runWasm s then 0 else 1)
+  | "emit-forth" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: wasmw emit-forth <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample path m
+      match s.buildError with
+      | some e => IO.eprintln e; return 1
+      | none => IO.println (watFor s); return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let agree ← checkAll runWasm count
     let ovf ← checkOverflow
     return (if agree && ovf then 0 else 1)
-  | _ => IO.eprintln "usage: wasmw check [fuzzCount] | wasmw emit <sample>"; return 2
+  | _ => IO.eprintln "usage: wasmw check [fuzzCount] | wasmw emit <sample> | wasmw forth <file.fs> [memWords] | wasmw emit-forth <file.fs> [memWords]"; return 2

@@ -76,6 +76,19 @@ Other sample names include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and
 [`backend/common/Harness.lean`](backend/common/Harness.lean) for the full list.
 Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
 
+Run a Forth source file on either backend. The file is parsed by `Forth.parse`,
+compiled, run on the target, and compared with the Lean semantics; the optional
+last argument is the number of IR memory words (default 16):
+
+```sh
+.lake/build/bin/wordc forth examples/forth/fib.fs
+.lake/build/bin/wasmw forth examples/forth/memory.fs 16
+.lake/build/bin/wordc emit-forth examples/forth/sum.fs > /tmp/sum.s
+```
+
+[`examples/forth/`](examples/forth) has sample programs, including a recursive
+word and a trap two calls deep.
+
 ## Proof and validation status
 
 - Forth has a compilation correctness proof for its modeled subset, including

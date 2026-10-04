@@ -12,7 +12,8 @@ Native execution harness for the x86-64 backend. For each program it
 5. compares exit status and the dumped data stack, IR memory and virtual registers
    (the shared `Harness`).
 
-Usage: `wordc check [fuzzCount]`, `wordc emit <sample>`.
+Usage: `wordc check [fuzzCount]`, `wordc emit <sample>`, `wordc forth <file.fs> [memWords]` (run a
+Forth source file natively and compare with the Lean semantics), `wordc emit-forth <file.fs>`.
 -/
 
 open WordDialect
@@ -68,15 +69,41 @@ def checkOverflow : IO Bool := do
     | .error e => IO.println s!"ERROR {s.name}: {e}"; ok := false
   return ok
 
+/-- A Forth source file as a sample: named after the file, `memWords` zero words of IR memory. -/
+def forthFileSample (path : String) (memWords : Nat) : IO Sample := do
+  let src ← IO.FS.readFile path
+  let name := (System.FilePath.mk path).fileStem.getD "forth"
+  return forthTextSample name src (List.replicate memWords 0)
+
+def parseMem (rest : List String) : Option Nat :=
+  match rest with
+  | [] => some 16
+  | [m] => m.toNat?
+  | _ => none
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["emit", name] =>
     match allSamples.find? (·.name == name) with
     | some s => IO.println (asmFor s); return 0
     | none => IO.eprintln "unknown sample"; return 1
+  | "forth" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: wordc forth <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample path m
+      return (if ← check runNative s then 0 else 1)
+  | "emit-forth" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: wordc emit-forth <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample path m
+      match s.buildError with
+      | some e => IO.eprintln e; return 1
+      | none => IO.println (asmFor s); return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let agree ← checkAll runNative count
     let ovf ← checkOverflow
     return (if agree && ovf then 0 else 1)
-  | _ => IO.eprintln "usage: wordc check [fuzzCount] | wordc emit <sample>"; return 2
+  | _ => IO.eprintln "usage: wordc check [fuzzCount] | wordc emit <sample> | wordc forth <file.fs> [memWords] | wordc emit-forth <file.fs> [memWords]"; return 2
