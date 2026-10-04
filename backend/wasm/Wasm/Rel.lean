@@ -32,7 +32,8 @@ structure Cfg where
   msize : Nat
 
 def Cfg.layout (c : Cfg) : Layout :=
-  { dEnd := c.dEnd, rEnd := c.rEnd, rf := c.rf, mb := c.mb, M := c.M }
+  { dEnd := c.dEnd, rEnd := c.rEnd, rf := c.rf, mb := c.mb, M := c.M, dBase := c.dBase,
+    rBase := c.rBase }
 
 structure Geom (c : Cfg) : Prop where
   msize_lt : c.msize < 2 ^ 32
@@ -42,6 +43,8 @@ structure Geom (c : Cfg) : Prop where
   mb_le : c.mb + 8 * c.M ≤ c.msize
   dBase_le : c.dBase ≤ c.dEnd
   rBase_le : c.rBase ≤ c.rEnd
+  dBase_8 : c.dBase + 8 ≤ c.dEnd
+  rBase_8 : c.rBase + 8 ≤ c.rEnd
   dEnd_ge : 24 ≤ c.dEnd
   dS_F : c.dEnd ≤ c.rf ∨ c.rf + 8 * c.nregs ≤ c.dBase
   dS_M : c.dEnd ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.dBase
@@ -80,7 +83,8 @@ def MemRel (c : Cfg) (m : WMem) (im : WordDialect.Memory 64) : Prop :=
 def RsRel (c : Cfg) (m : WMem) (rs : List Nat) : Prop :=
   ∀ i a, rs[i]? = some a → m.read64 (c.rEnd - 8 * rs.length + 8 * i) = some (BitVec.ofNat 64 a)
 
-/-- The relation, except for the operand stack and the `pc` global. -/
+/-- The relation, except for the operand stack and the `pc` global (those are added at the top of
+the dispatch loop by `RelD` in `Wasm.Correct`). -/
 structure Rel0 (c : Cfg) (s : State 64) (w : WState) : Prop where
   sp : w.globals spG = .i32 (ofN (c.dEnd - 8 * s.dstack.length))
   rp : w.globals rpG = .i32 (ofN (c.rEnd - 8 * s.rstack.length))
@@ -92,10 +96,6 @@ structure Rel0 (c : Cfg) (s : State 64) (w : WState) : Prop where
   size : w.mem.size = c.msize
   capD : c.dBase + 8 * s.dstack.length ≤ c.dEnd
   capR : c.rBase + 8 * s.rstack.length ≤ c.rEnd
-
-/-- At a dispatch point: operand stack empty and the `pc` global names the IR `pc`. -/
-def Rel (c : Cfg) (s : State 64) (w : WState) : Prop :=
-  Rel0 c s w ∧ w.stack = [] ∧ w.globals pcG = .i32 (ofN s.pc)
 
 end Wasm
 end WordDialect

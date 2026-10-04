@@ -86,25 +86,31 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
   [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). Its assumptions include
   valid memory geometry, bounded code addresses, valid register indices, and
   sufficient stack capacity throughout execution.
-- The WebAssembly model has a whole-program preservation theorem,
-  `WordDialect.Wasm.lowerProg_correct`, in
+- The WebAssembly model has whole-program preservation theorems in
   [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
   loop from a related state halts in a related state when the IR halts, and
   exits with the matching trap code (1 underflow, 2 bad address, 3 divide by
-  zero, 4 bad pc, 5 return underflow) when the IR traps. Its assumptions are
-  valid memory geometry within 32-bit linear memory, fewer than `2^32`
-  instructions, valid register indices, and sufficient stack capacity
-  throughout execution. The proof modules, all exported by `Wasm.lean`:
+  zero, 4 bad pc, 5 return underflow) when the IR traps. The generated code
+  checks for room before every instruction that grows the data or return
+  stack, and exits with code 6 when the stack is full (IR stacks are
+  unbounded, so code 6 has no IR counterpart).
+  `WordDialect.Wasm.lowerProg_correct_or_overflow` has no stack-capacity
+  assumption: the module reaches the IR outcome or exits 6.
+  `WordDialect.Wasm.lowerProg_correct` adds the assumption that the run stays
+  within capacity, and then the outcome is exactly the IR's. Both assume valid
+  memory geometry within 32-bit linear memory, fewer than `2^32` instructions,
+  and valid register indices. `wasmw check` also runs three unbounded programs
+  and requires exit 6. The proof modules, all exported by `Wasm.lean`:
 
   | Module | Contents |
   | --- | --- |
   | `Wasm/Mem.lean`, `Wasm/Rel.lean`, `Wasm/Frame.lean` | Byte-memory read/write lemmas, the IR–WebAssembly state relation, and per-region write framing |
-  | `Wasm/Seq.lean`, `Wasm/Guard.lean` | Straight-line execution, sequencing, and the operand-count guard |
+  | `Wasm/Seq.lean`, `Wasm/Guard.lean` | Straight-line execution, sequencing, and the operand-count and overflow guards |
   | `Wasm/SimAlu.lean`, `Wasm/SimAlu2.lean`, `Wasm/SimStack.lean` | Arithmetic, comparison, shift, division, and stack/register instructions |
   | `Wasm/SimMem.lean` | Address bounds check, `load`, `store`, and their bad-address traps |
   | `Wasm/SimCtl.lean` | `jmp`, `branch`, `call`, `ret` (and its underflow trap), `halt`, and the bad-pc stub |
   | `Wasm/SimExec.lean` | One-step simulation for every instruction and outcome (`sim_step`) |
-  | `Wasm/Correct.lean` | Dispatch-loop induction (`loop_correct`, `lowerProg_correct`) and entry relation (`init_rel`) |
+  | `Wasm/Correct.lean` | Dispatch-loop induction (`lowerProg_correct_or_overflow`, `lowerProg_correct`) and entry relation (`init_rel`) |
 - Proofs concern the defined machine models. The emitted artifacts are also
   tested through real assemblers/runtimes; those execution checks are separate
   evidence from the formal proofs.
@@ -119,10 +125,10 @@ Run the audit after building:
 lake env lean formal/Audit.lean
 ```
 
-The current audit reports dependencies of theorems in the `WordDialect`
-namespace, allowing Lean's standard `propext`, `Quot.sound`, and
-`Classical.choice` axioms. It imports the x86-64 library but does not import
-`Wasm`, and it reports unexpected axioms without explicitly failing the command.
+The audit reports the axiom dependencies of every theorem in the `WordDialect`
+namespace across all libraries, including both backends. Lean's standard
+`propext`, `Quot.sound`, and `Classical.choice` are allowed; any other axiom is
+reported as an error, so the command (and CI) fails.
 See [next steps](NEXT_STEPS.md) for proposed improvements.
 
 ## Contributing

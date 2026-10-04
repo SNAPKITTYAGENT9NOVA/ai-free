@@ -37,10 +37,26 @@ def runWasm (s : Sample) : IO (Except String Result) := do
     match parseDump s bytes with
     | some r => return .ok r
     | none => return .error s!"malformed dump ({bytes.size} bytes): {err}"
-  else if code.toNat ≥ 1 && code.toNat ≤ 5 then
+  else if code.toNat ≥ 1 && code.toNat ≤ 6 then
     return .ok (.trap code.toNat)
   else
     return .error s!"wasmtime exit {code}: {err}"
+
+/-- Programs whose IR run never terminates and grows a stack without bound: the target must stop
+them with the overflow exit (code 6) instead of corrupting memory. -/
+def overflowSamples : List Sample :=
+  [ { name := "ovf_word_loop", prog := [.word 1#64, .jmp 0], mem := [] },
+    { name := "ovf_dup_loop", prog := [.word 1#64, .dup, .jmp 1], mem := [] },
+    { name := "ovf_call_loop", prog := [.call 0], mem := [] } ]
+
+def checkOverflow : IO Bool := do
+  let mut ok := true
+  for s in overflowSamples do
+    match ← runWasm s with
+    | .ok (.trap 6) => IO.println s!"PASS  {s.name}  overflow exit 6"
+    | .ok got => IO.println s!"FAIL  {s.name}  expected overflow exit 6, got {repr got}"; ok := false
+    | .error e => IO.println s!"ERROR {s.name}: {e}"; ok := false
+  return ok
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -50,5 +66,7 @@ def main (args : List String) : IO UInt32 := do
     | none => IO.eprintln "unknown sample"; return 1
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
-    return (if ← checkAll runWasm count then 0 else 1)
+    let agree ← checkAll runWasm count
+    let ovf ← checkOverflow
+    return (if agree && ovf then 0 else 1)
   | _ => IO.eprintln "usage: wasmw check [fuzzCount] | wasmw emit <sample>"; return 2

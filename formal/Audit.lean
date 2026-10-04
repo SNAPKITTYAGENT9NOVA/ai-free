@@ -4,6 +4,7 @@ import Forth
 import BCPL
 import Wolfram
 import X86
+import Wasm
 import Lean
 open Lean Elab Command
 
@@ -26,6 +27,9 @@ elab "#audit_wd" : command => do
       | _ => pure ()
   logInfo m!"theorems audited: {thms}"
   logInfo m!"axioms used (name, #theorems): {used.toList}"
-  logInfo m!"theorems using non-standard axioms: {bad}"
+  if bad.isEmpty then
+    logInfo m!"theorems using non-standard axioms: none"
+  else
+    logError m!"theorems using non-standard axioms: {bad}"
 
 #audit_wd

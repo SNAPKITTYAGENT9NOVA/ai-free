@@ -71,7 +71,15 @@ theorem sim_call (n k t : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = 
     exact ⟨rfl, rfl⟩
   have rl := run_of_execL (fs := fs) (by simp [WI.isCtl, i32c, i64c]) el
   refine ⟨_, ?_, (push_rs hg hs hfit hm').setStack _, rfl⟩
-  simpa [lowerInstr] using rl
+  simpa [lowerInstr] using run_append _ (ovfR_pass (fs := fs) hg hs hfit) rl
+
+theorem sim_call_ovf (n k t : Nat) (hg : Geom c) (hs : Rel0 c s w)
+    (h : ¬ c.rBase + 8 * (s.rstack.length + 1) ≤ c.rEnd) :
+    Run fs (lowerInstr c.layout n k (.call t)) w (.exit 6) := by
+  have := run_append_abrupt (fs := fs) _ (ovfR_trap hg hs h)
+    (b := [.globalGet rpG, i32c 8, .i32sub, .globalSet rpG, .globalGet rpG, i64c (k + 1), .i64store 0,
+      i32c (min t n)]) trivial
+  simpa [lowerInstr] using this
 
 theorem ret_split (L : Layout) : lowerInstr L n k .ret =
     [.globalGet rpG, i32c L.rEnd, .i32eq] ++ [.ite [.exitTrap 5]] ++
