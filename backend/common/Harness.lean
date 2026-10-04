@@ -93,11 +93,12 @@ def check (run : Runner) (s : Sample) : IO Bool := do
 def forthSample (name : String) (b : Forth.Block) (mem : List Nat := List.replicate 16 0) : Sample :=
   { name, prog := Forth.compileProgram b, mem }
 
-/-- A sample written as Forth source text. A parse failure becomes a reported error. -/
+/-- A sample written as Forth source text. A parse failure becomes a reported error. The memory
+image is extended with zero cells if the program's `VARIABLE`s (cells `0 … vars - 1`) need more. -/
 def forthTextSample (name : String) (src : String) (mem : List Nat := List.replicate 16 0) :
     Sample :=
   match Forth.parse src with
-  | .ok P => { name, prog := P.compile, mem }
+  | .ok P => { name, prog := P.compile, mem := mem ++ List.replicate (P.vars - mem.length) 0 }
   | .error e => { name, prog := [], mem, buildError := some s!"Forth parse error: {e}" }
 
 open Forth in
@@ -131,6 +132,24 @@ def samplesFrontends : List Sample :=
        : GCD ( a b -- g ) BEGIN SWAP OVER MOD DUP 0 = UNTIL DROP ;\n\
        1071 462 GCD 3 !  3 @  \\ store the result at address 3, read it back"
   , forthTextSample "forth_text_trap_in_word" ": INNER 1 0 / ; : OUTER 7 INNER 8 ; 5 OUTER"
+  , forthTextSample "forth_text_mod_zeq"
+      "-7 2 MOD  7 -2 MOD  -7 -2 MOD  9223372036854775807 10 MOD\n\
+       -9223372036854775808 -1 MOD  0 0=  5 0=  -1 0="
+  , forthTextSample "forth_text_trap_mod0" "5 1 0 MOD"
+  , forthTextSample "forth_text_variables"
+      "VARIABLE N  VARIABLE ACC  100 CONSTANT LIMIT\n\
+       : STEP ( -- ) ACC @ N @ + ACC !  N @ 1 + N ! ;\n\
+       0 N !  0 ACC !  BEGIN STEP N @ LIMIT > UNTIL  ACC @ N @"
+  , forthTextSample "forth_text_many_variables"
+      "VARIABLE A0 VARIABLE A1 VARIABLE A2 VARIABLE A3 VARIABLE A4 VARIABLE A5 VARIABLE A6\n\
+       VARIABLE A7 VARIABLE A8 VARIABLE A9 VARIABLE A10 VARIABLE A11 VARIABLE A12 VARIABLE A13\n\
+       VARIABLE A14 VARIABLE A15 VARIABLE A16 VARIABLE A17 VARIABLE A18 VARIABLE A19\n\
+       77 A19 !  -5 A0 !  A19 @ A0 @ +  A19"
+  , forthTextSample "forth_text_exit_recursive"
+      ": GCD ( a b -- g ) DUP 0= IF DROP EXIT THEN SWAP OVER MOD RECURSE ;\n\
+       : SUM ( n -- 0+...+n ) DUP 0= IF EXIT THEN DUP 1 - RECURSE + ;\n\
+       1071 462 GCD  20 SUM"
+  , forthTextSample "forth_text_exit_dead_code" ": F 1 EXIT 2 3 ; : G F F + EXIT F ; G"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

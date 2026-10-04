@@ -4,5 +4,6 @@ import Forth.OpCorrect
 import Forth.Correct
 import Forth.Eval
 import Forth.Parse
+import Forth.Print
 import Forth.Example
 import Forth.TextExample
