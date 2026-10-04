@@ -11,6 +11,7 @@ import Wasm.SimAlu2
 import Wasm.SimStack
 import Wasm.SimMem
 import Wasm.SimCtl
+import Wasm.SimAux
 import Wasm.SimExec
 import Wasm.Correct
 import Wasm.Init

@@ -49,9 +49,10 @@ theorem sim_bin_core (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {a b :
   have e2 : c.dEnd - 8 * s.dstack.length + 8 = c.dEnd - 8 * (s.dstack.length - 1) := by omega
   rw [e2] at hbR
   refine ⟨_, run_append _ hpre (run_append _ hbR (run_finish nxt)), ?_, ?_⟩
-  · refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_
+  · refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_ ?_
     · simp [setG, spG, List.length_set]
     · simp [setG, spG, rpG]
+    · simp [setG, spG, apG]
   · simp [hst]
 
 theorem sim_binop (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {a b : W} {d : List W} {pre : List WI}

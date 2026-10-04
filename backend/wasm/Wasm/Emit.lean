@@ -25,12 +25,14 @@ def Runtime.dBase (_ : Runtime) : Nat := 0x10000
 def Runtime.dEnd (r : Runtime) : Nat := r.dBase + 8 * 65536
 def Runtime.rBase (r : Runtime) : Nat := r.dEnd
 def Runtime.rEnd (r : Runtime) : Nat := r.rBase + 8 * 4096
-def Runtime.pages (r : Runtime) : Nat := (r.rEnd + 65535) / 65536
+def Runtime.aBase (r : Runtime) : Nat := r.rEnd
+def Runtime.aEnd (r : Runtime) : Nat := r.aBase + 8 * 4096
+def Runtime.pages (r : Runtime) : Nat := (r.aEnd + 65535) / 65536
 def Runtime.msize (r : Runtime) : Nat := 65536 * r.pages
 
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := r.dEnd, rEnd := r.rEnd, rf := r.rf, mb := r.mb, M := r.memImage.length,
-    dBase := r.dBase, rBase := r.rBase }
+    dBase := r.dBase, rBase := r.rBase, aEnd := r.aEnd, aBase := r.aBase }
 
 def ind (d : Nat) : String := String.ofList (List.replicate (2 * d) ' ')
 
@@ -88,6 +90,7 @@ def program (r : Runtime) (p : Prog 64) : String :=
   "  (global $pc (mut i32) (i32.const 0))\n" ++
   s!"  (global $sp (mut i32) (i32.const {r.dEnd}))\n" ++
   s!"  (global $rp (mut i32) (i32.const {r.rEnd}))\n" ++
+  s!"  (global $ap (mut i32) (i32.const {r.aEnd}))\n" ++
   (if m = 0 then "" else
     s!"  (data (i32.const {r.mb}) \"{String.join (r.memImage.map wordBytes)}\")\n") ++
   "  (func $write (param $p i32) (param $n i32)\n" ++

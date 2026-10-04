@@ -21,16 +21,18 @@ theorem execL_append (a b : List WI) (s : WState) :
 theorem Rel0.setStack {c : Cfg} {s : State 64} {w : WState} (h : Rel0 c s w) (x : List Val) :
     Rel0 c s { w with stack := x } :=
   { sp := h.sp, rp := h.rp, stack := h.stack, regs := h.regs, mem := h.mem, rs := h.rs,
-    irvalid := h.irvalid, size := h.size, capD := h.capD, capR := h.capR }
+    irvalid := h.irvalid, size := h.size, capD := h.capD, capR := h.capR, ap := h.ap, aux := h.aux,
+    capA := h.capA }
 
-/-- `Rel0` only looks at the globals `sp`, `rp` and the memory. -/
+/-- `Rel0` only looks at the globals `sp`, `rp`, `ap` and the memory. -/
 theorem Rel0.congr {c : Cfg} {s : State 64} {w w' : WState} (h : Rel0 c s w)
     (hm : w'.mem = w.mem) (hsp : w'.globals spG = w.globals spG)
-    (hrp : w'.globals rpG = w.globals rpG) : Rel0 c s w' :=
+    (hrp : w'.globals rpG = w.globals rpG) (hap : w'.globals apG = w.globals apG) : Rel0 c s w' :=
   { sp := by rw [hsp]; exact h.sp, rp := by rw [hrp]; exact h.rp,
     stack := by rw [hm]; exact h.stack, regs := by rw [hm]; exact h.regs,
     mem := by rw [hm]; exact h.mem, rs := by rw [hm]; exact h.rs, irvalid := h.irvalid,
-    size := by rw [hm]; exact h.size, capD := h.capD, capR := h.capR }
+    size := by rw [hm]; exact h.size, capD := h.capD, capR := h.capR,
+    ap := by rw [hap]; exact h.ap, aux := by rw [hm]; exact h.aux, capA := h.capA }
 
 section Uf
 

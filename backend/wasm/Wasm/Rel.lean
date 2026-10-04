@@ -13,7 +13,8 @@ pairwise disjoint):
 * register file `[rf, rf + 8 nregs)`;
 * IR memory     `[mb, mb + 8 M)`, word `a` at `mb + 8a`;
 * return stack  `[rBase, rEnd)`, with `k` entries the top is at `rEnd - 8k`; an entry is the IR index
-  of the return instruction.
+  of the return instruction;
+* auxiliary stack `[aBase, aEnd)`, with `k` words on it the top is at `aEnd - 8k`.
 Everything is stated at natural-number byte addresses and `read64` on the byte memory.
 -/
 
@@ -30,10 +31,12 @@ structure Cfg where
   mb : Nat
   M : Nat
   msize : Nat
+  aEnd : Nat
+  aBase : Nat
 
 def Cfg.layout (c : Cfg) : Layout :=
   { dEnd := c.dEnd, rEnd := c.rEnd, rf := c.rf, mb := c.mb, M := c.M, dBase := c.dBase,
-    rBase := c.rBase }
+    rBase := c.rBase, aEnd := c.aEnd, aBase := c.aBase }
 
 structure Geom (c : Cfg) : Prop where
   msize_lt : c.msize < 2 ^ 32
@@ -52,6 +55,12 @@ structure Geom (c : Cfg) : Prop where
   dF_M : c.rf + 8 * c.nregs ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.rf
   dF_K : c.rf + 8 * c.nregs ≤ c.rBase ∨ c.rEnd ≤ c.rf
   dM_K : c.mb + 8 * c.M ≤ c.rBase ∨ c.rEnd ≤ c.mb
+  aEnd_le : c.aEnd ≤ c.msize
+  aBase_8 : c.aBase + 8 ≤ c.aEnd
+  dS_A : c.dEnd ≤ c.aBase ∨ c.aEnd ≤ c.dBase
+  dF_A : c.rf + 8 * c.nregs ≤ c.aBase ∨ c.aEnd ≤ c.rf
+  dM_A : c.mb + 8 * c.M ≤ c.aBase ∨ c.aEnd ≤ c.mb
+  dK_A : c.rEnd ≤ c.aBase ∨ c.aEnd ≤ c.rBase
 
 /-- A natural number as an `i32`. -/
 def ofN (a : Nat) : W32 := BitVec.ofNat 32 a
@@ -83,6 +92,9 @@ def MemRel (c : Cfg) (m : WMem) (im : WordDialect.Memory 64) : Prop :=
 def RsRel (c : Cfg) (m : WMem) (rs : List Nat) : Prop :=
   ∀ i a, rs[i]? = some a → m.read64 (c.rEnd - 8 * rs.length + 8 * i) = some (BitVec.ofNat 64 a)
 
+def AuxRel (c : Cfg) (m : WMem) (as : List W) : Prop :=
+  ∀ i v, as[i]? = some v → m.read64 (c.aEnd - 8 * as.length + 8 * i) = some v
+
 /-- The relation, except for the operand stack and the `pc` global (those are added at the top of
 the dispatch loop by `RelD` in `Wasm.Correct`). -/
 structure Rel0 (c : Cfg) (s : State 64) (w : WState) : Prop where
@@ -96,6 +108,9 @@ structure Rel0 (c : Cfg) (s : State 64) (w : WState) : Prop where
   size : w.mem.size = c.msize
   capD : c.dBase + 8 * s.dstack.length ≤ c.dEnd
   capR : c.rBase + 8 * s.rstack.length ≤ c.rEnd
+  ap : w.globals apG = .i32 (ofN (c.aEnd - 8 * s.astack.length))
+  aux : AuxRel c w.mem s.astack
+  capA : c.aBase + 8 * s.astack.length ≤ c.aEnd
 
 end Wasm
 end WordDialect

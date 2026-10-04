@@ -8,7 +8,7 @@ The state a module emitted by `Wasm.Emit.program` starts in, and the end-to-end 
 
 `initState r` is what WebAssembly instantiation produces for the module's declarations, built
 from the same constants and byte encoding the emitter prints:
-* globals `$pc $sp $rp` (indices 0 1 2) initialised to `0`, `dEnd`, `rEnd`;
+* globals `$pc $sp $rp $ap` (indices 0 1 2 3) initialised to `0`, `dEnd`, `rEnd`, `aEnd`;
 * linear memory of `pages` pages, all zero except the data segment at `mb`, which holds the IR
   memory image word by word (`byteOf`, little-endian);
 * an empty operand stack.
@@ -28,10 +28,10 @@ namespace Emit
 def imageByte (img : List Nat) (mb p : Nat) : Nat :=
   if mb ≤ p ∧ p < mb + 8 * img.length then byteOf (img.getD ((p - mb) / 8) 0) ((p - mb) % 8) else 0
 
-/-- Globals at instantiation: `$pc = 0`, `$sp = dEnd`, `$rp = rEnd`. -/
+/-- Globals at instantiation: `$pc = 0`, `$sp = dEnd`, `$rp = rEnd`, `$ap = aEnd`. -/
 def initGlobals (r : Runtime) : Nat → Val := fun j =>
   if j = pcG then .i32 (ofN 0) else if j = spG then .i32 (ofN r.dEnd)
-  else if j = rpG then .i32 (ofN r.rEnd) else .i32 0#32
+  else if j = rpG then .i32 (ofN r.rEnd) else if j = apG then .i32 (ofN r.aEnd) else .i32 0#32
 
 /-- The machine state of the instantiated module, before its start function runs. -/
 def initState (r : Runtime) : WState :=
@@ -40,7 +40,8 @@ def initState (r : Runtime) : WState :=
 /-- The runtime's fixed placement, as a `Cfg`. -/
 def Runtime.cfg (r : Runtime) : Cfg :=
   { dEnd := r.dEnd, dBase := r.dBase, rEnd := r.rEnd, rBase := r.rBase, rf := r.rf,
-    nregs := r.nregs, mb := r.mb, M := r.memImage.length, msize := r.msize }
+    nregs := r.nregs, mb := r.mb, M := r.memImage.length, msize := r.msize, aEnd := r.aEnd,
+    aBase := r.aBase }
 
 theorem cfg_layout (r : Runtime) : r.cfg.layout = r.layout := rfl
 
@@ -48,7 +49,8 @@ theorem cfg_layout (r : Runtime) : r.cfg.layout = r.layout := rfl
 def Runtime.Fits (r : Runtime) : Prop := 8 * (r.nregs + r.memImage.length) ≤ 0x10000 - 0x1000
 
 theorem msize_eq (r : Runtime) : r.msize = 655360 := by
-  simp [Runtime.msize, Runtime.pages, Runtime.rEnd, Runtime.rBase, Runtime.dEnd, Runtime.dBase]
+  simp [Runtime.msize, Runtime.pages, Runtime.aEnd, Runtime.aBase, Runtime.rEnd, Runtime.rBase,
+    Runtime.dEnd, Runtime.dBase]
 
 /-- The runtime's layout satisfies `Geom` whenever the register file and memory image fit. -/
 theorem geom (r : Runtime) (h : r.Fits) : Geom r.cfg := by
@@ -56,7 +58,7 @@ theorem geom (r : Runtime) (h : r.Fits) : Geom r.cfg := by
   simp only [Runtime.Fits] at h
   constructor <;>
     simp only [Runtime.cfg, hm, Runtime.dEnd, Runtime.dBase, Runtime.rEnd, Runtime.rBase, Runtime.rf,
-      Runtime.mb] <;> omega
+      Runtime.mb, Runtime.aEnd, Runtime.aBase] <;> omega
 
 theorem rdBytes_shift (b : Nat → Nat) (a : Nat) :
     ∀ n, rdBytes b a n = rdBytes (fun q => b (a + q)) 0 n := by
@@ -119,10 +121,12 @@ theorem init_relD (r : Runtime) (h : r.Fits) (n : Nat) :
   have hm := msize_eq r
   have hF := h
   simp only [Runtime.Fits] at hF
-  refine init_rel n hg rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  refine init_rel n hg rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · simp [initState, initGlobals]
   · simp [initState, initGlobals, Runtime.cfg, spG, pcG]
   · simp [initState, initGlobals, Runtime.cfg, spG, pcG, rpG]
+  · rfl
+  · simp [initState, initGlobals, Runtime.cfg, spG, pcG, rpG, apG]
   · intro reg hr
     have hr' : reg < r.nregs := hr
     have := read_zero r h (A := r.rf + 8 * reg) (by simp only [Runtime.mb]; omega)

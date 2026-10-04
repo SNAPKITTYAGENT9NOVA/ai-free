@@ -84,7 +84,8 @@ theorem push_gen (hg : Geom c) (hs : Rel0 c s w)
     (hfit : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) {val : List WI} {v : W}
     (hctl : ∀ i ∈ val, i.isCtl = false)
     (hval : ∀ u : WState, u.globals spG = .i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1))) →
-      u.mem = w.mem → execL val u = some { u with stack := .i64 v :: u.stack }) :
+      u.mem = w.mem → u.globals apG = w.globals apG →
+      execL val u = some { u with stack := .i64 v :: u.stack }) :
     ∃ w1, execL (pushWith val) w = some w1 ∧ Rel0 c { s with dstack := v :: s.dstack } w1 ∧
       w1.stack = w.stack := by
   have hX := sp_lt hg hs
@@ -104,6 +105,7 @@ theorem push_gen (hg : Geom c) (hs : Rel0 c s w)
   have hg1 : execL [.globalGet spG] { w with globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) } = some { w with stack := .i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1))) :: w.stack, globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) } := by
     simp [execL, stepI, setG, spG]
   have h2 := hval { w with stack := .i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1))) :: w.stack, globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) } (by simp [setG, spG]) rfl
+    (by simp [setG, spG, apG])
   have h3 : execL [.i64store 0] { w with stack := .i64 v :: .i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1))) :: w.stack, globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) } = some { w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) } := by
     simp [execL, stepI, ofN_toNat hlt, hm']
   refine ⟨{ w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * (s.dstack.length + 1)))) }, ?_, push_rel hg hs hfit hm', rfl⟩
@@ -121,7 +123,7 @@ theorem sim_word (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
     (hfit : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
     Sim1 c fs (lowerInstr c.layout n k (.word v)) { s with dstack := v :: s.dstack } w (k + 1) := by
   have hB := push_gen hg hs hfit (val := [.i64const v]) (v := v) (by simp [WI.isCtl])
-    (by intro u _ _; simp [execL, stepI])
+    (by intro u _ _ _; simp [execL, stepI])
   obtain ⟨w1, he, hr, hst1⟩ := hB
   have := core_gen (fs := fs) (pre := ovf spG c.layout.dBase) (ovfD_pass hg hs hfit) (B := pushWith [.i64const v])
     (allSimple_spec (by simp [allSimple, pushWith, spSub, WI.isCtl, i32c])) ⟨w1, he, hr, by rw [hst1, hst]⟩ (k + 1)
@@ -140,7 +142,7 @@ theorem sim_push (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
   have hB := push_gen hg hs hfit (val := [i32c (c.layout.rf + 8 * r), .i64load 0]) (v := s.regs r)
     (by simp [WI.isCtl, i32c])
     (by
-      intro u _ hm
+      intro u _ hm _
       have h1 := hs.regs r hr
       have h2 : c.rf + 8 * r < 2 ^ 32 := by omega
       simp [execL, stepI, i32c, Cfg.layout, hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h2, h1])
@@ -162,7 +164,7 @@ theorem sim_dup (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
   have hB := push_gen hg hs hfit (val := ldS 8) (v := a)
     (by simp [ldS, WI.isCtl])
     (by
-      intro u hu hm
+      intro u hu hm _
       have e : c.dEnd - 8 * (s.dstack.length + 1) + 8 = c.dEnd - 8 * s.dstack.length := by omega
       simp [ldS, execL, stepI, hu, ofN_toNat hlt, e, hm, hr0])
   obtain ⟨w1, he, hr, hst1⟩ := hB
@@ -185,7 +187,7 @@ theorem sim_over (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
   have hB := push_gen hg hs hfit (val := [.globalGet spG, .i64load 16]) (v := a)
     (by simp [WI.isCtl])
     (by
-      intro u hu hm
+      intro u hu hm _
       have e : c.dEnd - 8 * (s.dstack.length + 1) + 16 = c.dEnd - 8 * s.dstack.length + 8 := by omega
       simp [execL, stepI, hu, ofN_toNat hlt, e, hm, hr1])
   obtain ⟨w1, he, hr, hst1⟩ := hB
@@ -285,9 +287,10 @@ theorem sim_wa_core (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {pre : 
   have e2 : c.dEnd - 8 * s.dstack.length + 8 * n = c.dEnd - 8 * (s.dstack.length - n) := by omega
   rw [e2] at hbR
   refine ⟨_, run_append _ hpre (run_append _ hbR (run_finish nxt)), ?_, ?_⟩
-  · refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_
+  · refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_ ?_
     · simp [setG, spG, List.length_set]
     · simp [setG, spG, rpG]
+    · simp [setG, spG, apG]
   · simp [hst]
 
 theorem sim_select (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []) {cc y x : W} {d : List W}
@@ -342,10 +345,11 @@ theorem sim_pop (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
     simp [hd]
   rw [e3] at hrel2
   have hrel3 : Rel0 c { s with dstack := d, regs := State.setReg s.regs r a } { w with mem := m', globals := setG w.globals spG (.i32 (ofN (c.dEnd - 8 * s.dstack.length + 8))) } := by
-    refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_
+    refine Rel0.congr (hrel2.setStack []) rfl ?_ ?_ ?_
     · have e2 : c.dEnd - 8 * s.dstack.length + 8 = c.dEnd - 8 * (s.dstack.length - 1) := by omega
       simp [setG, spG, e2]
     · simp [setG, spG, rpG]
+    · simp [setG, spG, apG]
   have := core_gen (fs := fs) (pre := uf c.layout 1) (uf1_pass hg hs hd)
     (B := [i32c (c.layout.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8)
     (allSimple_spec (by simp [allSimple, ldS, spAdd, WI.isCtl, i32c])) ⟨_, hexec, hrel3, hst⟩ (k + 1)
