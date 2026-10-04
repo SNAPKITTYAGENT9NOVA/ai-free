@@ -18,7 +18,10 @@ wordAddr … 1:      body of word 1, RET
 …
 ```
 
-A call of word `i` lowers to `CALL (wordAddr … i)`. Code sizes do not depend on the call
+A call of word `i` lowers to `CALL (wordAddr … i)`; `EXIT` lowers to `RET`, the same
+instruction that ends a word body, so a word returns identically whether it falls off its end
+or exits early. `MOD` lowers to `OVER OVER SDIV MUL SUB` and `0=` to `0 =`.
+Variables need no code: they are literals (their cell addresses). Code sizes do not depend on the call
 targets (`compile_size`), so the addresses are prefix sums of `Block.size`.
 -/
 
@@ -39,6 +42,7 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .sub => [.sub]
   | .mul => [.mul]
   | .div => [.sdiv]
+  | .mod => [.over, .over, .sdiv, .mul, .sub]
   | .and => [.and]
   | .or => [.or]
   | .xor => [.xor]
@@ -51,12 +55,14 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .gt => cmpFlagCode .sgt
   | .ult => cmpFlagCode .ult
   | .ugt => cmpFlagCode .ugt
+  | .zeq => .word 0#n :: cmpFlagCode .eq
   | .fetch => [.load]
   | .store => [.store]
 
 /-- Number of IR instructions an operation lowers to. -/
 def Op.len : Op → Nat
   | .eq | .ne | .lt | .gt | .ult | .ugt => 4
+  | .mod | .zeq => 5
   | _ => 1
 
 theorem compileOp_length {n : Nat} (o : Op) : (compileOp o : List (Instr n)).length = o.len := by
@@ -69,6 +75,7 @@ def Block.size : Block → Nat
   | .ite t e rest => (e.size + t.size + 2) + rest.size
   | .untilL body rest => (body.size + 2) + rest.size
   | .call _ rest => 1 + rest.size
+  | .exit rest => 1 + rest.size
 
 /-- Lower a block; `addr i` is the code address of word `i`. -/
 def compile {n : Nat} (addr : Nat → Nat) : Block → Frag n
@@ -77,6 +84,7 @@ def compile {n : Nat} (addr : Nat → Nat) : Block → Frag n
   | .ite t e rest => (Frag.ite (compile addr t) (compile addr e)).seq (compile addr rest)
   | .untilL body rest => (Frag.untilLoop (compile addr body)).seq (compile addr rest)
   | .call i rest => (Frag.ofCode [.call (addr i)]).seq (compile addr rest)
+  | .exit rest => (Frag.ofCode [.ret]).seq (compile addr rest)
 
 theorem compile_size {n : Nat} (addr : Nat → Nat) (b : Block) :
     (compile addr b : Frag n).size = b.size := by
@@ -89,6 +97,8 @@ theorem compile_size {n : Nat} (addr : Nat → Nat) (b : Block) :
   | untilL body rest ihb ihr =>
     simp only [compile, Frag.seq_size, Frag.until_size, ihb, ihr, Block.size]
   | call i rest ih =>
+    simp only [compile, Frag.seq_size, Frag.ofCode_size, ih, Block.size, List.length_singleton]
+  | exit rest ih =>
     simp only [compile, Frag.seq_size, Frag.ofCode_size, ih, Block.size, List.length_singleton]
 
 /-- Address of word `i` when the dictionary `defs` is laid out from `base`, each body followed
@@ -111,7 +121,7 @@ def Program.compile {n : Nat} (P : Program) : Prog n :=
   (Forth.compile P.addr P.main : Frag n).emit 0 ++ [.halt] ++ emitDefs P.addr (P.main.size + 1) P.defs
 
 /-- A program with no definitions: the block at address 0, followed by `HALT`. -/
-def compileProgram {n : Nat} (b : Block) : Prog n := Program.compile ⟨[], b⟩
+def compileProgram {n : Nat} (b : Block) : Prog n := Program.compile { defs := [], main := b }
 
 end Forth
 end WordDialect

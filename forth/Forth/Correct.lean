@@ -11,13 +11,17 @@ word body at its address followed by `RET` (`DefsAt`), started at the block's ad
 matching data stack and memory and *any* return stack — either
 * reaches (via `Steps`) the end of the block's code with data stack and memory equal to the
   Forth result and the return stack unchanged, or
+* (for an `EXIT`) reaches a `RET` instruction with that data stack and memory and the return
+  stack unchanged, or
 * reaches a state whose next step traps with exactly the trap Forth reports.
 
 The induction is on the `Run` derivation, which for a call contains the callee's derivation,
 so recursive words need no separate argument.
 
 `Program.compile_correct` lifts this to a whole program (main block plus dictionary) run from
-the initial machine state; `compileProgram_correct` is the special case without definitions.
+the initial machine state (an `EXIT` run by the main block itself returns with an empty return
+stack, so the machine traps `returnUnderflow`; the parser rejects `EXIT` outside a definition);
+`compileProgram_correct` is the special case without definitions.
 -/
 
 namespace WordDialect
@@ -25,19 +29,24 @@ namespace Forth
 
 open IR
 
-/-- The machine realizes result `r`, ending at address `e` with return stack `rs` when `r` is
-a success. -/
+/-- The machine realizes result `r`. For `ok` it ends at address `e`; for `exit` it ends at a
+`RET` instruction (the code of `EXIT`); in both cases with return stack `rs`. -/
 def Reaches {n : Nat} (p : Prog n) (s : State n) (e : Nat) (rs : List Nat) :
-    Except Trap (FState n) → Prop
+    Res n → Prop
   | .ok st' => ∃ s', Steps p s s' ∧ s'.pc = e ∧ s'.rstack = rs ∧ s'.dstack = st'.stack ∧
       s'.mem = st'.mem
+  | .exit st' => ∃ s', Steps p s s' ∧ p[s'.pc]? = some .ret ∧ s'.rstack = rs ∧
+      s'.dstack = st'.stack ∧ s'.mem = st'.mem
   | .error t => ∃ s1, Steps p s s1 ∧ step p s1 = .trapped t
 
 theorem reaches_trans {n : Nat} {p : Prog n} {s s1 : State n} {e : Nat} {rs : List Nat}
-    {r : Except Trap (FState n)} (h1 : Steps p s s1) (h2 : Reaches p s1 e rs r) :
+    {r : Res n} (h1 : Steps p s s1) (h2 : Reaches p s1 e rs r) :
     Reaches p s e rs r := by
   cases r with
   | ok st' =>
+    obtain ⟨s', hs, hpc, hrs, hd, hm⟩ := h2
+    exact ⟨s', h1.trans hs, hpc, hrs, hd, hm⟩
+  | exit st' =>
     obtain ⟨s', hs, hpc, hrs, hd, hm⟩ := h2
     exact ⟨s', h1.trans hs, hpc, hrs, hd, hm⟩
   | error t =>
@@ -45,9 +54,32 @@ theorem reaches_trans {n : Nat} {p : Prog n} {s s1 : State n} {e : Nat} {rs : Li
     exact ⟨s2, h1.trans hs, ht⟩
 
 theorem reaches_cast {n : Nat} {p : Prog n} {s : State n} {e e' : Nat} {rs rs' : List Nat}
-    {r : Except Trap (FState n)} (h : e = e') (hrs : rs = rs') (hr : Reaches p s e rs r) :
+    {r : Res n} (h : e = e') (hrs : rs = rs') (hr : Reaches p s e rs r) :
     Reaches p s e' rs' r := by
   subst h; subst hrs; exact hr
+
+/-- The end address does not matter for an abrupt result. -/
+theorem reaches_abrupt {n : Nat} {p : Prog n} {s : State n} {e e' : Nat} {rs : List Nat}
+    {r : Res n} (hk : r.isOk = false) (hr : Reaches p s e rs r) : Reaches p s e' rs r := by
+  cases r with
+  | ok _ => cases hk
+  | exit _ => exact hr
+  | error _ => exact hr
+
+/-- A word body realizing a result that returns `st1` reaches a `RET` (the one after the body,
+or an `EXIT`) with the data stack and memory of `st1`. -/
+theorem reaches_returned {n : Nat} {p : Prog n} {s : State n} {e : Nat} {rs : List Nat}
+    {r : Res n} {st1 : FState n} (hret : p[e]? = some .ret) (hr : Reaches p s e rs r)
+    (h : r.returned = some st1) :
+    ∃ s', Steps p s s' ∧ p[s'.pc]? = some .ret ∧ s'.rstack = rs ∧ s'.dstack = st1.stack ∧
+      s'.mem = st1.mem := by
+  cases r with
+  | ok st' =>
+    cases h
+    obtain ⟨s', hs, hpc, hrs, hd, hm⟩ := hr
+    exact ⟨s', hs, by rw [hpc]; exact hret, hrs, hd, hm⟩
+  | exit st' => cases h; exact hr
+  | error _ => cases h
 
 /-- Every word of `defs` is in `p` at `addr i`, followed by `RET`; the address of an index
 outside the dictionary is outside `p`. -/
@@ -75,13 +107,16 @@ theorem size_until (body rest : Block) :
 theorem size_call (i : Nat) (rest : Block) :
     (compile addr (.call i rest) : Frag n).size = 1 + (compile addr rest : Frag n).size := rfl
 
+theorem size_exit (rest : Block) :
+    (compile addr (.exit rest) : Frag n).size = 1 + (compile addr rest : Frag n).size := rfl
+
 end Sizes
 
 theorem fstate_eta {n : Nat} (st : FState n) : (⟨st.stack, st.mem⟩ : FState n) = st := by
   cases st; rfl
 
 theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : Prog n}
-    (hdefs : DefsAt p addr defs) {b : Block} {st : FState n} {r : Except Trap (FState n)}
+    (hdefs : DefsAt p addr defs) {b : Block} {st : FState n} {r : Res n}
     (h : Run defs b st r) :
     ∀ (base : Nat) (s : State n),
       At p base ((compile addr b : Frag n).emit base) → s.pc = base →
@@ -91,6 +126,12 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
   | nil =>
     intro base s _ hpc hd hm
     exact ⟨s, .refl, by simp [compile, Frag.empty, Frag.ofCode, hpc], rfl, hd, hm⟩
+  | @exit rest st =>
+    intro base s hat hpc hd hm
+    have hat' := Frag.seq_at (by simpa [compile] using hat)
+    have hret : p[s.pc]? = some .ret := by
+      rw [hpc]; simpa [Frag.ofCode, At] using hat'.1
+    exact ⟨s, .refl, hret, rfl, hd, hm⟩
   | @opOk o rest st st' r hs _ ih =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
@@ -138,14 +179,14 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
       (by rw [Frag.ite_size]; omega) hd2 hm2
     refine reaches_cast ?_ hrs2 (reaches_trans (h1.trans hs2) h3)
     rw [size_ite, Frag.ite_size]; omega
-  | @iteTrueErr t e rest c d m x hc _ iht =>
+  | @iteTrueStop t e rest c d m r hc _ hk iht =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
     obtain ⟨_, _, _, ht⟩ := ite_decode hat'.1
     have h1 := ite_true_rule hat'.1 hpc hd hc
     have h2 := iht _ { s with pc := base + 2 + (compile addr e : Frag n).size, dstack := d } ht
       rfl rfl hm
-    exact reaches_trans h1 h2
+    exact reaches_abrupt hk (reaches_trans h1 h2)
   | @iteFalse t e rest c d m st1 r hc _ _ ihe ihr =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
@@ -161,19 +202,19 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
         rw [Frag.ite_size]; omega) hd2 hm2
     refine reaches_cast ?_ hrs2 (reaches_trans h1 h3)
     rw [size_ite, Frag.ite_size]; omega
-  | @iteFalseErr t e rest c d m x hc _ ihe =>
+  | @iteFalseStop t e rest c d m r hc _ hk ihe =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
     obtain ⟨h0, he, _, _⟩ := ite_decode hat'.1
     have hfall := step_branch_fall (s := s) (by rw [hpc]; exact h0) hd hc
     rw [hpc] at hfall
     have h2 := ihe (base + 1) { s with pc := base + 1, dstack := d } he rfl rfl hm
-    exact reaches_trans (.single hfall) h2
-  | @untilBodyErr body rest st x _ ihb =>
+    exact reaches_abrupt hk (reaches_trans (.single hfall) h2)
+  | @untilBodyStop body rest st r _ hk ihb =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
     obtain ⟨hb, _, _⟩ := until_decode hat'.1
-    exact ihb base s hb hpc hd hm
+    exact reaches_abrupt hk (ihb base s hb hpc hd hm)
   | @untilUnder body rest st m _ ihb =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
@@ -182,7 +223,7 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
     refine ⟨s1, hs1, ?_⟩
     rw [step_of_fetch (by rw [hpc1]; exact h2)]
     exact exec_underflow _ s1 (by simp [hd1, Instr.pops])
-  | @untilExit body rest st c d m r _ hc _ ihb ihr =>
+  | @untilDone body rest st c d m r _ hc _ ihb ihr =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
     obtain ⟨hb, _, _⟩ := until_decode hat'.1
@@ -202,7 +243,7 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
     have h1 := until_again_rule (Frag.seq_at (by simpa [compile] using hat)).1 hpc1 hd1 hc
     have h3 := ihl base { s1 with pc := base, dstack := d } hat rfl rfl hm1
     exact reaches_cast rfl hrs1 (reaches_trans (hs1.trans h1) h3)
-  | @callOk i rest st body st1 r hi _ _ ihb ihr =>
+  | @callOk i rest st body r1 st1 r hi _ hr1 _ ihb ihr =>
     intro base s hat hpc hd hm
     have hat' := Frag.seq_at (by simpa [compile] using hat)
     have hcall : p[s.pc]? = some (.call (addr i)) := by
@@ -210,10 +251,10 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
     obtain ⟨hbody, hret⟩ := at_append.mp (hdefs.1 i body hi)
     have hret' : p[addr i + (compile addr body : Frag n).size]? = some .ret := by
       simpa [At, Frag.len] using hret
-    obtain ⟨s2, hs2, hpc2, hrs2, hd2, hm2⟩ :=
-      ihb (addr i) { s with pc := addr i, rstack := (s.pc + 1) :: s.rstack } hbody rfl hd hm
+    obtain ⟨s2, hs2, hpc2, hrs2, hd2, hm2⟩ := reaches_returned hret'
+      (ihb (addr i) { s with pc := addr i, rstack := (s.pc + 1) :: s.rstack } hbody rfl hd hm) hr1
     have h2 : step p s2 = .next { s2 with pc := s.pc + 1, rstack := s.rstack } :=
-      step_ret (by rw [hpc2]; exact hret') hrs2
+      step_ret hpc2 hrs2
     have h3 := ihr (base + 1) { s2 with pc := s.pc + 1, rstack := s.rstack }
       (by simpa [Frag.ofCode] using hat'.2) (by simp [hpc]) hd2 hm2
     refine reaches_cast ?_ rfl
@@ -287,11 +328,12 @@ theorem Program.defsAt {n : Nat} (P : Program) :
 /-- Whole-program correctness from the initial machine state (empty stacks, given memory),
 for a program with colon definitions. -/
 theorem Program.compile_correct {n : Nat} {P : Program} {mem : Memory n}
-    {r : Except Trap (FState n)} (h : Run P.defs P.main ⟨[], mem⟩ r) :
+    {r : Res n} (h : Run P.defs P.main ⟨[], mem⟩ r) :
     match r with
     | .ok st' =>
         ∃ s', Exec (P.compile : Prog n) (State.init mem) (.halted s') ∧
           s'.dstack = st'.stack ∧ s'.mem = st'.mem
+    | .exit _ => Exec (P.compile : Prog n) (State.init mem) (.trapped .returnUnderflow)
     | .error t => Exec (P.compile : Prog n) (State.init mem) (.trapped t) := by
   have hat : At (P.compile : Prog n) 0 ((Forth.compile P.addr P.main : Frag n).emit 0) := by
     have := at_embed ([] : Prog n) ((Forth.compile P.addr P.main : Frag n).emit 0)
@@ -307,19 +349,24 @@ theorem Program.compile_correct {n : Nat} {P : Program} {mem : Memory n}
         (Forth.compile P.addr P.main : Frag n).len, List.append_assoc]
     refine ⟨s', Exec.of_steps hs (.halt ?_), hd, hm⟩
     rw [step_of_fetch hfetch]; rfl
+  | exit st' =>
+    obtain ⟨s', hs, hret, hrs, _, _⟩ := key
+    refine Exec.of_steps hs (.trap ?_)
+    simp [step, hret, exec, hrs, State.init]
   | error t =>
     obtain ⟨s1, hs, ht⟩ := key
     exact Exec.of_steps hs (.trap ht)
 
 /-- Whole-program correctness for a block with no definitions. -/
 theorem compileProgram_correct {n : Nat} {b : Block} {mem : Memory n}
-    {r : Except Trap (FState n)} (h : Run [] b ⟨[], mem⟩ r) :
+    {r : Res n} (h : Run [] b ⟨[], mem⟩ r) :
     match r with
     | .ok st' =>
         ∃ s', Exec (compileProgram b : Prog n) (State.init mem) (.halted s') ∧
           s'.dstack = st'.stack ∧ s'.mem = st'.mem
+    | .exit _ => Exec (compileProgram b : Prog n) (State.init mem) (.trapped .returnUnderflow)
     | .error t => Exec (compileProgram b : Prog n) (State.init mem) (.trapped t) :=
-  by cases r <;> exact Program.compile_correct (P := ⟨[], b⟩) h
+  by cases r <;> exact Program.compile_correct (P := { defs := [], main := b }) h
 
 end Forth
 end WordDialect
