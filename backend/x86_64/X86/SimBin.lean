@@ -20,10 +20,11 @@ def MidSpec (mid : List (Instr Nat)) (rr : Reg) (f : W → W → W) : Prop :=
   ∀ (m : M) (a b : W), m.regs rax = a → m.regs rcx = b →
     ∃ m', xseq mid m = .next m' ∧ m'.regs rr = f a b ∧ m'.mem = m.mem ∧
       m'.regs r15 = m.regs r15 ∧ m'.regs r14 = m.regs r14 ∧ m'.regs r13 = m.regs r13 ∧
-      m'.regs r12 = m.regs r12 ∧ m'.regs rsp = m.regs rsp ∧ m'.pc = m.pc + mid.length
+      m'.regs r12 = m.regs r12 ∧ m'.regs rsp = m.regs rsp ∧ m'.regs rbp = m.regs rbp ∧
+      m'.pc = m.pc + mid.length
 
 theorem scratch_ne (r : Reg) (h : r = rax ∨ r = rcx ∨ r = rdx ∨ r = rbx) :
-    r ≠ r15 ∧ r ≠ r14 ∧ r ≠ r13 ∧ r ≠ r12 ∧ r ≠ rsp := by
+    r ≠ r15 ∧ r ≠ r14 ∧ r ≠ r13 ∧ r ≠ r12 ∧ r ≠ rsp ∧ r ≠ rbp := by
   rcases h with rfl | rfl | rfl | rfl <;> decide
 
 theorem sim_bin_ok {c : Cfg} {p : Prog 64} {s : State 64} {x : M} {code : List (Instr Nat)}
@@ -63,9 +64,9 @@ theorem sim_bin_ok {c : Cfg} {p : Prog 64} {s : State 64} {x : M} {code : List (
   have hax : x3.regs rax = a := by simp [hx3, M.mov, M.setReg, M.adv]
   have hcx : x3.regs rcx = b := by simp [hx3, hx2, M.mov, M.setReg, M.adv]
   -- mid
-  obtain ⟨x4, hx4, hrr4, hm4, h15, h14, h13, h12, hsp, hpc4⟩ := hmid x3 a b hax hcx
+  obtain ⟨x4, hx4, hrr4, hm4, h15, h14, h13, h12, hsp, hbp, hpc4⟩ := hmid x3 a b hax hcx
   obtain ⟨hstM, _⟩ := xseq_steps hstr (by rw [hpc3]; exact hatMid) hx4
-  have hr4 : Rel0 c p s x4 := hr3.congr hm4 h15 h14 h13 h12 hsp
+  have hr4 : Rel0 c p s x4 := hr3.congr hm4 h15 h14 h13 h12 hsp hbp
   -- store [r15 + 8], rr
   have hlen : 1 < s.dstack.length := by simp [hd]
   obtain ⟨mem', e2, hr5⟩ := st_stack hg hr4 (j := 1) hlen rr (disp := 8) (by simp)

@@ -23,6 +23,23 @@ instruction that ends a word body, so a word returns identically whether it fall
 or exits early. `MOD` lowers to `OVER OVER SDIV MUL SUB` and `0=` to `0 =`.
 Variables need no code: they are literals (their cell addresses). Code sizes do not depend on the call
 targets (`compile_size`), so the addresses are prefix sums of `Block.size`.
+
+The return-data stack is the IR's auxiliary stack: `>R`, `R>`, `R@` and `I` lower to `TOR`,
+`FROMR`, `RFETCH`, `RFETCH`, and `J` to `FROMR FROMR RFETCH SWAP TOR SWAP TOR`.
+`DO body LOOP` lowers to
+
+```
+L:  SWAP TOR TOR                              ( limit index -- )   R: ( -- limit index )
+    body
+    FROMR 1 ADD FROMR SWAP OVER OVER SUB      ( -- index+1 limit limit-(index+1) )
+    BRANCH L                                  nonzero: go around again (re-entering at L)
+    DROP DROP
+```
+
+(`Frag.repeatLoop`). The test leaves `limit - (index + 1)`, which is nonzero exactly when the
+loop must go around again, so no comparison flag is needed (a `CMP` flag would be `1`, which is
+`0` when `n = 0`). Going around again re-enters at `L` with the parameters `index+1 limit` back
+on the data stack, which is the `Run.doAgain` rule.
 -/
 
 namespace WordDialect
@@ -58,15 +75,31 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .zeq => .word 0#n :: cmpFlagCode .eq
   | .fetch => [.load]
   | .store => [.store]
+  | .tor => [.tor]
+  | .fromr => [.fromr]
+  | .rfetch => [.rfetch]
+  | .loopI => [.rfetch]
+  | .loopJ => [.fromr, .fromr, .rfetch, .swap, .tor, .swap, .tor]
 
 /-- Number of IR instructions an operation lowers to. -/
 def Op.len : Op → Nat
   | .eq | .ne | .lt | .gt | .ult | .ugt => 4
   | .mod | .zeq => 5
+  | .loopJ => 7
   | _ => 1
 
 theorem compileOp_length {n : Nat} (o : Op) : (compileOp o : List (Instr n)).length = o.len := by
   cases o <;> rfl
+
+/-- `DO`: move `limit start` from the data stack to the auxiliary stack (index on top). -/
+def loopEnter {n : Nat} : List (Instr n) := [.swap, .tor, .tor]
+
+/-- After the body: increment the index and leave `index+1 limit (limit - (index+1))`. -/
+def loopTest {n : Nat} : List (Instr n) :=
+  [.fromr, .word 1#n, .add, .fromr, .swap, .over, .over, .sub]
+
+/-- After the loop: drop `index+1 limit`. -/
+def loopLeave {n : Nat} : List (Instr n) := [.drop, .drop]
 
 /-- Number of IR instructions a block lowers to (independent of call targets). -/
 def Block.size : Block → Nat
@@ -76,6 +109,7 @@ def Block.size : Block → Nat
   | .untilL body rest => (body.size + 2) + rest.size
   | .call _ rest => 1 + rest.size
   | .exit rest => 1 + rest.size
+  | .doLoop body rest => ((3 + (body.size + 8)) + 1) + (2 + rest.size)
 
 /-- Lower a block; `addr i` is the code address of word `i`. -/
 def compile {n : Nat} (addr : Nat → Nat) : Block → Frag n
@@ -85,6 +119,9 @@ def compile {n : Nat} (addr : Nat → Nat) : Block → Frag n
   | .untilL body rest => (Frag.untilLoop (compile addr body)).seq (compile addr rest)
   | .call i rest => (Frag.ofCode [.call (addr i)]).seq (compile addr rest)
   | .exit rest => (Frag.ofCode [.ret]).seq (compile addr rest)
+  | .doLoop body rest =>
+    (Frag.repeatLoop ((Frag.ofCode loopEnter).seq ((compile addr body).seq (Frag.ofCode loopTest)))).seq
+      ((Frag.ofCode loopLeave).seq (compile addr rest))
 
 theorem compile_size {n : Nat} (addr : Nat → Nat) (b : Block) :
     (compile addr b : Frag n).size = b.size := by
@@ -100,6 +137,9 @@ theorem compile_size {n : Nat} (addr : Nat → Nat) (b : Block) :
     simp only [compile, Frag.seq_size, Frag.ofCode_size, ih, Block.size, List.length_singleton]
   | exit rest ih =>
     simp only [compile, Frag.seq_size, Frag.ofCode_size, ih, Block.size, List.length_singleton]
+  | doLoop body rest ihb ihr =>
+    simp only [compile, Frag.seq_size, Frag.repeat_size, Frag.ofCode_size, ihb, ihr, Block.size]
+    rfl
 
 /-- Address of word `i` when the dictionary `defs` is laid out from `base`, each body followed
 by `RET`. For `i ≥ defs.length` this is the address just past the last body. -/

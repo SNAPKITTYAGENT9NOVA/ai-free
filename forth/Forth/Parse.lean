@@ -14,7 +14,9 @@ Lexing (`tokenize`):
 Parsing (`parse`), case-insensitive:
 * integer literals, optionally negative (`-12`), taken modulo `2^n` by `Op.lit`;
 * `+ - * / MOD AND OR XOR INVERT LSHIFT RSHIFT = <> < > U< U> 0= DUP DROP SWAP OVER ROT @ !`;
-* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`;
+* `>R R> R@ I J` (return-data stack words; `I` and `J` are ordinary words, also accepted outside
+  a `DO … LOOP`, where they read whatever the return-data stack holds, see `Forth.Semantics`);
+* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`, `DO … LOOP`;
 * `: name … ;` colon definitions at top level. A name is visible from the start of its own
   body (so a word may call itself recursively) and in everything after it; a later definition
   of the same name shadows the earlier one. Word `k` (in definition order) is `defs[k]`.
@@ -27,14 +29,15 @@ Parsing (`parse`), case-insensitive:
   the stack at run time; here it must be a literal, resolved at parse time.)
 * Top-level code outside definitions forms the main block, in source order.
 * Anything else is an error (`unknown word`), as are unbalanced control words, nested
-  definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`. In particular
-  `>R R>` and `DO … LOOP` are not supported: the IR has no return stack for data words (see
-  `NEXT_STEPS.md`).
+  definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`. A `DO` without
+  its `LOOP` is an error (`DO without LOOP`), and so is a `LOOP` without a `DO`.
 
 Name lookup order: dictionary, then built-in words, then numbers.
 
 Everything is structurally recursive on `List Char` / fuel, so concrete parses are checked by
-`decide`/`rfl`. `Forth.Print` proves `parse (print P) = .ok P` for well-formed programs.
+`decide`/`rfl`. `Forth.Print` proves `parse (print P) = .ok P` for well-formed programs;
+`Forth.ParseProps` proves the converse direction (`parse_wf`: every successful parse is
+well formed) and the claims above about case, comments, `CONSTANT` and `RECURSE`.
 -/
 
 namespace WordDialect
@@ -48,6 +51,7 @@ def Block.append : Block → Block → Block
   | .untilL x r, b => .untilL x (r.append b)
   | .call i r, b => .call i (r.append b)
   | .exit r, b => .exit (r.append b)
+  | .doLoop x r, b => .doLoop x (r.append b)
 
 /-- Split off a trailing literal at the top level of a block (the token just before
 `CONSTANT`). -/
@@ -59,6 +63,7 @@ def Block.dropLastLit : Block → Option (Block × Int)
   | .untilL x r => r.dropLastLit.map fun p => (.untilL x p.1, p.2)
   | .call i r => r.dropLastLit.map fun p => (.call i p.1, p.2)
   | .exit r => r.dropLastLit.map fun p => (.exit p.1, p.2)
+  | .doLoop x r => r.dropLastLit.map fun p => (.doLoop x p.1, p.2)
 
 namespace Parse
 
@@ -103,7 +108,9 @@ def opTable : List (Tok × Op) :=
     (['U', '<'], .ult), (['U', '>'], .ugt), (['0', '='], .zeq),
     (['D', 'U', 'P'], .dup), (['D', 'R', 'O', 'P'], .drop), (['S', 'W', 'A', 'P'], .swap),
     (['O', 'V', 'E', 'R'], .over), (['R', 'O', 'T'], .rot),
-    (['@'], .fetch), (['!'], .store) ]
+    (['@'], .fetch), (['!'], .store),
+    (['>', 'R'], .tor), (['R', '>'], .fromr), (['R', '@'], .rfetch),
+    (['I'], .loopI), (['J'], .loopJ) ]
 
 def digitsAux : Nat → List Char → Option Nat
   | acc, [] => some acc
@@ -129,9 +136,11 @@ def kVARIABLE : Tok := ['V', 'A', 'R', 'I', 'A', 'B', 'L', 'E']
 def kCONSTANT : Tok := ['C', 'O', 'N', 'S', 'T', 'A', 'N', 'T']
 def kRECURSE : Tok := ['R', 'E', 'C', 'U', 'R', 'S', 'E']
 def kEXIT : Tok := ['E', 'X', 'I', 'T']
+def kDO : Tok := ['D', 'O']
+def kLOOP : Tok := ['L', 'O', 'O', 'P']
 
 /-- Words that end the block being parsed. -/
-def stops : List Tok := [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT]
+def stops : List Tok := [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP]
 
 /-- Dictionary: (upper-cased name, what the name compiles to), most recent first. A colon
 definition `k` compiles to `Block.call k`; a variable or constant to a literal. -/
@@ -144,6 +153,7 @@ inductive Item where
   | stop (u : Tok)
   | ifK
   | beginK
+  | doK
   | prim (w : Block → Block)
   | bad (msg : String)
 
@@ -173,6 +183,7 @@ def classify (dict : Dict) (self : Option Nat) (t : Tok) : Item :=
     match self with
     | some _ => .prim .exit
     | none => .bad "EXIT outside a definition"
+  else if u = kDO then .doK
   else lookupWord dict t u
 
 /-- Parse a block up to the end of input or a stop word. Returns the block, the stop word
@@ -205,6 +216,12 @@ def parseSeq : Nat → Dict → Option Nat → List Tok → Except String (Block
         let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
         .ok (.untilL body rest, stop2, ts2)
       else .error "BEGIN without UNTIL"
+    | .doK => do
+      let (body, stop1, ts1) ← parseSeq fuel dict self ts
+      if stop1 = some kLOOP then
+        let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
+        .ok (.doLoop body rest, stop2, ts2)
+      else .error "DO without LOOP"
 
 /-- Parse top-level code, definitions, variables and constants. `vars` counts the variables
 so far; `main` accumulates the top-level code so far. -/

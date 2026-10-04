@@ -11,6 +11,8 @@ Stack conventions:
 * `ite t e`        — consumes a flag; nonzero runs `t`, zero runs `e`.
 * `untilLoop body` — `body` leaves a flag; nonzero exits, zero repeats (Forth `BEGIN … UNTIL`).
 * `whileLoop c b`  — `c` leaves a flag; nonzero runs `b` then re-tests, zero exits.
+* `repeatLoop body` — `body` leaves a flag; nonzero repeats, zero exits (the loop of Forth's
+  `DO … LOOP`, whose test leaves a nonzero flag exactly when it must go around again).
 
 Each `*_rule` theorem states how the machine moves through the emitted code in terms of
 `Steps`, assuming the emitted code is located at `b` in the program (`At`).
@@ -54,10 +56,17 @@ def whileLoop {n : Nat} (c k : Frag n) : Frag n where
       k.emit (b + c.size + 2) ++ [.jmp b]
   len := fun b => by simp [c.len, k.len]; omega
 
+def repeatLoop {n : Nat} (body : Frag n) : Frag n where
+  size := body.size + 1
+  emit := fun b => body.emit b ++ [.branch b]
+  len := fun b => by simp [body.len]
+
 theorem seq_size {n : Nat} (f g : Frag n) : (f.seq g).size = f.size + g.size := rfl
 theorem ite_size {n : Nat} (t e : Frag n) : (Frag.ite t e).size = e.size + t.size + 2 := rfl
 theorem until_size {n : Nat} (body : Frag n) : (Frag.untilLoop body).size = body.size + 2 := rfl
 theorem while_size {n : Nat} (c k : Frag n) : (Frag.whileLoop c k).size = c.size + k.size + 3 := rfl
+theorem repeat_size {n : Nat} (body : Frag n) : (Frag.repeatLoop body).size = body.size + 1 :=
+  rfl
 theorem ofCode_size {n : Nat} (c : List (Instr n)) : (Frag.ofCode c).size = c.length := rfl
 
 theorem seq_at {n : Nat} {p : Prog n} {b : Nat} {f g : Frag n}
@@ -141,6 +150,34 @@ theorem until_again_rule (h : At p b ((Frag.untilLoop body).emit b))
   exact .cons hfall (.single hj)
 
 end Until
+
+/-! ## `repeatLoop` -/
+
+section Repeat
+variable {n : Nat} {p : Prog n} {b : Nat} {body : Frag n}
+
+theorem repeat_decode (h : At p b ((Frag.repeatLoop body).emit b)) :
+    At p b (body.emit b) ∧ p[b + body.size]? = some (.branch b) := by
+  simp only [Frag.repeatLoop, at_append, At, body.len] at h
+  exact ⟨h.1, h.2.1⟩
+
+/-- Flag true: go around again. `s1` is the state right after the body, flag on top. -/
+theorem repeat_again_rule (h : At p b ((Frag.repeatLoop body).emit b))
+    {s1 : State n} (hpc : s1.pc = b + body.size)
+    {c : Word n} {d : List (Word n)} (hs : s1.dstack = c :: d) (hc : Word.isTrue c = true) :
+    Steps p s1 { s1 with pc := b, dstack := d } :=
+  .single (step_branch_taken (by rw [hpc]; exact (repeat_decode h).2) hs hc)
+
+/-- Flag false: leave the loop. -/
+theorem repeat_exit_rule (h : At p b ((Frag.repeatLoop body).emit b))
+    {s1 : State n} (hpc : s1.pc = b + body.size)
+    {c : Word n} {d : List (Word n)} (hs : s1.dstack = c :: d) (hc : Word.isTrue c = false) :
+    Steps p s1 { s1 with pc := b + body.size + 1, dstack := d } := by
+  have := step_branch_fall (by rw [hpc]; exact (repeat_decode h).2) hs hc
+  rw [hpc] at this
+  exact .single this
+
+end Repeat
 
 /-! ## `whileLoop` -/
 

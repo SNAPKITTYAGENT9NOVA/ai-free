@@ -9,7 +9,7 @@ The program text is produced from exactly the instruction list `lowerProg` build
 `.L<index>:` label per x86 instruction, so the text and the verified model cannot diverge.
 
 The runtime (`prologue`, `epilogue`) is the only hand-written assembly. It
-* sets `r12 r13 r14 r15` to the conventions in `X86.Lower`,
+* sets `r12 r13 r14 r15 rbp` to the conventions in `X86.Lower`,
 * implements `exitHalt` as: write `depth`, the data stack, IR memory and the virtual register
   file to stdout (raw little-endian 64-bit words), then `exit(0)`,
 * implements `exitTrap t` as `exit(code t)` and `exitOvf` (stack overflow) as `exit(6)`.
@@ -29,7 +29,7 @@ def trapCode : Trap → Nat
   | .returnUnderflow => 5
 
 def regName : Reg → String
-  | .rax => "rax" | .rcx => "rcx" | .rdx => "rdx" | .rbx => "rbx" | .rsp => "rsp"
+  | .rax => "rax" | .rcx => "rcx" | .rdx => "rdx" | .rbx => "rbx" | .rsp => "rsp" | .rbp => "rbp"
   | .r12 => "r12" | .r13 => "r13" | .r14 => "r14" | .r15 => "r15"
 
 def ccName : Cc → String
@@ -84,27 +84,33 @@ def body (code : List (Instr Nat)) : String :=
   String.intercalate "\n" (code.zipIdx.map fun (i, k) => s!"{lbl k}:\n\t{instr i}") ++ "\n"
 
 /-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack capacity in entries,
-IR memory image and register-file size. -/
+IR memory image, register-file size, and auxiliary-stack placement (`acap` words ending at
+`aEnd`). -/
 structure Runtime where
   dEnd : Nat
   capacity : Nat
   rcap : Nat
   memImage : List Nat
   nregs : Nat
+  aEnd : Nat
+  acap : Nat
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 8 * r.capacity
+
+def Runtime.aBase (r : Runtime) : Nat := r.aEnd - 8 * r.acap
 
 /-- The lowering's view of the runtime: the constants the guards and bounds checks use. -/
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := BitVec.ofNat 64 r.dEnd, memSize := r.memImage.length,
-    dLim := BitVec.ofNat 64 (r.dBase + 8), rGap := BitVec.ofNat 64 (8 * r.rcap - 16) }
+    dLim := BitVec.ofNat 64 (r.dBase + 8), rGap := BitVec.ofNat 64 (8 * r.rcap - 16),
+    aEnd := BitVec.ofNat 64 r.aEnd, aLim := BitVec.ofNat 64 (r.aBase + 8) }
 
 /-- The runtime prologue. Its model is `X86.Emit.prologueCode` (`X86/Init.lean`), where each `lea`
 is the `movImm` of the address the linker resolves the symbol to; keep the two in step. -/
 def prologue (r : Runtime) : String :=
   "\t.intel_syntax noprefix\n\t.text\n\t.globl _start\n_start:\n" ++
   "\tmov r12, rsp\n\tlea r13, [rip + irmem]\n\tlea r14, [rip + regfile]\n" ++
-  s!"\tmovabs r15, {hex r.dEnd}\n"
+  s!"\tmovabs r15, {hex r.dEnd}\n\tmovabs rbp, {hex r.aEnd}\n"
 
 def sysWrite (bufSetup : String) (len : String) : String :=
   s!"\t{bufSetup}\n\tmov rdx, {len}\n\tmov rax, 1\n\tmov rdi, 1\n\tsyscall\n"
@@ -124,6 +130,8 @@ def epilogue (r : Runtime) : String :=
   String.join (r.memImage.map fun v => s!"\t.quad {v}\n") ++
   "\t.section .dstack, \"aw\", @nobits\n\t.balign 8\n" ++
   s!"\t.skip {8 * r.capacity}\n" ++
+  "\t.section .astack, \"aw\", @nobits\n\t.balign 8\n" ++
+  s!"\t.skip {8 * r.acap}\n" ++
   "\t.bss\n\t.balign 8\nhdr:\n\t.skip 8\nregfile:\n" ++ s!"\t.skip {8 * (r.nregs + 1)}\n"
 
 /-- Full assembly text for a lowered program. -/

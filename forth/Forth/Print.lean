@@ -14,8 +14,8 @@ is printable, so literals need no condition.
 Printed form: `VARIABLE V` once per variable cell (all named `V`: a variable is referenced by
 its address, a literal, so the names are never used), then each definition `k` as
 `: Wk … ;`, then the main block. Word names are `W` followed by the decimal index. Control
-structures print as `IF … ELSE … THEN` (with a possibly empty `ELSE` part), `BEGIN … UNTIL`
-and `EXIT`; `CONSTANT` and `RECURSE` are never printed (a constant is a literal, `RECURSE` a
+structures print as `IF … ELSE … THEN` (with a possibly empty `ELSE` part), `BEGIN … UNTIL`,
+`DO … LOOP` and `EXIT`; `CONSTANT` and `RECURSE` are never printed (a constant is a literal, `RECURSE` a
 call by name). Tokens are separated by one space.
 
 The proof has two halves: `tokenize_join` (the lexer splits the printed text back into the
@@ -33,6 +33,7 @@ def Block.WF (k : Nat) (inDef : Bool) : Block → Prop
   | .untilL b r => b.WF k inDef ∧ r.WF k inDef
   | .call i r => i < k ∧ r.WF k inDef
   | .exit r => inDef = true ∧ r.WF k inDef
+  | .doLoop b r => b.WF k inDef ∧ r.WF k inDef
 
 /-- Well-formed programs: word `i` may call words `0 … i` (itself included); the main block
 may call every word; only definitions contain `EXIT`. This is the shape `parse` produces. -/
@@ -74,6 +75,8 @@ def opTok : Op → Tok
   | .eq => ['='] | .ne => ['<', '>'] | .lt => ['<'] | .gt => ['>']
   | .ult => ['U', '<'] | .ugt => ['U', '>'] | .zeq => ['0', '=']
   | .fetch => ['@'] | .store => ['!']
+  | .tor => ['>', 'R'] | .fromr => ['R', '>'] | .rfetch => ['R', '@']
+  | .loopI => ['I'] | .loopJ => ['J']
 
 def printBlock : Block → List Tok
   | .nil => []
@@ -82,6 +85,7 @@ def printBlock : Block → List Tok
   | .untilL b r => kBEGIN :: (printBlock b ++ kUNTIL :: printBlock r)
   | .call i r => wordName i :: printBlock r
   | .exit r => kEXIT :: printBlock r
+  | .doLoop b r => kDO :: (printBlock b ++ kLOOP :: printBlock r)
 
 def varToks : Nat → List Tok
   | 0 => []
@@ -200,13 +204,13 @@ theorem number_intToks (z : Int) : number (intToks z) = some z := by
 
 /-! ## Token facts -/
 
-def keywords : List Tok := [kIF, kBEGIN, kRECURSE, kEXIT] ++ stops
+def keywords : List Tok := [kIF, kBEGIN, kRECURSE, kEXIT, kDO] ++ stops
 
 theorem not_keyword {t : Tok} (h : ∀ kw ∈ keywords, kw ≠ t) :
-    t ∉ stops ∧ t ≠ kIF ∧ t ≠ kBEGIN ∧ t ≠ kRECURSE ∧ t ≠ kEXIT := by
+    t ∉ stops ∧ t ≠ kIF ∧ t ≠ kBEGIN ∧ t ≠ kRECURSE ∧ t ≠ kEXIT ∧ t ≠ kDO := by
   refine ⟨fun hm => h t (by simp [keywords, hm]) rfl, fun e => h kIF (by simp [keywords]) e.symm,
     fun e => h kBEGIN (by simp [keywords]) e.symm, fun e => h kRECURSE (by simp [keywords]) e.symm,
-    fun e => h kEXIT (by simp [keywords]) e.symm⟩
+    fun e => h kEXIT (by simp [keywords]) e.symm, fun e => h kDO (by simp [keywords]) e.symm⟩
 
 theorem upper_of {t : Tok} (h : ∀ c ∈ t, c.toUpper = c) : upper t = t := by
   unfold upper
@@ -291,8 +295,8 @@ theorem keyword_head : ∀ kw ∈ keywords, kw.head? ≠ some 'W' := by decide
 
 theorem classify_lookup {dict : Dict} {self : Option Nat} {t : Tok} (hu : upper t = t)
     (hk : ∀ kw ∈ keywords, kw ≠ t) : classify dict self t = lookupWord dict t t := by
-  obtain ⟨h1, h2, h3, h4, h5⟩ := not_keyword hk
-  simp only [classify, hu, h1, h2, h3, h4, h5, ↓reduceIte]
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := not_keyword hk
+  simp only [classify, hu, h1, h2, h3, h4, h5, h6, ↓reduceIte]
 
 theorem lookupWord_names {dict dict' : Dict} {t : Tok} (hd : DictOK dict) (hd' : DictOK dict')
     (hv : t ≠ varName) (hw : ∀ j, t ≠ wordName j) : lookupWord dict t t = lookupWord dict' t t := by
@@ -347,12 +351,14 @@ theorem classify_word {dict : Dict} {self : Option Nat} {i : Nat}
 theorem classify_stop {dict : Dict} {self : Option Nat} {u : Tok} (hu : u ∈ stops) :
     classify dict self u = .stop u := by
   simp only [stops, List.mem_cons, List.mem_nil_iff, or_false] at hu
-  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
 
 theorem classify_if {dict : Dict} {self : Option Nat} : classify dict self kIF = .ifK := rfl
 
 theorem classify_begin {dict : Dict} {self : Option Nat} : classify dict self kBEGIN = .beginK :=
   rfl
+
+theorem classify_do {dict : Dict} {self : Option Nat} : classify dict self kDO = .doK := rfl
 
 theorem classify_exit {dict : Dict} {j : Nat} : classify dict (some j) kEXIT = .prim .exit := rfl
 
@@ -418,6 +424,16 @@ theorem parseSeq_print {dict : Dict} {self : Option Nat} {k : Nat} {inDef : Bool
       simp [printBlock] at hf; omega
     simp only [printBlock, List.cons_append, List.append_assoc, parseSeq, classify_begin]
     rw [ihx hwf.1 (kUNTIL :: (printBlock r ++ tail)) (some kUNTIL) (printBlock r ++ tail)
+        (parseSeq_stop (by decide) _) f hlen.1]
+    simp only [bind, Except.bind, ite_true]
+    rw [ihr hwf.2 tail stop rest ht f hlen.2]
+  | doLoop x r ihx ihr =>
+    intro hwf tail stop rest ht fuel hf
+    obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [printBlock] at hf; omega⟩
+    have hlen : (printBlock x).length < f ∧ (printBlock r).length < f := by
+      simp [printBlock] at hf; omega
+    simp only [printBlock, List.cons_append, List.append_assoc, parseSeq, classify_do]
+    rw [ihx hwf.1 (kLOOP :: (printBlock r ++ tail)) (some kLOOP) (printBlock r ++ tail)
         (parseSeq_stop (by decide) _) f hlen.1]
     simp only [bind, Except.bind, ite_true]
     rw [ihr hwf.2 tail stop rest ht f hlen.2]
@@ -652,6 +668,13 @@ theorem plain_printBlock : ∀ (b : Block), ∀ t ∈ printBlock b, Plain t := b
     · exact plain_concrete (by decide)
     · exact ihr t h
   | untilL x r ihx ihr =>
+    intro t h; simp only [printBlock, List.mem_cons, List.mem_append] at h
+    rcases h with rfl | h | rfl | h
+    · exact plain_concrete (by decide)
+    · exact ihx t h
+    · exact plain_concrete (by decide)
+    · exact ihr t h
+  | doLoop x r ihx ihr =>
     intro t h; simp only [printBlock, List.mem_cons, List.mem_append] at h
     rcases h with rfl | h | rfl | h
     · exact plain_concrete (by decide)

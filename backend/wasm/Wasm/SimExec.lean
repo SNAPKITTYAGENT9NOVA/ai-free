@@ -1,4 +1,4 @@
-import Wasm.SimCtl
+import Wasm.SimAux
 
 /-!
 # Wasm.SimExec
@@ -8,7 +8,8 @@ instruction and every outcome (`next`, `halted`, `trapped`). This is the case an
 whole instruction set that the dispatch-loop theorem (`Wasm.Correct`) iterates.
 
 Trap codes (the argument of `proc_exit`): 1 `stackUnderflow`, 2 `badAddress`, 3 `divideByZero`,
-4 `badPc`, 5 `returnUnderflow`.
+4 `badPc`, 5 `returnUnderflow` (an empty return stack on `ret`, or an empty auxiliary stack on
+`fromr`/`rfetch`).
 
 Every instruction that grows a stack first checks for room, and exits with code 6 when the stack
 is full. So `sim_step` has no capacity hypothesis: the code either simulates the IR step, or the
@@ -26,10 +27,11 @@ def trapCode : Trap → Nat
   | .badPc => 4
   | .returnUnderflow => 5
 
-/-- Headroom for one step: room to push one data word and one return index. With this headroom no
-overflow guard fires. -/
+/-- Headroom for one step: room to push one data word, one return index and one auxiliary word.
+With this headroom no overflow guard fires. -/
 def Fits (c : Cfg) (s : State 64) : Prop :=
-  c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd ∧ c.rBase + 8 * (s.rstack.length + 1) ≤ c.rEnd
+  c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd ∧ c.rBase + 8 * (s.rstack.length + 1) ≤ c.rEnd ∧
+    c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd
 
 /-- What simulating one IR outcome means for the body of one dispatched function. On `next`, the
 function returns the (clamped) next IR index, and every return index stays within the program. -/
@@ -45,7 +47,8 @@ variable {c : Cfg} {s : State 64} {w : WState} {fs : Funcs} {n : Nat}
 
 theorem Rel0.setPc (h : Rel0 c s w) (q : Nat) : Rel0 c { s with pc := q } w :=
   { sp := h.sp, rp := h.rp, stack := h.stack, regs := h.regs, mem := h.mem, rs := h.rs,
-    irvalid := h.irvalid, size := h.size, capD := h.capD, capR := h.capR }
+    irvalid := h.irvalid, size := h.size, capD := h.capD, capR := h.capR, ap := h.ap, aux := h.aux,
+    capA := h.capA }
 
 theorem next_sim {body : List WI} {s1 : State 64} {q : Nat} (hrs : ∀ a ∈ s1.rstack, a ≤ n)
     (h : Sim1 c fs body s1 w (min q n)) : StepSim c fs n body w (.next { s1 with pc := q }) := by
@@ -90,7 +93,8 @@ theorem sim_step (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
     StepSim c fs p.length (lowerInstr c.layout p.length s.pc i) w (exec i s) ∨
       (¬ Fits c s ∧ Run fs (lowerInstr c.layout p.length s.pc i) w (.exit 6)) := by
   have nfD : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd → ¬ Fits c s := fun h hf => h hf.1
-  have nfR : ¬ c.rBase + 8 * (s.rstack.length + 1) ≤ c.rEnd → ¬ Fits c s := fun h hf => h hf.2
+  have nfR : ¬ c.rBase + 8 * (s.rstack.length + 1) ≤ c.rEnd → ¬ Fits c s := fun h hf => h hf.2.1
+  have nfA : ¬ c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd → ¬ Fits c s := fun h hf => h hf.2.2
   have hlt : s.pc < p.length := by
     by_cases h : s.pc < p.length
     · exact h
@@ -282,6 +286,39 @@ theorem sim_step (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
     obtain ⟨x, y, z, d, hd⟩ := shape3 (by simpa [Instr.pops] using hk')
     rw [show exec .rot s = s.fall (z :: x :: y :: d) by simp [exec, hd]]
     exact .inl <| fall_sim hlt hrs (sim_rot _ _ hg hs hst hd)
+  | tor =>
+    obtain ⟨a, d, hd⟩ := shape1 (by simpa [Instr.pops] using hk')
+    rw [show exec .tor s = .next { { s with dstack := d, astack := a :: s.astack } with pc := s.pc + 1 } by
+      simp [exec, hd]]
+    by_cases hf : c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd
+    · have h := sim_tor (fs := fs) p.length s.pc hg hs hst hd hf
+      rw [← Nat.min_eq_left (show s.pc + 1 ≤ p.length by omega)] at h
+      exact .inl <| next_sim hrs h
+    · exact .inr ⟨nfA hf, sim_tor_ovf _ _ hg hs hd hf⟩
+  | fromr =>
+    cases ha : s.astack with
+    | nil =>
+      rw [show exec .fromr s = .trapped .returnUnderflow by simp [exec, ha]]
+      exact .inl <| sim_fromr_trap _ _ hs ha
+    | cons a as =>
+      rw [show exec .fromr s =
+          .next { { s with dstack := a :: s.dstack, astack := as } with pc := s.pc + 1 } by
+        simp [exec, ha]]
+      by_cases hf : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd
+      · have h := sim_fromr (fs := fs) p.length s.pc hg hs hst ha hf
+        rw [← Nat.min_eq_left (show s.pc + 1 ≤ p.length by omega)] at h
+        exact .inl <| next_sim hrs h
+      · exact .inr ⟨nfD hf, sim_fromr_ovf _ _ hg hs ha hf⟩
+  | rfetch =>
+    cases ha : s.astack with
+    | nil =>
+      rw [show exec .rfetch s = .trapped .returnUnderflow by simp [exec, ha]]
+      exact .inl <| sim_rfetch_trap _ _ hs ha
+    | cons a as =>
+      rw [show exec .rfetch s = s.fall (a :: s.dstack) by simp [exec, ha]]
+      by_cases hf : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd
+      · exact .inl <| fall_sim hlt hrs (sim_rfetch _ _ hg hs hst ha hf)
+      · exact .inr ⟨nfD hf, sim_rfetch_ovf _ _ hg hs ha hf⟩
   | halt =>
     rw [show exec .halt s = .halted s by simp [exec]]
     exact .inl <| ⟨w, sim_halt _ _, hs⟩

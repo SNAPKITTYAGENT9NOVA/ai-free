@@ -10,7 +10,8 @@ Memory regions (byte intervals, all below `2^64`, pairwise disjoint):
 * data stack  `[dBase, dEnd)`, top at `dEnd - 8k` when `k` words are on the stack;
 * register file `[rf, rf + 8 nregs)`;
 * IR memory `[mb, mb + 8 M)`;
-* return stack: the native stack below `sp0`.
+* return stack: the native stack below `sp0`;
+* auxiliary stack `[aBase, aEnd)`, top at `aEnd - 8k` when `k` words are on it (pointer `rbp`).
 
 Everything is stated with `BitVec.ofNat 64` of natural-number addresses, so address arithmetic
 is ordinary `omega` reasoning.
@@ -30,6 +31,8 @@ structure Cfg where
   M : Nat
   sp0 : Nat
   rcap : Nat
+  aEnd : Nat
+  aBase : Nat
 
 structure Geom (c : Cfg) : Prop where
   dEnd_lt : c.dEnd < 2 ^ 64
@@ -47,6 +50,12 @@ structure Geom (c : Cfg) : Prop where
   dF_M : c.rf + 8 * c.nregs ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.rf
   dF_K : c.rf + 8 * c.nregs ≤ c.sp0 - 8 * c.rcap ∨ c.sp0 ≤ c.rf
   dM_K : c.mb + 8 * c.M ≤ c.sp0 - 8 * c.rcap ∨ c.sp0 ≤ c.mb
+  aEnd_lt : c.aEnd < 2 ^ 64
+  aBase_8 : c.aBase + 8 ≤ c.aEnd
+  dS_A : c.dEnd ≤ c.aBase ∨ c.aEnd ≤ c.dBase
+  dA_F : c.aEnd ≤ c.rf ∨ c.rf + 8 * c.nregs ≤ c.aBase
+  dA_M : c.aEnd ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.aBase
+  dA_K : c.aEnd ≤ c.sp0 - 8 * c.rcap ∨ c.sp0 ≤ c.aBase
 
 def ofN (a : Nat) : W := BitVec.ofNat 64 a
 
@@ -76,6 +85,9 @@ theorem read_write_nat {mem mem' : Memory 64} {A B : Nat} {v : W}
 def StackRel (c : Cfg) (mem : Memory 64) (d : List W) : Prop :=
   ∀ i v, d[i]? = some v → mem.read? (ofN (c.dEnd - 8 * d.length + 8 * i)) = some v
 
+def AuxRel (c : Cfg) (mem : Memory 64) (as : List W) : Prop :=
+  ∀ i v, as[i]? = some v → mem.read? (ofN (c.aEnd - 8 * as.length + 8 * i)) = some v
+
 def RegRel (c : Cfg) (mem : Memory 64) (regs : Nat → W) : Prop :=
   ∀ r, r < c.nregs → mem.read? (ofN (c.rf + 8 * r)) = some (regs r)
 
@@ -90,7 +102,8 @@ def RegionsValid (c : Cfg) (v : W → Bool) : Prop :=
   (∀ a, c.dBase ≤ a → a < c.dEnd → v (ofN a) = true) ∧
   (∀ a, c.rf ≤ a → a < c.rf + 8 * c.nregs → v (ofN a) = true) ∧
   (∀ a, c.mb ≤ a → a < c.mb + 8 * c.M → v (ofN a) = true) ∧
-  (∀ a, c.sp0 - 8 * c.rcap ≤ a → a < c.sp0 → v (ofN a) = true)
+  (∀ a, c.sp0 - 8 * c.rcap ≤ a → a < c.sp0 → v (ofN a) = true) ∧
+  (∀ a, c.aBase ≤ a → a < c.aEnd → v (ofN a) = true)
 
 structure Rel0 (c : Cfg) (p : Prog 64) (s : State 64) (x : M) : Prop where
   r15 : x.regs r15 = ofN (c.dEnd - 8 * s.dstack.length)
@@ -98,14 +111,17 @@ structure Rel0 (c : Cfg) (p : Prog 64) (s : State 64) (x : M) : Prop where
   r13 : x.regs r13 = ofN c.mb
   r12 : x.regs r12 = ofN c.sp0
   rsp : x.regs rsp = ofN (c.sp0 - 8 * s.rstack.length)
+  rbp : x.regs rbp = ofN (c.aEnd - 8 * s.astack.length)
   stack : StackRel c x.mem s.dstack
   regs : RegRel c x.mem s.regs
   mem : MemRel c x.mem s.mem
   rs : RsRel c p x.mem s.rstack
+  aux : AuxRel c x.mem s.astack
   irvalid : ∀ a : Word 64, s.mem.valid a = decide (a.toNat < c.M)
   xvalid : RegionsValid c x.mem.valid
   capD : c.dBase + 8 * s.dstack.length ≤ c.dEnd
   capR : s.rstack.length + 1 ≤ c.rcap
+  capA : c.aBase + 8 * s.astack.length ≤ c.aEnd
 
 /-- Full relation: everything in `Rel0`, and the x86 pc is the start of the IR pc's code. -/
 def Rel (c : Cfg) (p : Prog 64) (s : State 64) (x : M) : Prop :=
@@ -115,20 +131,40 @@ def Rel (c : Cfg) (p : Prog 64) (s : State 64) (x : M) : Prop :=
 theorem Rel0.congr {c : Cfg} {p : Prog 64} {s : State 64} {x x' : M} (h : Rel0 c p s x)
     (hm : x'.mem = x.mem) (h15 : x'.regs Reg.r15 = x.regs Reg.r15) (h14 : x'.regs Reg.r14 = x.regs Reg.r14)
     (h13 : x'.regs Reg.r13 = x.regs Reg.r13) (h12 : x'.regs Reg.r12 = x.regs Reg.r12)
-    (hsp : x'.regs Reg.rsp = x.regs Reg.rsp) : Rel0 c p s x' where
+    (hsp : x'.regs Reg.rsp = x.regs Reg.rsp) (hbp : x'.regs Reg.rbp = x.regs Reg.rbp) :
+    Rel0 c p s x' where
   r15 := by rw [h15]; exact h.r15
   r14 := by rw [h14]; exact h.r14
   r13 := by rw [h13]; exact h.r13
   r12 := by rw [h12]; exact h.r12
   rsp := by rw [hsp]; exact h.rsp
+  rbp := by rw [hbp]; exact h.rbp
   stack := by rw [hm]; exact h.stack
   regs := by rw [hm]; exact h.regs
   mem := by rw [hm]; exact h.mem
   rs := by rw [hm]; exact h.rs
+  aux := by rw [hm]; exact h.aux
   irvalid := h.irvalid
   xvalid := by rw [hm]; exact h.xvalid
   capD := h.capD
   capR := h.capR
+  capA := h.capA
+
+/-- A write outside the auxiliary-stack region leaves the auxiliary-stack view unchanged. -/
+theorem aux_write_other {c : Cfg} {mem mem' : Memory 64} {as : List W} (haE : c.aEnd < 2 ^ 64)
+    (hcap : c.aBase + 8 * as.length ≤ c.aEnd) (h : AuxRel c mem as) {A : Nat} {v : W}
+    (hw : mem.write? (ofN A) v = some mem') (hAlt : A < 2 ^ 64) (hA : A < c.aBase ∨ c.aEnd ≤ A) :
+    AuxRel c mem' as := by
+  intro i w hi
+  have hik : i < as.length := by
+    by_cases hh : i < as.length
+    · exact hh
+    · rw [List.getElem?_eq_none (by omega)] at hi; simp at hi
+  have hB : c.aEnd - 8 * as.length + 8 * i < 2 ^ 64 := by omega
+  have hne : A ≠ c.aEnd - 8 * as.length + 8 * i := by omega
+  rw [read_write_nat hw hAlt hB]
+  simp only [hne, ite_false]
+  exact h i w hi
 
 end X86
 end WordDialect

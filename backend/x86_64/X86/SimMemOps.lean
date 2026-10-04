@@ -40,7 +40,7 @@ theorem addr_pass (hs : Rel0 c p s x) {rt : Reg} (hrt : rt = rcx ∨ rt = rdx) {
     rw [xstep_of_fetch (m := x1) (fetch_cast f1 (by omega))]; rfl
   have hpc2 : x2.pc = x.pc + 2 := by simp [x2, M.adv, hpc1]
   have hr2 : Rel0 c p s x2 := hr1.congr (by simp [x2, M.adv]) (by simp [x2, M.adv]) (by simp [x2, M.adv])
-    (by simp [x2, M.adv]) (by simp [x2, M.adv]) (by simp [x2, M.adv])
+    (by simp [x2, M.adv]) (by simp [x2, M.adv]) (by simp [x2, M.adv]) (by simp [x2, M.adv])
   have hfl : x2.flags = some (subFlags a (BitVec.ofNat 64 n)) := by simp [x2, hax1, hv1]
   have hhold : Cc.b.holds (subFlags a (BitVec.ofNat 64 n)) = true := by
     rw [holds_b, ult_memSize hn]; simpa using ha
@@ -49,7 +49,7 @@ theorem addr_pass (hs : Rel0 c p s x) {rt : Reg} (hrt : rt = rcx ∨ rt = rdx) {
     ⟨fetch_cast f2 (by omega), fetch_cast f3 (by omega), trivial⟩ hpc2 hfl hhold
   refine ⟨{ x2 with pc := x.pc + 2 + 2 }, (hs1.trans (XSteps.single hst2)).trans hg, ?_, by simp,
     by simp [x2, M.adv, hax1], ?_, by simp [x2, M.adv, hm1]⟩
-  · exact hr2.congr rfl rfl rfl rfl rfl rfl
+  · exact hr2.congr rfl rfl rfl rfl rfl rfl rfl
   · intro r hr; simp [x2, M.adv, ho1 r hr]
 
 /-- The bounds guard, failing case. -/

@@ -87,44 +87,60 @@ last argument is the number of IR memory words (default 16):
 ```
 
 [`examples/forth/`](examples/forth) has sample programs, including a recursive
-word and a trap two calls deep.
+word, a trap two calls deep, and `DO … LOOP` / `>R R>` (`loops.fs`).
 
 ## Proof and validation status
 
 - Forth has a compilation correctness proof for its modeled subset, including
   colon definitions (`: name ... ;`, recursion and `RECURSE` allowed) lowered
   to IR `call`/`ret`, `EXIT` (lowered to `ret`), `VARIABLE` (memory cells
-  `0 … k-1`), `CONSTANT`, `0=` and `MOD`:
+  `0 … k-1`), `CONSTANT`, `0=`, `MOD`, the return-data stack words
+  `>R R> R@` (lowered to the IR auxiliary stack `tor`/`fromr`/`rfetch`, which
+  `call`/`ret` never touch) and `DO … LOOP` with `I` and `J` (loop parameters
+  on that stack, so they survive calls and recursion):
   `WordDialect.Forth.Program.compile_correct` in
-  [`Forth/Correct.lean`](forth/Forth/Correct.lean). `>R R>` and `DO … LOOP`
-  are not supported: the IR return stack cannot hold data (see
-  [NEXT_STEPS.md](NEXT_STEPS.md)). Forth source text is parsed by `Forth.parse`
+  [`Forth/Correct.lean`](forth/Forth/Correct.lean). Because the return-data
+  stack is separate from call frames, unbalanced `>R`/`R>` across `EXIT` or a
+  call is defined behaviour (see `Forth/Semantics.lean`). Forth source text is parsed by `Forth.parse`
   ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); `Forth.print` prints a
   program back, and `WordDialect.Forth.parse_print` proves
   `parse (print P) = .ok P` for every well-formed program
-  ([`Forth/Print.lean`](forth/Forth/Print.lean)). That `parse` only yields
-  well-formed programs, and its handling of text `print` never emits (comments,
-  case, `CONSTANT`, `RECURSE`), is checked on concrete inputs
-  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the harness
-  samples written as source text, not proved.
+  ([`Forth/Print.lean`](forth/Forth/Print.lean)). Conversely,
+  `WordDialect.Forth.parse_wf` proves that every successful parse yields a
+  well-formed program, so `print` is a canonical form
+  (`parse_print_of_parse`), and lemmas characterise the text `print` never
+  emits: `parse_toUpper` (upper-casing the source does not change the result,
+  up to the spelling in error messages), `tokenize_paren_comment` /
+  `tokenize_line_comment` (comments tokenize like whitespace, with stated side
+  conditions), `parseTop_constant` / `classify_constant` (`n CONSTANT X` makes
+  `X` the literal `n`) and `classify_recurse` / `parseSeq_recurse_name`
+  (`RECURSE` is a call of the word being defined)
+  ([`Forth/ParseProps.lean`](forth/Forth/ParseProps.lean)); examples in
+  [`Forth/TextExample.lean`](forth/Forth/TextExample.lean).
   BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.
 - The x86-64 model has whole-program preservation theorems in
   [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). The generated code
-  checks for room before every instruction that grows the data stack and before
+  checks for room before every instruction that grows the data stack, before
   every `call` (the return stack is the native stack, capped at 65536 entries
-  below the entry `rsp`), and exits with code 6 when the stack is full.
+  below the entry `rsp`), and before every `tor` (the auxiliary stack is its
+  own `.astack` region with pointer `rbp`, so native `call`/`ret` never touch
+  it), and exits with code 6 when the stack is full. `fromr`/`rfetch` on an
+  empty auxiliary stack trap with code 5, as in the IR.
   `WordDialect.X86.lowerProg_correct_or_overflow` has no stack-capacity
   assumption: the code reaches the IR outcome or exits 6.
   `WordDialect.X86.lowerProg_correct` adds the assumption that the run stays
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry, bounded code addresses, and valid register indices.
-  `wordc check` also runs three unbounded programs and requires exit 6.
+  `wordc check` also runs raw auxiliary-stack programs (balanced use across
+  calls and recursion, `R@`, both traps) against the Lean semantics, and four
+  unbounded programs (one of them a `tor` loop) that must exit 6.
   `WordDialect.X86.Emit.binary_correct` starts from the binary's entry point:
   the runtime prologue's effect is proved, and what the loader provides at
   `_start` (entry `rsp`, the `.data` image, the zero-filled `.bss` register
-  file, addressable regions, disjoint placement) is one explicit assumption,
+  file, addressable regions including `.dstack` and `.astack`, disjoint
+  placement) is one explicit assumption,
   `Loader.Holds`. From there the code reaches the IR outcome from `State.init`,
   or exits 6. Its program hypotheses are `17 * length < 2^64` and valid
   register indices. See [`X86/Init.lean`](backend/x86_64/X86/Init.lean).
@@ -132,17 +148,21 @@ word and a trap two calls deep.
   [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
   loop from a related state halts in a related state when the IR halts, and
   exits with the matching trap code (1 underflow, 2 bad address, 3 divide by
-  zero, 4 bad pc, 5 return underflow) when the IR traps. The generated code
-  checks for room before every instruction that grows the data or return
-  stack, and exits with code 6 when the stack is full (IR stacks are
-  unbounded, so code 6 has no IR counterpart).
+  zero, 4 bad pc, 5 return underflow, also for `fromr`/`rfetch` on an empty
+  auxiliary stack) when the IR traps. The auxiliary stack (`tor`/`fromr`/
+  `rfetch`) lives in its own linear-memory region with pointer global `$ap`,
+  disjoint from the data stack, return stack, register file and IR memory. The
+  generated code checks for room before every instruction that grows the data,
+  return or auxiliary stack, and exits with code 6 when the stack is full (IR
+  stacks are unbounded, so code 6 has no IR counterpart).
   `WordDialect.Wasm.lowerProg_correct_or_overflow` has no stack-capacity
   assumption: the module reaches the IR outcome or exits 6.
   `WordDialect.Wasm.lowerProg_correct` adds the assumption that the run stays
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry within 32-bit linear memory, fewer than `2^32` instructions,
-  and valid register indices. `wasmw check` also runs three unbounded programs
-  and requires exit 6.
+  and valid register indices. `wasmw check` also runs raw IR programs for the
+  auxiliary stack against the Lean semantics, and four unbounded programs
+  (including an unbounded `tor` loop) that must exit 6.
   `WordDialect.Wasm.Emit.module_correct` closes the loop from the emitted
   module: from the state WebAssembly instantiation produces for its
   declarations (globals, zeroed memory, the IR memory image as a data segment),
@@ -158,6 +178,7 @@ word and a trap two calls deep.
   | `Wasm/SimAlu.lean`, `Wasm/SimAlu2.lean`, `Wasm/SimStack.lean` | Arithmetic, comparison, shift, division, and stack/register instructions |
   | `Wasm/SimMem.lean` | Address bounds check, `load`, `store`, and their bad-address traps |
   | `Wasm/SimCtl.lean` | `jmp`, `branch`, `call`, `ret` (and its underflow trap), `halt`, and the bad-pc stub |
+  | `Wasm/SimAux.lean` | Auxiliary stack: `tor`, `fromr`, `rfetch`, their empty-stack traps and overflow exits |
   | `Wasm/SimExec.lean` | One-step simulation for every instruction and outcome (`sim_step`) |
   | `Wasm/Correct.lean` | Dispatch-loop induction (`lowerProg_correct_or_overflow`, `lowerProg_correct`) and entry relation (`init_rel`) |
   | `Wasm/Init.lean` | The instantiated module's state, the runtime layout's geometry, and the end-to-end `module_correct` |

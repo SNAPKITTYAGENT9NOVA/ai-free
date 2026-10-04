@@ -1,6 +1,7 @@
 import Forth.Correct
 import Forth.Parse
 import Forth.Print
+import Forth.ParseProps
 import Forth.Eval
 import Forth.Example
 
@@ -33,8 +34,8 @@ theorem parse_begin_until :
         (.untilL (.op (.lit 1) (.op .sub (.op .dup (.op (.lit 0) (.op .eq .nil))))) .nil), 0⟩ := by
   rfl
 
-/-- `>R` is not in the supported subset (only the words listed in `Forth.Parse`). -/
-theorem parse_not_in_subset : parse "1 >R" = .error "unknown word: >R" := by rfl
+/-- `+LOOP` is not in the supported subset (only the words listed in `Forth.Parse`). -/
+theorem parse_not_in_subset : parse "1 +LOOP" = .error "unknown word: +LOOP" := by rfl
 
 theorem parse_unknown : parse "1 FOO" = .error "unknown word: FOO" := by rfl
 
@@ -60,13 +61,13 @@ theorem parse_sum : parse sumSrc = .ok sumProg := by rfl
 
 /-- The reference semantics: `10 SUM` leaves `55`. -/
 theorem sumProg_run (mem : Memory 64) :
-    Run sumProg.defs sumProg.main ⟨[], mem⟩ (.ok ⟨[55#64], mem⟩) :=
+    Run sumProg.defs sumProg.main ⟨[], mem, []⟩ (.ok ⟨[55#64], mem, []⟩) :=
   eval_sound 100 _ _ _ (by rfl)
 
 /-- The lowered program (with `SUM` as an IR subroutine) halts with exactly `[55]`. -/
 theorem sumProg_machine (mem : Memory 64) :
     ∃ s', Exec (sumProg.compile : Prog 64) (State.init mem) (.halted s') ∧
-      s'.dstack = [55#64] ∧ s'.mem = mem := by
+      s'.dstack = [55#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
   have := Program.compile_correct (sumProg_run mem)
   simpa using this
 
@@ -99,12 +100,12 @@ theorem parse_mod_zeq :
 /-- `MOD` follows symmetric `/`: `-7 MOD 2 = -1`, `7 MOD -2 = 1`; `0=` gives `-1`/`0`. -/
 theorem mod_zeq_run (mem : Memory 64) :
     Run [] (.op (.lit (-7)) (.op (.lit 2) (.op .mod (.op (.lit 7) (.op (.lit (-2)) (.op .mod
-        (.op (.lit 0) (.op .zeq (.op (.lit 5) (.op .zeq .nil)))))))))) ⟨[], mem⟩
-      (.ok ⟨[0#64, BitVec.ofInt 64 (-1), 1#64, BitVec.ofInt 64 (-1)], mem⟩) :=
+        (.op (.lit 0) (.op .zeq (.op (.lit 5) (.op .zeq .nil)))))))))) ⟨[], mem, []⟩
+      (.ok ⟨[0#64, BitVec.ofInt 64 (-1), 1#64, BitVec.ofInt 64 (-1)], mem, []⟩) :=
   eval_sound 20 _ _ _ (by rfl)
 
 theorem mod_zero_run (mem : Memory 64) :
-    Run [] (.op (.lit 1) (.op (.lit 0) (.op .mod .nil))) ⟨[], mem⟩ (.error .divideByZero) :=
+    Run [] (.op (.lit 1) (.op (.lit 0) (.op .mod .nil))) ⟨[], mem, []⟩ (.error .divideByZero) :=
   eval_sound 20 _ _ _ (by rfl)
 
 /-! ## `VARIABLE` and `CONSTANT` -/
@@ -131,7 +132,7 @@ theorem parse_variable_in_definition :
 theorem varProg_machine :
     ∃ s', Exec (varProg.compile : Prog 64) (State.init (Memory.ofImage [0, 0])) (.halted s') ∧
       s'.dstack = [42#64] := by
-  have h : (eval varProg.defs 40 varProg.main ⟨[], (Memory.ofImage [0, 0] : Memory 64)⟩).bind
+  have h : (eval varProg.defs 40 varProg.main ⟨[], (Memory.ofImage [0, 0] : Memory 64), []⟩).bind
       okStack? = some [42#64] := by rfl
   obtain ⟨st', hrun, hst⟩ := run_of_eval_stack h
   obtain ⟨s', hs, hd, _⟩ := Program.compile_correct hrun
@@ -169,12 +170,12 @@ def sumExitProg : Program :=
 theorem parse_sumExit : parse sumExitSrc = .ok sumExitProg := by rfl
 
 theorem sumExitProg_run (mem : Memory 64) :
-    Run sumExitProg.defs sumExitProg.main ⟨[], mem⟩ (.ok ⟨[55#64], mem⟩) :=
+    Run sumExitProg.defs sumExitProg.main ⟨[], mem, []⟩ (.ok ⟨[55#64], mem, []⟩) :=
   eval_sound 100 _ _ _ (by rfl)
 
 theorem sumExitProg_machine (mem : Memory 64) :
     ∃ s', Exec (sumExitProg.compile : Prog 64) (State.init mem) (.halted s') ∧
-      s'.dstack = [55#64] ∧ s'.mem = mem := by
+      s'.dstack = [55#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
   have := Program.compile_correct (sumExitProg_run mem)
   simpa using this
 
@@ -195,6 +196,134 @@ theorem sumExitProg_wf : sumExitProg.WF := by
 /-- An instance of the proved round trip `parse_print`. -/
 theorem parse_print_sumExit : parse (print sumExitProg) = .ok sumExitProg :=
   parse_print _ sumExitProg_wf
+
+/-! ## The converse direction (`Forth.ParseProps`) -/
+
+/-- Well-formedness comes from the parse, with no case analysis. -/
+theorem varProg_wf : varProg.WF := parse_wf parse_var
+
+/-- Printing is canonical: the printed text of any parsed program parses back to it. -/
+theorem parse_print_var : parse (print varProg) = .ok varProg := parse_print_of_parse parse_var
+
+/-- Case-insensitivity, proved for all sources by `parse_case_insensitive`. -/
+theorem parse_square_lower :
+    (parse ": sq dup * ; 7 SQ").toOption = (parse ": SQ DUP * ; 7 sq").toOption :=
+  parse_case_insensitive (String.ext (by simp only [String.toList_map]; decide))
+
+/-- Only error messages keep the original spelling. -/
+theorem parse_unknown_lower : parse "1 foo" = .error "unknown word: foo" := by rfl
+
+/-- A `( … )` comment tokenizes like a space (`tokenize_paren_comment`). -/
+theorem tokenize_paren_example :
+    Parse.tokenize ("1 \\ x" ++ " ( " ++ "any ( text" ++ " ) " ++ "2") =
+      Parse.tokenize ("1 \\ x" ++ " " ++ "2") :=
+  tokenize_paren_comment ⟨_, rfl⟩ (by decide)
+
+/-- A `\` comment runs to the end of the line (`tokenize_line_comment`). -/
+theorem tokenize_line_example :
+    Parse.tokenize ("1" ++ " \\ " ++ "2 ( 3" ++ "\n" ++ "4") = Parse.tokenize ("1" ++ "\n" ++ "4") :=
+  tokenize_line_comment (by decide)
+
+/-- `5 CONSTANT five`: the literal leaves the main block and `five` (any case) is `5`. -/
+theorem parse_constant_case :
+    parse "5 CONSTANT five FIVE Five +" =
+      .ok ⟨[], .op (.lit 5) (.op (.lit 5) (.op .add .nil)), 0⟩ := by rfl
+
+theorem constant_step :
+    Parse.parseTop 3 [] [] 0 .nil [['5'], ['c', 'o', 'n', 's', 't', 'a', 'n', 't'], ['X']] =
+      Parse.parseTop 2 [(['X'], Block.op (.lit 5))] [] 0 .nil [] :=
+  parseTop_constant_lit rfl rfl rfl
+
+/-- `RECURSE` and the word's own name parse the same inside its definition. -/
+theorem parse_recurse_name :
+    parse ": F DUP IF 1 - RECURSE THEN ; 3 F" = parse ": F DUP IF 1 - F THEN ; 3 F" := by rfl
+
+/-! ## Return-data stack and `DO … LOOP` -/
+
+theorem parse_rstack_words :
+    parse "1 >r r@ R> i j" =
+      .ok ⟨[], .op (.lit 1) (.op .tor (.op .rfetch (.op .fromr (.op .loopI (.op .loopJ .nil))))),
+        0⟩ := by rfl
+
+theorem parse_do_loop :
+    parse "0 10 0 do i + loop" =
+      .ok ⟨[], .op (.lit 0) (.op (.lit 10) (.op (.lit 0)
+        (.doLoop (.op .loopI (.op .add .nil)) .nil))), 0⟩ := by rfl
+
+theorem parse_do_without_loop : parse "10 0 DO I" = .error "DO without LOOP" := by rfl
+
+theorem parse_loop_without_do : parse "1 LOOP" = .error "unexpected LOOP" := by rfl
+
+theorem parse_do_then : parse "1 IF 10 0 DO THEN LOOP" = .error "DO without LOOP" := by rfl
+
+/-- `0 10 0 DO I + LOOP` sums the indices `0 … 9`. -/
+def loopSumProg : Program :=
+  ⟨[], .op (.lit 0) (.op (.lit 10) (.op (.lit 0) (.doLoop (.op .loopI (.op .add .nil)) .nil))), 0⟩
+
+theorem loopSum_run (mem : Memory 64) :
+    Run loopSumProg.defs loopSumProg.main ⟨[], mem, []⟩ (.ok ⟨[45#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem loopSum_machine (mem : Memory 64) :
+    ∃ s', Exec (loopSumProg.compile : Prog 64) (State.init mem) (.halted s') ∧
+      s'.dstack = [45#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
+  have := Program.compile_correct (loopSum_run mem)
+  simpa using this
+
+/-- Nested loops: `J` is the outer index. `Σ_{j<3} Σ_{i<4} i*j = 18`. -/
+theorem nested_loops :
+    parse "0 3 0 DO 4 0 DO I J * + LOOP LOOP" = .ok ⟨[], .op (.lit 0) (.op (.lit 3) (.op (.lit 0)
+      (.doLoop (.op (.lit 4) (.op (.lit 0) (.doLoop (.op .loopI (.op .loopJ (.op .mul
+        (.op .add .nil)))) .nil))) .nil))), 0⟩ := by rfl
+
+theorem nested_loops_run (mem : Memory 64) :
+    Run [] (.op (.lit 0) (.op (.lit 3) (.op (.lit 0)
+      (.doLoop (.op (.lit 4) (.op (.lit 0) (.doLoop (.op .loopI (.op .loopJ (.op .mul
+        (.op .add .nil)))) .nil))) .nil)))) ⟨[], mem, []⟩ (.ok ⟨[18#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+/-- `R>` on an empty return-data stack traps `returnUnderflow`, and so does the machine. -/
+theorem fromr_empty_run (mem : Memory 64) :
+    Run [] (.op (.lit 1) (.op .fromr .nil)) ⟨[], mem, []⟩ (.error .returnUnderflow) :=
+  eval_sound 5 _ _ _ (by rfl)
+
+theorem fromr_empty_machine (mem : Memory 64) :
+    Exec (compileProgram (.op (.lit 1) (.op .fromr .nil)) : Prog 64) (State.init mem)
+      (.trapped .returnUnderflow) :=
+  compileProgram_correct (fromr_empty_run mem)
+
+/-- A value parked with `>R` survives calls, and a word may change it. -/
+def bumpSrc : String := ": BUMP R> 1 + >R ; 5 >R BUMP BUMP R>"
+
+def bumpProg : Program :=
+  ⟨[.op .fromr (.op (.lit 1) (.op .add (.op .tor .nil)))],
+    .op (.lit 5) (.op .tor (.call 0 (.call 0 (.op .fromr .nil)))), 0⟩
+
+theorem parse_bump : parse bumpSrc = .ok bumpProg := by rfl
+
+theorem bump_run (mem : Memory 64) :
+    Run bumpProg.defs bumpProg.main ⟨[], mem, []⟩ (.ok ⟨[7#64], mem, []⟩) :=
+  eval_sound 20 _ _ _ (by rfl)
+
+/-- `EXIT` inside a loop leaves the loop parameters (index on top, then limit) on the
+return-data stack. -/
+def find3Prog : Program :=
+  ⟨[.op (.lit 10) (.op (.lit 0) (.doLoop (.op .loopI (.op (.lit 3) (.op .eq
+      (.ite (.op .loopI (.exit .nil)) .nil .nil)))) (.op (.lit 99) .nil)))],
+    .call 0 .nil, 0⟩
+
+theorem parse_find3 :
+    parse ": FIND3 10 0 DO I 3 = IF I EXIT THEN LOOP 99 ; FIND3" = .ok find3Prog := by rfl
+
+theorem find3_run (mem : Memory 64) :
+    Run find3Prog.defs find3Prog.main ⟨[], mem, []⟩ (.ok ⟨[3#64], mem, [3#64, 10#64]⟩) :=
+  eval_sound 40 _ _ _ (by rfl)
+
+theorem print_find3 :
+    print find3Prog = ": W0 10 0 DO I 3 = IF I EXIT ELSE THEN LOOP 99 ; W0 " := by rfl
+
+theorem parse_print_find3 : parse (print find3Prog) = .ok find3Prog :=
+  parse_print_of_parse parse_find3
 
 end Forth
 end WordDialect
