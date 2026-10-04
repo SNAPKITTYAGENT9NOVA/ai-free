@@ -9,7 +9,7 @@ Frame conditions for a single instruction: what `exec` is allowed to change.
 * the set of valid addresses never changes
 * only `store` changes memory, and it changes exactly one cell
 * only `pop` changes registers
-* only `call`/`ret` change the return stack
+* only `call`/`ret` change the return stack, and only `tor`/`fromr` the auxiliary stack
 * only `halt` halts, and halting leaves the state untouched
 * every trap has a specific cause
 -/
@@ -19,7 +19,7 @@ namespace WordDialect
 theorem exec_depth {n : Nat} (i : Instr n) (s s' : State n)
     (h : exec i s = .next s') :
     s'.dstack.length + i.pops = s.dstack.length + i.pushes := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;>
@@ -27,7 +27,7 @@ theorem exec_depth {n : Nat} (i : Instr n) (s s' : State n)
 
 theorem exec_valid {n : Nat} (i : Instr n) (s s' : State n)
     (h : exec i s = .next s') : s'.mem.valid = s.mem.valid := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all <;>
@@ -36,7 +36,7 @@ theorem exec_valid {n : Nat} (i : Instr n) (s s' : State n)
 /-- Only `store` changes memory contents. -/
 theorem exec_mem_frame {n : Nat} (i : Instr n) (s s' : State n)
     (hi : i ≠ .store) (h : exec i s = .next s') : s'.mem = s.mem := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all
@@ -44,7 +44,7 @@ theorem exec_mem_frame {n : Nat} (i : Instr n) (s s' : State n)
 /-- Only `pop` changes registers. -/
 theorem exec_regs_frame {n : Nat} (i : Instr n) (s s' : State n)
     (hi : ∀ r, i ≠ .pop r) (h : exec i s = .next s') : s'.regs = s.regs := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all
@@ -53,7 +53,16 @@ theorem exec_regs_frame {n : Nat} (i : Instr n) (s s' : State n)
 theorem exec_rstack_frame {n : Nat} (i : Instr n) (s s' : State n)
     (hc : ∀ t, i ≠ .call t) (hr : i ≠ .ret) (h : exec i s = .next s') :
     s'.rstack = s.rstack := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
+  cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
+    simp only [exec, State.fall] at h <;>
+    (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all
+
+/-- Only `tor` and `fromr` change the auxiliary stack. -/
+theorem exec_astack_frame {n : Nat} (i : Instr n) (s s' : State n)
+    (ht : i ≠ .tor) (hf : i ≠ .fromr) (h : exec i s = .next s') :
+    s'.astack = s.astack := by
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all
@@ -61,19 +70,20 @@ theorem exec_rstack_frame {n : Nat} (i : Instr n) (s s' : State n)
 /-- Only `halt` halts, and halting leaves the machine state untouched. -/
 theorem exec_halted {n : Nat} (i : Instr n) (s s' : State n)
     (h : exec i s = .halted s') : i = .halt ∧ s' = s := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all
 
-/-- Every trap has exactly one of four causes. -/
+/-- Every trap has exactly one of four causes (an empty auxiliary stack is a return-stack
+underflow). -/
 theorem exec_trap {n : Nat} (i : Instr n) (s : State n) (t : Trap)
     (h : exec i s = .trapped t) :
     (t = .stackUnderflow ∧ s.dstack.length < i.pops) ∨
     (t = .badAddress ∧ (i = .load ∨ i = .store)) ∨
     (t = .divideByZero ∧ (i = .div ∨ i = .sdiv)) ∨
-    (t = .returnUnderflow ∧ i = .ret) := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+    (t = .returnUnderflow ∧ (i = .ret ∨ i = .fromr ∨ i = .rfetch)) := by
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall] at h <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;>
