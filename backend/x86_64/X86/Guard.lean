@@ -64,7 +64,7 @@ theorem uf_pass {c : Cfg} {p : Prog 64} {s : State 64} {x : M} {code : List (Ins
     (by simpa [XAt] using And.intro h3 h4) hxb_pc hflags hholds
   refine ⟨{ xb with pc := base + 2 + 2 }, ((XSteps.single hst1).trans (XSteps.single hst2)).trans
     (by simpa using hsteps), ?_, by simp, by simp [xb, xa, M.adv, M.mov, M.setReg], ?_⟩
-  · refine hs.congr (by simp [xb, xa, M.adv, M.mov, M.setReg]) ?_ ?_ ?_ ?_ ?_ <;>
+  · refine hs.congr (by simp [xb, xa, M.adv, M.mov, M.setReg]) ?_ ?_ ?_ ?_ ?_ ?_ <;>
       simp [xb, xa, M.adv, M.mov, M.setReg]
   · intro r hr; simp [xb, xa, M.adv, M.mov, M.setReg, hr]
 
@@ -154,7 +154,7 @@ theorem ovfD_pass (hg : Geom c) (hs : Rel0 c p s x) (hLd : L.dLim = ofN (c.dBase
   have hholds : Cc.ae.holds (subFlags (x.regs Reg.r15) L.dLim) = true := by
     rw [ovfD_flags hg hs hLd]; simpa using hfit
   refine ⟨{ xb with pc := base + 2 + 2 }, hsb.trans (ovf_jcc_pass hj hpcb hfb hholds), ?_, rfl, hmb, hrb⟩
-  refine hs.congr hmb ?_ ?_ ?_ ?_ ?_ <;> exact hrb _ (by decide)
+  refine hs.congr hmb ?_ ?_ ?_ ?_ ?_ ?_ <;> exact hrb _ (by decide)
 
 /-- Data stack full: the guard exits with `overflow`. -/
 theorem ovfD_trap (hg : Geom c) (hs : Rel0 c p s x) (hLd : L.dLim = ofN (c.dBase + 8))
@@ -213,7 +213,7 @@ theorem ovfR_pass (hg : Geom c) (hs : Rel0 c p s x) (hLr : L.rGap = ofN (8 * c.r
   have hholds : Cc.ae.holds (subFlags (x.regs Reg.rsp) (x.regs Reg.r12 - L.rGap)) = true := by
     rw [ovfR_flags hg hs hLr]; simpa using hfit
   refine ⟨{ xd with pc := base + 4 + 2 }, hsd.trans (ovf_jcc_pass hj hpcd hfd hholds), ?_, rfl, hmd⟩
-  refine hs.congr hmd ?_ ?_ ?_ ?_ ?_ <;> exact hrd _ (by decide) (by decide)
+  refine hs.congr hmd ?_ ?_ ?_ ?_ ?_ ?_ <;> exact hrd _ (by decide) (by decide)
 
 /-- Return stack full: the guard exits with `overflow`. -/
 theorem ovfR_trap (hg : Geom c) (hs : Rel0 c p s x) (hLr : L.rGap = ofN (8 * c.rcap - 16))

@@ -6,9 +6,10 @@ import X86.Emit
 
 The state the emitted binary starts the lowered code in, and the end-to-end theorem from it.
 
-The runtime prologue (`Emit.prologue`) is four instructions:
+The runtime prologue (`Emit.prologue`) is five instructions:
 
-    mov r12, rsp ; lea r13, [rip + irmem] ; lea r14, [rip + regfile] ; movabs r15, dEnd
+    mov r12, rsp ; lea r13, [rip + irmem] ; lea r14, [rip + regfile] ; movabs r15, dEnd ;
+    movabs rbp, aEnd
 
 `prologueCode` is the same sequence in the model, with each `lea` as a `movImm` of the address the
 linker resolves `irmem` / `regfile` to (that `lea` computes this address is the trusted reading of
@@ -19,8 +20,9 @@ is stated once, explicitly, as `Loader.Holds`:
 * `rsp` is the entry stack pointer `sp0`;
 * the zero-filled `.bss` register file reads as zeros, and `.data` holds the IR memory image word by
   word (the `.quad` directives `Emit.epilogue` prints);
-* the data stack (`.dstack`, placed at `dBase` by the linker), register file, IR memory and the
-  `rcap` return-stack entries below `sp0` are addressable;
+* the data stack (`.dstack`, placed at `dBase` by the linker), the auxiliary stack (`.astack`,
+  placed at `aBase`), register file, IR memory and the `rcap` return-stack entries below `sp0` are
+  addressable;
 * the placement is disjoint and in range (`Geom`).
 
 `binary_correct`: under those loader facts, after the prologue the lowered code reaches the IR
@@ -43,7 +45,7 @@ structure Loader where
 /-- The runtime placement for one run, as a `Cfg`. -/
 def cfgOf (r : Runtime) (ld : Loader) : Cfg :=
   { dEnd := r.dEnd, dBase := r.dBase, rf := ld.rf, nregs := r.nregs, mb := ld.mb,
-    M := r.memImage.length, sp0 := ld.sp0, rcap := r.rcap }
+    M := r.memImage.length, sp0 := ld.sp0, rcap := r.rcap, aEnd := r.aEnd, aBase := r.aBase }
 
 /-- What the loader guarantees about the machine state `x0` at `_start`. -/
 structure Loader.Holds (r : Runtime) (ld : Loader) (x0 : M) : Prop where
@@ -56,16 +58,17 @@ structure Loader.Holds (r : Runtime) (ld : Loader) (x0 : M) : Prop where
 
 /-- The prologue in the model. -/
 def prologueCode (r : Runtime) (ld : Loader) : List (Instr Nat) :=
-  [.movRR r12 rsp, .movImm r13 (ofN ld.mb), .movImm r14 (ofN ld.rf), .movImm r15 (ofN r.dEnd)]
+  [.movRR r12 rsp, .movImm r13 (ofN ld.mb), .movImm r14 (ofN ld.rf), .movImm r15 (ofN r.dEnd),
+   .movImm rbp (ofN r.aEnd)]
 
 /-- The machine state after the prologue, entering the lowered code at index 0. -/
 def entryState (r : Runtime) (ld : Loader) (x0 : M) : M :=
-  { ((((x0.mov r12 (x0.regs rsp)).mov r13 (ofN ld.mb)).mov r14 (ofN ld.rf)).mov r15 (ofN r.dEnd))
-    with pc := 0 }
+  { (((((x0.mov r12 (x0.regs rsp)).mov r13 (ofN ld.mb)).mov r14 (ofN ld.rf)).mov r15 (ofN r.dEnd)).mov
+      rbp (ofN r.aEnd)) with pc := 0 }
 
 theorem prologue_run (r : Runtime) (ld : Loader) (x0 : M) :
     xseq (prologueCode r ld) x0 =
-      .next { entryState r ld x0 with pc := x0.pc + 4 } := by
+      .next { entryState r ld x0 with pc := x0.pc + 5 } := by
   simp [prologueCode, entryState, xseq, exec, M.mov, M.setReg, M.adv]
 
 theorem isize_le (i : WordDialect.Instr 64) : isize i ≤ 17 := by
@@ -88,20 +91,22 @@ theorem offs_lt {p : Prog 64} (h : 17 * p.length < 2 ^ 64) (k : Nat) : offs p k 
 
 theorem layout_ok (r : Runtime) (ld : Loader) :
     r.layout.dEnd = ofN (cfgOf r ld).dEnd ∧ r.layout.memSize = (cfgOf r ld).M ∧
-      r.layout.dLim = ofN ((cfgOf r ld).dBase + 8) ∧ r.layout.rGap = ofN (8 * (cfgOf r ld).rcap - 16) :=
-  ⟨rfl, rfl, rfl, rfl⟩
+      r.layout.dLim = ofN ((cfgOf r ld).dBase + 8) ∧ r.layout.rGap = ofN (8 * (cfgOf r ld).rcap - 16) ∧
+      r.layout.aEnd = ofN (cfgOf r ld).aEnd ∧ r.layout.aLim = ofN ((cfgOf r ld).aBase + 8) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- After the prologue, the machine is related to the IR's initial state. -/
 theorem entry_rel (r : Runtime) (ld : Loader) {x0 : M} (h : ld.Holds r x0) (p : Prog 64) :
     Rel (cfgOf r ld) p (State.init (Memory.ofImage r.memImage)) (entryState r ld x0) := by
   have hg := h.geom
-  refine init_rel hg rfl rfl (by have := hg.rcap_ge; simp [cfgOf] at this ⊢; omega)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ (fun _ => rfl) ?_ (by simp [entryState, offs, State.init])
+  refine init_rel hg rfl rfl rfl (by have := hg.rcap_ge; simp [cfgOf] at this ⊢; omega)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ (fun _ => rfl) ?_ (by simp [entryState, offs, State.init])
   · simp [entryState, M.mov, M.setReg, M.adv, cfgOf]
   · simp [entryState, M.mov, M.setReg, M.adv, cfgOf]
   · simp [entryState, M.mov, M.setReg, M.adv, cfgOf]
   · simp [entryState, M.mov, M.setReg, M.adv, cfgOf, h.rsp]
   · simp [entryState, M.mov, M.setReg, M.adv, cfgOf, h.rsp]
+  · simp [entryState, M.mov, M.setReg, M.adv, cfgOf]
   · intro k hk
     simpa [entryState, M.mov, M.setReg, M.adv, State.init, cfgOf] using h.regfile k hk
   · intro a ha
@@ -118,12 +123,12 @@ code 6). Program hypotheses: code indices fit in 64 bits and register indices ar
 theorem binary_correct (r : Runtime) (ld : Loader) (p : Prog 64) (hlen : 17 * p.length < 2 ^ 64)
     (hreg : RegsOk (cfgOf r ld) p) {o : Outcome 64}
     (hx : Exec p (State.init (Memory.ofImage r.memImage)) o) {x0 : M} (h : ld.Holds r x0) :
-    xseq (prologueCode r ld) x0 = .next { entryState r ld x0 with pc := x0.pc + 4 } ∧
+    xseq (prologueCode r ld) x0 = .next { entryState r ld x0 with pc := x0.pc + 5 } ∧
       (Final (cfgOf r ld) p (lowerProg r.layout p) (entryState r ld x0) o ∨
         XExec (lowerProg r.layout p) (entryState r ld x0) .overflow) := by
-  obtain ⟨hL, hMs, hLd, hLr⟩ := layout_ok r ld
+  obtain ⟨hL, hMs, hLd, hLr, hLa, hLal⟩ := layout_ok r ld
   exact ⟨prologue_run r ld x0,
-    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr (offs_lt hlen) hreg hx (entry_rel r ld h p)⟩
+    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr hLa hLal (offs_lt hlen) hreg hx (entry_rel r ld h p)⟩
 
 end Emit
 end X86

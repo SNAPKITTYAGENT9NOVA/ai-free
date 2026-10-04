@@ -28,7 +28,7 @@ namespace X86
 abbrev W := BitVec 64
 
 inductive Reg where
-  | rax | rcx | rdx | rbx | rsp | r12 | r13 | r14 | r15
+  | rax | rcx | rdx | rbx | rsp | rbp | r12 | r13 | r14 | r15
   deriving DecidableEq, Repr
 
 /-- Condition codes (the subset used). -/
