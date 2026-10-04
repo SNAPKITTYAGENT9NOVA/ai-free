@@ -29,7 +29,7 @@ theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
     first
       | (exfalso; cases h; done)
       | (cases h
-         simp [compileOp, cmpFlagCode, execSeq, exec, State.fall, flag, *])
+         simp [compileOp, cmpFlagCode, execSeq, exec, State.fall, flag, BitVec.mul_comm, *])
 
 theorem compileOp_err {n : Nat} (o : Op) (s : State n) (t : Trap)
     (h : o.sem ⟨s.dstack, s.mem⟩ = .error t) :

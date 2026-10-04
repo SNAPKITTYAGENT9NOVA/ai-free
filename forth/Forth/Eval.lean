@@ -12,9 +12,10 @@ namespace WordDialect
 namespace Forth
 
 /-- Run `b` from `st` with at most `fuel` nested evaluation steps; `none` means out of fuel. -/
-def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (Except Trap (FState n))
+def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (Res n)
   | 0, _, _ => none
   | _ + 1, .nil, st => some (.ok st)
+  | _ + 1, .exit _, st => some (.exit st)
   | f + 1, .op o rest, st =>
     match o.sem st with
     | .ok st' => eval defs f rest st'
@@ -24,11 +25,13 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
     match eval defs f (if Word.isTrue c then t else e) ⟨d, m⟩ with
     | none => none
     | some (.error x) => some (.error x)
+    | some (.exit st1) => some (.exit st1)
     | some (.ok st1) => eval defs f rest st1
   | f + 1, .untilL body rest, st =>
     match eval defs f body st with
     | none => none
     | some (.error x) => some (.error x)
+    | some (.exit st1) => some (.exit st1)
     | some (.ok ⟨[], _⟩) => some (.error .stackUnderflow)
     | some (.ok ⟨c :: d, m⟩) =>
       if Word.isTrue c then eval defs f rest ⟨d, m⟩ else eval defs f (.untilL body rest) ⟨d, m⟩
@@ -39,10 +42,11 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
       match eval defs f body st with
       | none => none
       | some (.error x) => some (.error x)
+      | some (.exit st1) => eval defs f rest st1
       | some (.ok st1) => eval defs f rest st1
 
 theorem eval_sound {n : Nat} {defs : List Block} :
-    ∀ (fuel : Nat) (b : Block) (st : FState n) (r : Except Trap (FState n)),
+    ∀ (fuel : Nat) (b : Block) (st : FState n) (r : Res n),
       eval defs fuel b st = some r → Run defs b st r := by
   intro fuel
   induction fuel with
@@ -51,6 +55,7 @@ theorem eval_sound {n : Nat} {defs : List Block} :
     intro b st r h
     cases b with
     | nil => simp only [eval, Option.some.injEq] at h; subst h; exact .nil
+    | exit rest => simp only [eval, Option.some.injEq] at h; subst h; exact .exit
     | op o rest =>
       simp only [eval] at h
       split at h
@@ -67,8 +72,13 @@ theorem eval_sound {n : Nat} {defs : List Block} :
         · rename_i x hx
           cases h
           cases hc : Word.isTrue c
-          · rw [hc] at hx; exact .iteFalseErr hc (ih _ _ _ hx)
-          · rw [hc] at hx; exact .iteTrueErr hc (ih _ _ _ hx)
+          · rw [hc] at hx; exact .iteFalseStop hc (ih _ _ _ hx) rfl
+          · rw [hc] at hx; exact .iteTrueStop hc (ih _ _ _ hx) rfl
+        · rename_i x hx
+          cases h
+          cases hc : Word.isTrue c
+          · rw [hc] at hx; exact .iteFalseStop hc (ih _ _ _ hx) rfl
+          · rw [hc] at hx; exact .iteTrueStop hc (ih _ _ _ hx) rfl
         · rename_i st1 hx
           cases hc : Word.isTrue c
           · rw [hc] at hx; exact .iteFalse hc (ih _ _ _ hx) (ih _ _ _ h)
@@ -77,12 +87,13 @@ theorem eval_sound {n : Nat} {defs : List Block} :
       simp only [eval] at h
       split at h
       · cases h
-      · rename_i x hx; cases h; exact .untilBodyErr (ih _ _ _ hx)
+      · rename_i x hx; cases h; exact .untilBodyStop (ih _ _ _ hx) rfl
+      · rename_i x hx; cases h; exact .untilBodyStop (ih _ _ _ hx) rfl
       · rename_i m hx; cases h; exact .untilUnder (ih _ _ _ hx)
       · rename_i c d m hx
         cases hc : Word.isTrue c
         · rw [hc] at h; exact .untilAgain (ih _ _ _ hx) hc (ih _ _ _ h)
-        · rw [hc] at h; exact .untilExit (ih _ _ _ hx) hc (ih _ _ _ h)
+        · rw [hc] at h; exact .untilDone (ih _ _ _ hx) hc (ih _ _ _ h)
     | call i rest =>
       simp only [eval] at h
       split at h
@@ -91,7 +102,8 @@ theorem eval_sound {n : Nat} {defs : List Block} :
         split at h
         · cases h
         · rename_i x hx; cases h; exact .callErr hi (ih _ _ _ hx)
-        · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) (ih _ _ _ h)
+        · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) rfl (ih _ _ _ h)
+        · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) rfl (ih _ _ _ h)
 
 end Forth
 end WordDialect
