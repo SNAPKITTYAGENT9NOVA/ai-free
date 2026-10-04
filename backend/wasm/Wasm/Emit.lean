@@ -23,11 +23,13 @@ def Runtime.rf (_ : Runtime) : Nat := 0x1000
 def Runtime.mb (r : Runtime) : Nat := r.rf + 8 * r.nregs
 def Runtime.dBase (_ : Runtime) : Nat := 0x10000
 def Runtime.dEnd (r : Runtime) : Nat := r.dBase + 8 * 65536
-def Runtime.rEnd (r : Runtime) : Nat := r.dEnd + 8 * 4096
+def Runtime.rBase (r : Runtime) : Nat := r.dEnd
+def Runtime.rEnd (r : Runtime) : Nat := r.rBase + 8 * 4096
 def Runtime.pages (r : Runtime) : Nat := (r.rEnd + 65535) / 65536
 
 def Runtime.layout (r : Runtime) : Layout :=
-  { dEnd := r.dEnd, rEnd := r.rEnd, rf := r.rf, mb := r.mb, M := r.memImage.length }
+  { dEnd := r.dEnd, rEnd := r.rEnd, rf := r.rf, mb := r.mb, M := r.memImage.length,
+    dBase := r.dBase, rBase := r.rBase }
 
 def ind (d : Nat) : String := String.ofList (List.replicate (2 * d) ' ')
 

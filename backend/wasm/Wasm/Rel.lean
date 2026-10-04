@@ -32,7 +32,8 @@ structure Cfg where
   msize : Nat
 
 def Cfg.layout (c : Cfg) : Layout :=
-  { dEnd := c.dEnd, rEnd := c.rEnd, rf := c.rf, mb := c.mb, M := c.M }
+  { dEnd := c.dEnd, rEnd := c.rEnd, rf := c.rf, mb := c.mb, M := c.M, dBase := c.dBase,
+    rBase := c.rBase }
 
 structure Geom (c : Cfg) : Prop where
   msize_lt : c.msize < 2 ^ 32
@@ -42,6 +43,8 @@ structure Geom (c : Cfg) : Prop where
   mb_le : c.mb + 8 * c.M ≤ c.msize
   dBase_le : c.dBase ≤ c.dEnd
   rBase_le : c.rBase ≤ c.rEnd
+  dBase_8 : c.dBase + 8 ≤ c.dEnd
+  rBase_8 : c.rBase + 8 ≤ c.rEnd
   dEnd_ge : 24 ≤ c.dEnd
   dS_F : c.dEnd ≤ c.rf ∨ c.rf + 8 * c.nregs ≤ c.dBase
   dS_M : c.dEnd ≤ c.mb ∨ c.mb + 8 * c.M ≤ c.dBase

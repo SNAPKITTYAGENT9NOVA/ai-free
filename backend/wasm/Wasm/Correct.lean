@@ -12,12 +12,19 @@ semantics reaches from `s`:
   stack, virtual registers, IR memory and return stack agree with `s'`;
 * IR `trapped t`  ⇒  the loop exits with code `trapCode t`.
 
-Hypotheses (all explicit):
-* `Geom c`         the memory regions are disjoint and inside the 32-bit linear memory;
+Every instruction that grows a stack checks for room and exits with code 6 when the stack is
+full, so there are two forms of the theorem:
+
+* `lowerProg_correct_or_overflow` has no capacity hypothesis: the module reaches the IR outcome as
+  above, or it exits with code 6 (the run needed more stack than the target provides);
+* `lowerProg_correct` additionally assumes the IR run stays within the capacities (`Fits` at every
+  reachable state); then no guard fires and the module reaches exactly the IR outcome.
+
+Hypotheses of both (all explicit):
+* `Geom c`         the memory regions are disjoint and inside the 32-bit linear memory, and each
+                   stack can hold at least one word;
 * `hn`             the program has fewer than `2^32` instructions (function indices are `i32`);
-* `RegsOk`         every `push r`/`pop r` names a register inside the register file;
-* `hb`             the IR run stays within the stack capacities (`Fits`), because the generated
-                   code does not check for data-stack or return-stack overflow.
+* `RegsOk`         every `push r`/`pop r` names a register inside the register file.
 -/
 
 namespace WordDialect
@@ -50,6 +57,9 @@ def Final (c : Cfg) (fs : Funcs) (w : WState) : Outcome 64 → Prop
   | .next _ => False
   | .halted s' => ∃ w', RunI fs (.loop loopBody) w (.halted w') ∧ Rel0 c s' w'
   | .trapped t => RunI fs (.loop loopBody) w (.exit (trapCode t))
+
+/-- Exit code 6: a stack overflow guard fired. -/
+def overflowCode : Nat := 6
 
 /-- The final-outcome form, for the module's start function. -/
 def FinalMain (c : Cfg) (fs : Funcs) (w : WState) : Outcome 64 → Prop
@@ -103,8 +113,9 @@ theorem loop_abrupt {m : Nat} {code : List WI} (hpc : w.globals pcG = .i32 (ofN 
   · exact .loopHalted (.consNormal (rgetPc hpc) (.consAbrupt h2 trivial))
 
 theorem loop_step (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : RegsOk c p)
-    {s : State 64} (hs : RelD c p.length s w) (hfit : Fits c s) :
-    LoopSim c (funcsOf c.layout p) p.length w (step p s) := by
+    {s : State 64} (hs : RelD c p.length s w) :
+    LoopSim c (funcsOf c.layout p) p.length w (step p s) ∨
+      (¬ Fits c s ∧ RunI (funcsOf c.layout p) (.loop loopBody) w (.exit overflowCode)) := by
   obtain ⟨h0, hst, hpc, hrs⟩ := hs
   have hm : min s.pc p.length ≤ p.length := Nat.min_le_right _ _
   have hf : (funcsOf c.layout p)[(ofN (min s.pc p.length)).toNat]? =
@@ -117,10 +128,14 @@ theorem loop_step (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : R
       rw [Nat.min_eq_left (Nat.le_of_lt hlt)]
       simp [instrCode, hi]
     rw [hcode] at hf
-    have hss := sim_step (fs := funcsOf c.layout p) hg (h0.setStack []) rfl hfit hn hrs hi
+    have hss := sim_step (fs := funcsOf c.layout p) hg (h0.setStack []) rfl hn hrs hi
       (hreg s.pc _ hi)
     rw [step_of_fetch hi]
     generalize exec p[s.pc] s = o at hss ⊢
+    rcases hss with hss | ⟨hnf, h6⟩
+    rotate_left
+    · exact .inr ⟨hnf, loop_abrupt hpc hf h6 (.inl ⟨6, rfl⟩)⟩
+    left
     cases o with
     | next s' =>
       obtain ⟨hrs', w', hr, h0', hst'⟩ := hss
@@ -137,7 +152,7 @@ theorem loop_step (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : R
       rw [Nat.min_eq_right (by omega)]
       simp [instrCode]
     rw [hcode] at hf
-    exact loop_abrupt hpc hf sim_stub (.inl ⟨4, rfl⟩)
+    exact .inl (loop_abrupt hpc hf sim_stub (.inl ⟨4, rfl⟩))
 
 /-- Whole-program preservation, for the dispatch loop. -/
 theorem loop_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : RegsOk c p)
@@ -147,18 +162,25 @@ theorem loop_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg 
   induction h with
   | @halt s s' hst =>
     intro w hs hb
-    have := loop_step hg hn hreg hs (hb s .refl)
+    have := loop_step hg hn hreg hs
     rw [hst] at this
-    exact this
+    rcases this with this | ⟨hnf, _⟩
+    · exact this
+    · exact absurd (hb s .refl) hnf
   | @trap s t hst =>
     intro w hs hb
-    have := loop_step hg hn hreg hs (hb s .refl)
+    have := loop_step hg hn hreg hs
     rw [hst] at this
-    exact this
+    rcases this with this | ⟨hnf, _⟩
+    · exact this
+    · exact absurd (hb s .refl) hnf
   | @next s s' o hst _ ih =>
     intro w hs hb
-    have := loop_step hg hn hreg hs (hb s .refl)
+    have := loop_step hg hn hreg hs
     rw [hst] at this
+    rcases this with this | ⟨hnf, _⟩
+    rotate_left
+    · exact absurd (hb s .refl) hnf
     obtain ⟨w', hs', hlift⟩ := this
     have hih := ih hs' (fun s'' hss => hb s'' (.cons hst hss))
     cases o with
@@ -168,12 +190,44 @@ theorem loop_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg 
       exact ⟨w'', hlift _ hr, h0⟩
     | trapped t => exact hlift _ hih
 
-/-- Whole-program preservation, for the module's start function `mainBody`. -/
-theorem lowerProg_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : RegsOk c p)
-    {s : State 64} {o : Outcome 64} (h : Exec p s o) (hs : RelD c p.length s w)
-    (hb : ∀ s', Steps p s s' → Fits c s') :
-    FinalMain c (funcsOf c.layout p) w o := by
-  have hl := loop_correct hg hn hreg h hs hb
+/-- Whole-program preservation for the dispatch loop, with no capacity hypothesis: the IR outcome,
+or exit 6 when a stack overflow guard fires. -/
+theorem loop_correct_or_overflow (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32)
+    (hreg : RegsOk c p) {s : State 64} {o : Outcome 64} (h : Exec p s o) :
+    ∀ {w : WState}, RelD c p.length s w →
+      Final c (funcsOf c.layout p) w o ∨ RunI (funcsOf c.layout p) (.loop loopBody) w (.exit overflowCode) := by
+  induction h with
+  | @halt s s' hst =>
+    intro w hs
+    have := loop_step hg hn hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨_, h6⟩
+    · exact .inl this
+    · exact .inr h6
+  | @trap s t hst =>
+    intro w hs
+    have := loop_step hg hn hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨_, h6⟩
+    · exact .inl this
+    · exact .inr h6
+  | @next s s' o hst _ ih =>
+    intro w hs
+    have := loop_step hg hn hreg hs
+    rw [hst] at this
+    rcases this with ⟨w', hs', hlift⟩ | ⟨_, h6⟩
+    · rcases ih hs' with hih | h6
+      · left
+        cases o with
+        | next _ => exact hih.elim
+        | halted s2 =>
+          obtain ⟨w'', hr, h0⟩ := hih
+          exact ⟨w'', hlift _ hr, h0⟩
+        | trapped t => exact hlift _ hih
+      · exact .inr (hlift _ h6)
+    · exact .inr h6
+
+theorem final_main {p : Prog 64} {o : Outcome 64} (hl : Final c fs w o) : FinalMain c fs w o := by
   cases o with
   | next _ => exact hl.elim
   | halted s' =>
@@ -185,6 +239,25 @@ theorem lowerProg_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (
     show Run _ mainBody w _
     rw [mainBody_eq]
     exact .consAbrupt hl trivial
+
+/-- Whole-program preservation for the module's start function, with no capacity hypothesis: the
+module reaches the IR outcome, or exits with code 6 because a stack was full. -/
+theorem lowerProg_correct_or_overflow (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32)
+    (hreg : RegsOk c p) {s : State 64} {o : Outcome 64} (h : Exec p s o) (hs : RelD c p.length s w) :
+    FinalMain c (funcsOf c.layout p) w o ∨ Run (funcsOf c.layout p) mainBody w (.exit overflowCode) := by
+  rcases loop_correct_or_overflow hg hn hreg h hs with hl | h6
+  · exact .inl (final_main (p := p) hl)
+  · right
+    rw [mainBody_eq]
+    exact .consAbrupt h6 trivial
+
+/-- Whole-program preservation, for the module's start function `mainBody`. When the IR run stays
+within the stack capacities, no overflow guard fires and the outcome is exactly the IR's. -/
+theorem lowerProg_correct (hg : Geom c) {p : Prog 64} (hn : p.length < 2 ^ 32) (hreg : RegsOk c p)
+    {s : State 64} {o : Outcome 64} (h : Exec p s o) (hs : RelD c p.length s w)
+    (hb : ∀ s', Steps p s s' → Fits c s') :
+    FinalMain c (funcsOf c.layout p) w o := by
+  exact final_main (p := p) (loop_correct hg hn hreg h hs hb)
 
 end Loop
 

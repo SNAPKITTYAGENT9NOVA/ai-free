@@ -123,7 +123,7 @@ theorem sim_word (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
   have hB := push_gen hg hs hfit (val := [.i64const v]) (v := v) (by simp [WI.isCtl])
     (by intro u _ _; simp [execL, stepI])
   obtain ⟨w1, he, hr, hst1⟩ := hB
-  have := core_gen (fs := fs) (pre := []) .nil (B := pushWith [.i64const v])
+  have := core_gen (fs := fs) (pre := ovf spG c.layout.dBase) (ovfD_pass hg hs hfit) (B := pushWith [.i64const v])
     (allSimple_spec (by simp [allSimple, pushWith, spSub, WI.isCtl, i32c])) ⟨w1, he, hr, by rw [hst1, hst]⟩ (k + 1)
   simpa [lowerInstr, pushWith, List.append_assoc] using this
 
@@ -145,7 +145,7 @@ theorem sim_push (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
       have h2 : c.rf + 8 * r < 2 ^ 32 := by omega
       simp [execL, stepI, i32c, Cfg.layout, hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h2, h1])
   obtain ⟨w1, he, hr1, hst1⟩ := hB
-  have := core_gen (fs := fs) (pre := []) .nil
+  have := core_gen (fs := fs) (pre := ovf spG c.layout.dBase) (ovfD_pass hg hs hfit)
     (B := pushWith [i32c (c.layout.rf + 8 * r), .i64load 0])
     (allSimple_spec (by simp [allSimple, pushWith, spSub, WI.isCtl, i32c])) ⟨w1, he, hr1, by rw [hst1, hst]⟩ (k + 1)
   simpa [lowerInstr, pushWith, List.append_assoc] using this
@@ -168,7 +168,8 @@ theorem sim_dup (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
   obtain ⟨w1, he, hr, hst1⟩ := hB
   have e : a :: s.dstack = a :: a :: d := by rw [hd]
   rw [e] at hr
-  have := core_gen (fs := fs) (pre := uf c.layout 1) (uf1_pass hg hs hd) (B := pushWith (ldS 8))
+  have := core_gen (fs := fs) (pre := uf c.layout 1 ++ ovf spG c.layout.dBase)
+    (run_append _ (uf1_pass hg hs hd) (ovfD_pass hg hs hfit)) (B := pushWith (ldS 8))
     (allSimple_spec (by simp [allSimple, pushWith, spSub, ldS, WI.isCtl, i32c])) ⟨w1, he, hr, by rw [hst1, hst]⟩ (k + 1)
   simpa [lowerInstr, pushWith, List.append_assoc] using this
 
@@ -190,7 +191,8 @@ theorem sim_over (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = []
   obtain ⟨w1, he, hr, hst1⟩ := hB
   have e : a :: s.dstack = a :: b :: a :: d := by rw [hd]
   rw [e] at hr
-  have := core_gen (fs := fs) (pre := uf c.layout 2) (uf2_pass hg hs hd)
+  have := core_gen (fs := fs) (pre := uf c.layout 2 ++ ovf spG c.layout.dBase)
+    (run_append _ (uf2_pass hg hs hd) (ovfD_pass hg hs hfit))
     (B := pushWith [.globalGet spG, .i64load 16])
     (allSimple_spec (by simp [allSimple, pushWith, spSub, WI.isCtl, i32c])) ⟨w1, he, hr, by rw [hst1, hst]⟩ (k + 1)
   simpa [lowerInstr, pushWith, List.append_assoc] using this
@@ -347,6 +349,43 @@ theorem sim_pop (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (hst : w.stack = [])
   have := core_gen (fs := fs) (pre := uf c.layout 1) (uf1_pass hg hs hd)
     (B := [i32c (c.layout.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8)
     (allSimple_spec (by simp [allSimple, ldS, spAdd, WI.isCtl, i32c])) ⟨_, hexec, hrel3, hst⟩ (k + 1)
+  simpa [lowerInstr, List.append_assoc] using this
+
+/-! Data-stack overflow: every instruction that grows the data stack exits 6 when it is full. -/
+
+theorem sim_word_ovf (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (v : W)
+    (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
+    Run fs (lowerInstr c.layout n k (.word v)) w (.exit 6) := by
+  have := run_append_abrupt (fs := fs) _ (ovfD_trap hg hs h)
+    (b := pushWith [.i64const v] ++ [i32c (k + 1)]) trivial
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_ptr_ovf (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (q : WordDialect.Ptr 64)
+    (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
+    Run fs (lowerInstr c.layout n k (.ptr q)) w (.exit 6) := by
+  have := run_append_abrupt (fs := fs) _ (ovfD_trap hg hs h)
+    (b := pushWith [.i64const q.toWord] ++ [i32c (k + 1)]) trivial
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_push_ovf (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) (r : Nat)
+    (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
+    Run fs (lowerInstr c.layout n k (.push r)) w (.exit 6) := by
+  have := run_append_abrupt (fs := fs) _ (ovfD_trap hg hs h)
+    (b := pushWith [i32c (c.layout.rf + 8 * r), .i64load 0] ++ [i32c (k + 1)]) trivial
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_dup_ovf (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) {a : W} {d : List W}
+    (hd : s.dstack = a :: d) (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
+    Run fs (lowerInstr c.layout n k .dup) w (.exit 6) := by
+  have := run_append (fs := fs) _ (uf1_pass hg hs hd) (run_append_abrupt _ (ovfD_trap hg hs h)
+    (b := spSub 8 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 0] ++ [i32c (k + 1)]) trivial)
+  simpa [lowerInstr, List.append_assoc] using this
+
+theorem sim_over_ovf (n k : Nat) (hg : Geom c) (hs : Rel0 c s w) {a b : W} {d : List W}
+    (hd : s.dstack = b :: a :: d) (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
+    Run fs (lowerInstr c.layout n k .over) w (.exit 6) := by
+  have := run_append (fs := fs) _ (uf2_pass hg hs hd) (run_append_abrupt _ (ovfD_trap hg hs h)
+    (b := spSub 8 ++ [.globalGet spG, .globalGet spG, .i64load 16, .i64store 0] ++ [i32c (k + 1)]) trivial)
   simpa [lowerInstr, List.append_assoc] using this
 
 end Sim

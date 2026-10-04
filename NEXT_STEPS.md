@@ -2,16 +2,16 @@
 
 Suggested development order. Each item names the gap it closes in the current code.
 
-## 1. Discharge the stack-capacity hypothesis
+## 1. Discharge the stack-capacity hypothesis on x86-64
 
-Both whole-program theorems (`X86.lowerProg_correct`, `Wasm.lowerProg_correct`)
-assume the IR run never exceeds the data-stack or return-stack capacity
-(`Fits`), because the generated code does not check for overflow. Options:
-
-- Emit an overflow guard before every push and every `call`, add an overflow
-  trap code, and prove the guard so `Fits` is no longer a hypothesis; or
-- Prove a static bound on stack depth for programs produced by the frontends,
-  and derive `Fits` from it.
+The WebAssembly backend guards every stack-growing instruction and exits 6 on
+overflow, and `Wasm.lowerProg_correct_or_overflow` has no capacity hypothesis.
+`X86.lowerProg_correct` still assumes the IR run never exceeds the data-stack
+or native-stack capacity (`Fits`), because the x86-64 code does not check for
+overflow. Port the same design: a guard before every push and every `call`
+(the native `call` also uses the machine stack), exit 6 on overflow, and an
+`_or_overflow` theorem without `Fits`. Add the same unbounded-program checks to
+`wordc check`.
 
 ## 2. Prove the runtime establishes the entry relation
 

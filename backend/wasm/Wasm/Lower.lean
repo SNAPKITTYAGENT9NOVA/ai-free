@@ -22,7 +22,10 @@ temporaries. `call` pushes the IR index of the return instruction onto the retur
 it.
 
 Every `load`/`store` is bounds-checked against the IR memory size, and every popping instruction
-checks the operand count against `dEnd`, so traps match the IR semantics.
+checks the operand count against `dEnd`, so traps match the IR semantics. Every instruction that
+grows the data stack checks for room above `dBase`, and `call` checks for room above `rBase`; on
+overflow the module exits with code 6. The IR has unbounded stacks, so this exit has no IR
+counterpart: it reports that the run exceeded the target's stack capacity.
 -/
 
 namespace WordDialect
@@ -34,6 +37,8 @@ structure Layout where
   rf : Nat        -- virtual register file, cell `r` at `rf + 8r`
   mb : Nat        -- IR memory, word `a` at `mb + 8a`
   M : Nat         -- IR memory size in words
+  dBase : Nat     -- data stack: full at `dBase`
+  rBase : Nat     -- return stack: full at `rBase`
 
 def pcG : Nat := 0
 def spG : Nat := 1
@@ -48,6 +53,10 @@ def spSub (d : Nat) : List WI := [.globalGet spG, i32c d, .i32sub, .globalSet sp
 /-- Operand-count guard for `k` operands: trap `stackUnderflow` unless `sp ≤ dEnd - 8k`. -/
 def uf (L : Layout) (k : Nat) : List WI :=
   if k = 0 then [] else [.globalGet spG, i32c (L.dEnd - 8 * k), .i32gtu, .ite [.exitTrap 1]]
+
+/-- Overflow guard on the stack whose pointer is global `g`: exit 6 unless one more word fits,
+i.e. unless `base + 8 ≤ ptr`. -/
+def ovf (g base : Nat) : List WI := [i32c (base + 8), .globalGet g, .i32gtu, .ite [.exitTrap 6]]
 
 /-- Push the word computed by `val`. -/
 def pushWith (val : List WI) : List WI :=
@@ -93,8 +102,8 @@ def cmpOp : WordDialect.Cond → WI
 /-- Code for IR instruction number `k` of a program of `n` instructions: performs it and leaves
 the next instruction index on the operand stack. -/
 def lowerInstr (L : Layout) (n k : Nat) : WordDialect.Instr 64 → List WI
-  | .word w => pushWith [.i64const w] ++ [i32c (k + 1)]
-  | .ptr p => pushWith [.i64const p.toWord] ++ [i32c (k + 1)]
+  | .word w => ovf spG L.dBase ++ pushWith [.i64const w] ++ [i32c (k + 1)]
+  | .ptr p => ovf spG L.dBase ++ pushWith [.i64const p.toWord] ++ [i32c (k + 1)]
   | .load =>
     uf L 1 ++ [.globalGet spG] ++ memAddr L ++ [.i64load 0, .i64store 0] ++ [i32c (k + 1)]
   | .store =>
@@ -122,21 +131,21 @@ def lowerInstr (L : Layout) (n k : Nat) : WordDialect.Instr 64 → List WI
   | .branch t =>
     uf L 1 ++ [i32c (min t n), i32c (k + 1)] ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select] ++ spAdd 8
   | .call t =>
-    [.globalGet rpG, i32c 8, .i32sub, .globalSet rpG, .globalGet rpG, i64c (k + 1), .i64store 0,
+    ovf rpG L.rBase ++ [.globalGet rpG, i32c 8, .i32sub, .globalSet rpG, .globalGet rpG, i64c (k + 1), .i64store 0,
       i32c (min t n)]
   | .ret =>
     [.globalGet rpG, i32c L.rEnd, .i32eq, .ite [.exitTrap 5], .globalGet rpG, .i64load 0, .i32wrap,
       .globalGet rpG, i32c 8, .i32add, .globalSet rpG]
-  | .push r => pushWith [i32c (L.rf + 8 * r), .i64load 0] ++ [i32c (k + 1)]
+  | .push r => ovf spG L.dBase ++ pushWith [i32c (L.rf + 8 * r), .i64load 0] ++ [i32c (k + 1)]
   | .pop r =>
     uf L 1 ++ [i32c (L.rf + 8 * r)] ++ ldS 0 ++ [.i64store 0] ++ spAdd 8 ++ [i32c (k + 1)]
-  | .dup => uf L 1 ++ spSub 8 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 0] ++ [i32c (k + 1)]
+  | .dup => uf L 1 ++ ovf spG L.dBase ++ spSub 8 ++ [.globalGet spG] ++ ldS 8 ++ [.i64store 0] ++ [i32c (k + 1)]
   | .drop => uf L 1 ++ spAdd 8 ++ [i32c (k + 1)]
   | .swap =>
     uf L 2 ++ [.globalGet spG] ++ ldS 8 ++ [.globalGet spG] ++ ldS 0 ++ [.i64store 8, .i64store 0] ++
       [i32c (k + 1)]
   | .over =>
-    uf L 2 ++ spSub 8 ++ [.globalGet spG, .globalGet spG, .i64load 16, .i64store 0] ++ [i32c (k + 1)]
+    uf L 2 ++ ovf spG L.dBase ++ spSub 8 ++ [.globalGet spG, .globalGet spG, .i64load 16, .i64store 0] ++ [i32c (k + 1)]
   | .rot =>
     uf L 3 ++ [.globalGet spG] ++ ldS 16 ++ [.globalGet spG] ++ ldS 0 ++ [.globalGet spG] ++ ldS 8 ++
       [.i64store 16, .i64store 8, .i64store 0] ++ [i32c (k + 1)]
