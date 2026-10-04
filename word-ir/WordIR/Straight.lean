@@ -28,7 +28,7 @@ namespace IR
 
 theorem exec_straight_pc {n : Nat} (i : Instr n) (s s' : State n)
     (hi : i.isStraight = true) (h : exec i s = .next s') : s'.pc = s.pc + 1 := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases i <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [exec, State.fall, Instr.isStraight] at h hi <;>
     (try split at h) <;> (try split at h) <;> (try cases h) <;> simp_all

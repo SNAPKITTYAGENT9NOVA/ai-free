@@ -17,7 +17,7 @@ def Memory.ofImage {n : Nat} (img : List Nat) : Memory n :=
 
 /-- Start of execution: `pc = 0`, empty stacks, all registers zero, given memory. -/
 def State.init {n : Nat} (mem : Memory n) : State n :=
-  { pc := 0, dstack := [], rstack := [], regs := fun _ => 0#n, mem := mem }
+  { pc := 0, dstack := [], rstack := [], astack := [], regs := fun _ => 0#n, mem := mem }
 
 def Outcome.finalStack {n : Nat} : Outcome n → Option (List (Word n))
   | .halted s => some s.dstack
@@ -34,7 +34,7 @@ theorem forthFiveDupPlus_result (mem : Memory 64) :
 theorem forthFiveDupPlus_exec (mem : Memory 64) :
     ∃ s, Exec forthFiveDupPlus (State.init mem) (.halted s) ∧ s.dstack = [10#64] := by
   have h : run forthFiveDupPlus 10 (State.init mem) =
-      some (.halted { pc := 3, dstack := [10#64], rstack := [], regs := fun _ => 0#64, mem := mem }) := by
+      some (.halted { pc := 3, dstack := [10#64], rstack := [], astack := [], regs := fun _ => 0#64, mem := mem }) := by
     simp [run, step, forthFiveDupPlus, State.init, exec, State.fall]
   exact ⟨_, run_sound h, rfl⟩
 

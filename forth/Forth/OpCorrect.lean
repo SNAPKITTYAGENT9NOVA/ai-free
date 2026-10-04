@@ -22,7 +22,7 @@ theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
     execSeq (compileOp o) s =
       .next { s with pc := s.pc + (compileOp o : List (Instr n)).length,
                      dstack := st'.stack, mem := st'.mem } := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>
@@ -34,7 +34,7 @@ theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
 theorem compileOp_err {n : Nat} (o : Op) (s : State n) (t : Trap)
     (h : o.sem ⟨s.dstack, s.mem⟩ = .error t) :
     execSeq (compileOp o) s = .trapped t := by
-  obtain ⟨pc, d, rs, regs, mem⟩ := s
+  obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>
