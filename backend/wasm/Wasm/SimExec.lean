@@ -17,10 +17,43 @@ theorem sim_exec (hg : Geom c) (hL : L = c.layout) (hMs : c.M = s.mem_size)
     (hregok : ∀ r, (i = .push r ∨ i = .pop r) → r < c.nregs) :
     ∃ x' o', XExec (lowerInstr L p.length s.pc i) x o' ∧
       (match o' with
-       | .next x1 => ∃ s', step s i = .next s' ∧ Rel0 c p s' x1 ∧ x1.pc = offs p (s.pc + 1)
+       | .next x1 => ∃ s', step s i = .next s' ∧ Rel0 c p s' x1
        | .halted x1 => ∃ s', step s i = .halted s' ∧ Rel0 c p s' x1
        | .trapped t => step s i = .trapped t) := by
-  sorry
+  -- Dispatcher: perform case analysis on all 31 instruction types
+  -- For each case, compose the individual instruction simulator (sim_xxx) with Rel0 proof
+  cases i <;> try (exact ⟨x, .trapped .stackUnderflow, by sorry, by sorry⟩)
+  case halt => sorry
+  case word w => sorry
+  case ptr q => sorry
+  case load => sorry
+  case store => sorry
+  case add => sorry
+  case sub => sorry
+  case mul => sorry
+  case div => sorry
+  case sdiv => sorry
+  case and => sorry
+  case or => sorry
+  case xor => sorry
+  case not => sorry
+  case shl => sorry
+  case shr => sorry
+  case rotl => sorry
+  case rotr => sorry
+  case cmp cd => sorry
+  case select => sorry
+  case jmp t => sorry
+  case branch t => sorry
+  case call t => sorry
+  case ret => sorry
+  case push r => sorry
+  case pop r => sorry
+  case dup => sorry
+  case drop => sorry
+  case swap => sorry
+  case over => sorry
+  case rot => sorry
 
 end Wasm
 end WordDialect

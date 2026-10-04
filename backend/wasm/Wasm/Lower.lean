@@ -156,5 +156,10 @@ def funcsOf (L : Layout) (p : Prog 64) : Funcs :=
 def mainBody : List WI :=
   [.loop [.globalGet pcG, .callIndirect, .globalSet pcG, .br 0]]
 
+/-- PC value offset: cumulative code size of instructions k onwards in the lowered program. -/
+-- This is the index of instruction k's lowered code in the lowered program.
+def offs (L : Layout) (p : Prog 64) (k : Nat) : Nat :=
+  Nat.sum (List.map (fun i => (lowerInstr L p.length 0 i).length) (p.take k))
+
 end Wasm
 end WordDialect
