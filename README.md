@@ -112,19 +112,25 @@ word and a trap two calls deep.
   matrix dot products have dedicated correctness results and a worked example.
 - The x86-64 model has whole-program preservation theorems in
   [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). The generated code
-  checks for room before every instruction that grows the data stack and before
+  checks for room before every instruction that grows the data stack, before
   every `call` (the return stack is the native stack, capped at 65536 entries
-  below the entry `rsp`), and exits with code 6 when the stack is full.
+  below the entry `rsp`), and before every `tor` (the auxiliary stack is its
+  own `.astack` region with pointer `rbp`, so native `call`/`ret` never touch
+  it), and exits with code 6 when the stack is full. `fromr`/`rfetch` on an
+  empty auxiliary stack trap with code 5, as in the IR.
   `WordDialect.X86.lowerProg_correct_or_overflow` has no stack-capacity
   assumption: the code reaches the IR outcome or exits 6.
   `WordDialect.X86.lowerProg_correct` adds the assumption that the run stays
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry, bounded code addresses, and valid register indices.
-  `wordc check` also runs three unbounded programs and requires exit 6.
+  `wordc check` also runs raw auxiliary-stack programs (balanced use across
+  calls and recursion, `R@`, both traps) against the Lean semantics, and four
+  unbounded programs (one of them a `tor` loop) that must exit 6.
   `WordDialect.X86.Emit.binary_correct` starts from the binary's entry point:
   the runtime prologue's effect is proved, and what the loader provides at
   `_start` (entry `rsp`, the `.data` image, the zero-filled `.bss` register
-  file, addressable regions, disjoint placement) is one explicit assumption,
+  file, addressable regions including `.dstack` and `.astack`, disjoint
+  placement) is one explicit assumption,
   `Loader.Holds`. From there the code reaches the IR outcome from `State.init`,
   or exits 6. Its program hypotheses are `17 * length < 2^64` and valid
   register indices. See [`X86/Init.lean`](backend/x86_64/X86/Init.lean).

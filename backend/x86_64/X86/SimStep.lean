@@ -1,4 +1,4 @@
-import X86.SimCtl
+import X86.SimAux
 
 /-!
 # X86.SimStep
@@ -7,8 +7,8 @@ One IR step is simulated by the lowered x86 code, for every instruction and ever
 (`next`, `halted`, `trapped`). This is the case analysis over the whole instruction set that the
 whole-program theorem iterates.
 
-Every instruction that grows the data stack, and every `call`, first checks for room and exits
-with `overflow` when the stack is full. So `sim_exec` has no capacity hypothesis: the code either
+Every instruction that grows the data stack or the auxiliary stack, and every `call`, first checks
+for room and exits with `overflow` when the stack is full. So `sim_exec` has no capacity hypothesis: the code either
 simulates the IR step, or the state lacks the headroom `Fits` describes and the code overflows.
 -/
 
@@ -17,10 +17,11 @@ namespace X86
 
 open Reg
 
-/-- Headroom for one step: room to push one data word and two return addresses' worth of
-native stack. -/
+/-- Headroom for one step: room to push one data word, two return addresses' worth of native
+stack, and one auxiliary word. -/
 def Fits (c : Cfg) (s : State 64) : Prop :=
-  c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd ∧ s.rstack.length + 2 ≤ c.rcap
+  c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd ∧ s.rstack.length + 2 ≤ c.rcap ∧
+    c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd
 
 /-- What simulating an IR outcome means on the x86 side. -/
 def Sim (c : Cfg) (p : Prog 64) (code : List (Instr Nat)) (x : M) : Outcome 64 → Prop
@@ -59,9 +60,9 @@ theorem lowerInstr_uf (L : Layout) (base : Nat) (off : Nat → Nat) (i : WordDia
 
 theorem Rel0.setPc {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (h : Rel0 c p s x) (n : Nat) :
     Rel0 c p { s with pc := n } x :=
-  { r15 := h.r15, r14 := h.r14, r13 := h.r13, r12 := h.r12, rsp := h.rsp, stack := h.stack,
-    regs := h.regs, mem := h.mem, rs := h.rs, irvalid := h.irvalid, xvalid := h.xvalid,
-    capD := h.capD, capR := h.capR }
+  { r15 := h.r15, r14 := h.r14, r13 := h.r13, r12 := h.r12, rsp := h.rsp, rbp := h.rbp,
+    stack := h.stack, regs := h.regs, mem := h.mem, rs := h.rs, aux := h.aux, irvalid := h.irvalid,
+    xvalid := h.xvalid, capD := h.capD, capR := h.capR, capA := h.capA }
 
 section Step
 
@@ -83,13 +84,15 @@ theorem rel_fall {i : WordDialect.Instr 64} (hi : p[s.pc]? = some i) {s' : State
 
 theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
     (hLd : L.dLim = ofN (c.dBase + 8)) (hLr : L.rGap = ofN (8 * c.rcap - 16))
+    (hLa : L.aEnd = ofN c.aEnd) (hLal : L.aLim = ofN (c.aBase + 8))
     (hsz : ∀ k, offs p k < 2 ^ 64) (hs : Rel c p s x)
     {i : WordDialect.Instr 64} (hi : p[s.pc]? = some i)
     (hreg : ∀ r, (i = .push r ∨ i = .pop r) → r < c.nregs) :
     Sim c p (lowerProg L p) x (WordDialect.exec i s) ∨
       (¬ Fits c s ∧ XExec (lowerProg L p) x .overflow) := by
   have nfD : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd → ¬ Fits c s := fun h hf => h hf.1
-  have nfR : ¬ s.rstack.length + 2 ≤ c.rcap → ¬ Fits c s := fun h hf => h hf.2
+  have nfR : ¬ s.rstack.length + 2 ≤ c.rcap → ¬ Fits c s := fun h hf => h hf.2.1
+  have nfA : ¬ c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd → ¬ Fits c s := fun h hf => h hf.2.2
   have hpc : x.pc = offs p s.pc := hs.2
   have hs0 : Rel0 c p s x := hs.1
   have hat := lowerProg_at L p s.pc i hi
@@ -296,6 +299,50 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
       obtain ⟨x', hst, h0, hpc'⟩ := sim_rot_ok hg hL hs0 hpc hat hd
       rw [exec_rot hd]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
+    | tor =>
+      obtain ⟨a, d, hd⟩ := shape1 (by simpa [Instr.pops] using hk')
+      by_cases hf : c.aBase + 8 * (s.astack.length + 1) ≤ c.aEnd
+      rotate_left
+      · exact .inr ⟨nfA hf, sim_tor_ovf hg hL hLal hs0 hpc hat (by simp [hd]) hf⟩
+      obtain ⟨x', hst, h0, hpc'⟩ := sim_tor_ok hg hL hLal hs0 hpc hat hd hf
+      have e : WordDialect.exec WordDialect.Instr.tor s =
+          .next { s with pc := s.pc + 1, dstack := d, astack := a :: s.astack } := by
+        simp [WordDialect.exec, hd]
+      rw [e]
+      exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
+    | fromr =>
+      cases ha : s.astack with
+      | nil =>
+        have e : WordDialect.exec WordDialect.Instr.fromr s = .trapped .returnUnderflow := by
+          simp [WordDialect.exec, ha]
+        rw [e]
+        exact .inl <| sim_trapped (sim_fromr_trap hg hLa hs0 hpc hat ha)
+      | cons a as =>
+        by_cases hf : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd
+        rotate_left
+        · exact .inr ⟨nfD hf, sim_fromr_ovf hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
+        obtain ⟨x', hst, h0, hpc'⟩ := sim_fromr_ok hg hLa hLd hs0 hpc hat ha hf
+        have e : WordDialect.exec WordDialect.Instr.fromr s =
+            .next { s with pc := s.pc + 1, dstack := a :: s.dstack, astack := as } := by
+          simp [WordDialect.exec, ha]
+        rw [e]
+        exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
+    | rfetch =>
+      cases ha : s.astack with
+      | nil =>
+        have e : WordDialect.exec WordDialect.Instr.rfetch s = .trapped .returnUnderflow := by
+          simp [WordDialect.exec, ha]
+        rw [e]
+        exact .inl <| sim_trapped (sim_rfetch_trap hg hLa hs0 hpc hat ha)
+      | cons a as =>
+        by_cases hf : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd
+        rotate_left
+        · exact .inr ⟨nfD hf, sim_rfetch_ovf hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
+        obtain ⟨x', hst, h0, hpc'⟩ := sim_rfetch_ok hg hLa hLd hs0 hpc hat ha hf
+        have e : WordDialect.exec WordDialect.Instr.rfetch s = s.fall (a :: s.dstack) := by
+          simp [WordDialect.exec, ha]
+        rw [e]
+        exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
     | halt =>
       rw [exec_halt]
       exact .inl <| sim_halted ⟨x, sim_halt hs0 hpc hat, hs0⟩

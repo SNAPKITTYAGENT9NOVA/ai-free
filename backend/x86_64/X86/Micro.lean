@@ -26,20 +26,24 @@ theorem ld_stack {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hs : Rel0 c p s
   rw [hread]
 
 theorem mov_rel0 {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hs : Rel0 c p s x) (rd : Reg)
-    (hr : rd ≠ r15 ∧ rd ≠ r14 ∧ rd ≠ r13 ∧ rd ≠ r12 ∧ rd ≠ rsp) (v : W) :
+    (hr : rd ≠ r15 ∧ rd ≠ r14 ∧ rd ≠ r13 ∧ rd ≠ r12 ∧ rd ≠ rsp ∧ rd ≠ rbp) (v : W) :
     Rel0 c p s (x.mov rd v) := by
-  refine hs.congr rfl ?_ ?_ ?_ ?_ ?_ <;>
-    simp [M.mov, M.setReg, M.adv, hr.1, hr.2.1, hr.2.2.1, hr.2.2.2.1, hr.2.2.2.2, Ne.symm hr.1, Ne.symm hr.2.1, Ne.symm hr.2.2.1, Ne.symm hr.2.2.2.1, Ne.symm hr.2.2.2.2]
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hr
+  refine hs.congr rfl ?_ ?_ ?_ ?_ ?_ ?_ <;>
+    simp [M.mov, M.setReg, M.adv, Ne.symm h1, Ne.symm h2, Ne.symm h3, Ne.symm h4, Ne.symm h5,
+      Ne.symm h6]
 
 theorem arith_rel0 {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hs : Rel0 c p s x) (rd : Reg)
-    (hr : rd ≠ r15 ∧ rd ≠ r14 ∧ rd ≠ r13 ∧ rd ≠ r12 ∧ rd ≠ rsp) (v : W) :
+    (hr : rd ≠ r15 ∧ rd ≠ r14 ∧ rd ≠ r13 ∧ rd ≠ r12 ∧ rd ≠ rsp ∧ rd ≠ rbp) (v : W) :
     Rel0 c p s (x.arith rd v) := by
-  refine hs.congr rfl ?_ ?_ ?_ ?_ ?_ <;>
-    simp [M.arith, M.setReg, hr.1, hr.2.1, hr.2.2.1, hr.2.2.2.1, hr.2.2.2.2, Ne.symm hr.1, Ne.symm hr.2.1, Ne.symm hr.2.2.1, Ne.symm hr.2.2.2.1, Ne.symm hr.2.2.2.2]
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hr
+  refine hs.congr rfl ?_ ?_ ?_ ?_ ?_ ?_ <;>
+    simp [M.arith, M.setReg, Ne.symm h1, Ne.symm h2, Ne.symm h3, Ne.symm h4, Ne.symm h5,
+      Ne.symm h6]
 
 theorem flags_rel0 {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hs : Rel0 c p s x)
     (f : Option Flags) (q : Nat) : Rel0 c p s { x with flags := f, pc := q } :=
-  hs.congr rfl rfl rfl rfl rfl rfl
+  hs.congr rfl rfl rfl rfl rfl rfl rfl
 
 /-- Store a register into stack slot `j`: the relation holds for the stack with that slot replaced. -/
 theorem st_stack {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hg : Geom c) (hs : Rel0 c p s x)
@@ -58,13 +62,15 @@ theorem st_stack {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hg : Geom c) (h
   · simp only [exec, M.ea, hs.r15, hd, ea_nat]; rw [hw]
   · have hlen : (s.dstack.set j (x.regs rs)).length = s.dstack.length := by simp
     have hAlt : c.dEnd - 8 * s.dstack.length + 8 * j < 2 ^ 64 := by omega
-    refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, stack := ?_, regs := ?_,
-             mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := ?_, capR := hs.capR }
+    refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, rbp := ?_, stack := ?_,
+             regs := ?_, mem := ?_, rs := ?_, aux := ?_, irvalid := hs.irvalid, xvalid := ?_,
+             capD := ?_, capR := hs.capR, capA := hs.capA }
     · simpa [M.adv, hlen] using hs.r15
     · simpa [M.adv] using hs.r14
     · simpa [M.adv] using hs.r13
     · simpa [M.adv] using hs.r12
     · simpa [M.adv] using hs.rsp
+    · simpa [M.adv] using hs.rbp
     · intro i w hi
       simp only [hlen]
       have hik : i < s.dstack.length := by
@@ -111,6 +117,7 @@ theorem st_stack {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hg : Geom c) (h
       rw [read_write_nat hw hAlt hB]
       simp only [hne, ite_false]
       exact hs.rs i a hi
+    · exact aux_write_other hg.aEnd_lt hs.capA hs.aux hw hAlt (by rcases hg.dS_A with h | h <;> omega)
     · have := Memory.write?_valid hw
       show RegionsValid c mem'.valid
       rw [this]; exact hs.xvalid
@@ -126,13 +133,15 @@ theorem adj_drop {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hg : Geom c) (h
   have hval : x.regs Reg.r15 + BitVec.ofInt 64 δ = ofN (c.dEnd - 8 * (s.dstack.length - n)) := by
     rw [hs.r15, hd, ea_nat]; congr 1; omega
   refine ⟨by simp only [exec, hval], ?_⟩
-  refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, stack := ?_, regs := ?_,
-           mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := ?_, capR := hs.capR }
+  refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, rbp := ?_, stack := ?_,
+           regs := ?_, mem := ?_, rs := ?_, aux := hs.aux, irvalid := hs.irvalid, xvalid := ?_,
+           capD := ?_, capR := hs.capR, capA := hs.capA }
   · simp [M.arith, M.setReg]
   · simpa [M.arith, M.setReg] using hs.r14
   · simpa [M.arith, M.setReg] using hs.r13
   · simpa [M.arith, M.setReg] using hs.r12
   · simpa [M.arith, M.setReg] using hs.rsp
+  · simpa [M.arith, M.setReg] using hs.rbp
   · intro i w hi
     simp only [List.length_drop]
     rw [List.getElem?_drop] at hi
@@ -158,13 +167,15 @@ views unchanged. -/
 theorem others_write {c : Cfg} {p : Prog 64} {s : State 64} {x : M} (hg : Geom c)
     (hs : Rel0 c p s x) {A : Nat} {v : W} {mem' : Memory 64} (hA1 : c.dBase ≤ A) (hA2 : A < c.dEnd)
     (hw : x.mem.write? (ofN A) v = some mem') :
-    RegRel c mem' s.regs ∧ MemRel c mem' s.mem ∧ RsRel c p mem' s.rstack := by
+    RegRel c mem' s.regs ∧ MemRel c mem' s.mem ∧ RsRel c p mem' s.rstack ∧
+      AuxRel c mem' s.astack := by
   have hdE := hg.dEnd_lt
   have hAlt : A < 2 ^ 64 := by omega
   have hcapR := hs.capR
   have hrc := hg.rcap_le
   have hsp := hg.sp0_lt
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, aux_write_other hg.aEnd_lt hs.capA hs.aux hw hAlt
+    (by rcases hg.dS_A with h | h <;> omega)⟩
   · intro r hr
     have hrf := hg.rf_lt
     have hne : A ≠ c.rf + 8 * r := by rcases hg.dS_F with h | h <;> omega
@@ -229,15 +240,17 @@ theorem push_pair {c : Cfg} {p : Prog 64} {s : State 64} {x : M} {code : List (I
   have hst2 : step code x1 = .next { x1.adv with mem := mem' } := by
     rw [xstep_of_fetch (m := x1) (by rw [hpc1]; exact h2), e2]
   refine ⟨{ x1.adv with mem := mem' }, (XSteps.single hst1).trans (XSteps.single hst2), ?_, ?_, ?_⟩
-  · have ⟨hrg, hmm, hrr⟩ := others_write hg hs hA1 hA2 hw
+  · have ⟨hrg, hmm, hrr, hax⟩ := others_write hg hs hA1 hA2 hw
     have hlen : (x.regs rs :: s.dstack).length = s.dstack.length + 1 := by simp
-    refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, stack := ?_, regs := hrg,
-             mem := hmm, rs := hrr, irvalid := hs.irvalid, xvalid := ?_, capD := ?_, capR := hs.capR }
+    refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, rbp := ?_, stack := ?_,
+             regs := hrg, mem := hmm, rs := hrr, aux := hax, irvalid := hs.irvalid, xvalid := ?_,
+             capD := ?_, capR := hs.capR, capA := hs.capA }
     · simpa [hlen, M.adv, hx1, M.arith, M.setReg] using rfl
     · simpa [M.adv, hx1, M.arith, M.setReg] using hs.r14
     · simpa [M.adv, hx1, M.arith, M.setReg] using hs.r13
     · simpa [M.adv, hx1, M.arith, M.setReg] using hs.r12
     · simpa [M.adv, hx1, M.arith, M.setReg] using hs.rsp
+    · simpa [M.adv, hx1, M.arith, M.setReg] using hs.rbp
     · intro i w hi
       simp only [hlen]
       cases i with

@@ -115,7 +115,10 @@ theorem st_reg (hg : Geom c) (hs : Rel0 c p s x) {r : Nat} (hr : r < c.nregs) (r
     refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_,
              stack := wf_stack hg hs hw hAlt hA, regs := ?_, mem := wf_mem_rf hg hs hw hAlt ⟨hA1, hA2⟩,
              rs := wf_rs hg hs hw hAlt hA, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD,
-             capR := hs.capR }
+             capR := hs.capR, rbp := by simpa [M.adv] using hs.rbp,
+             aux := aux_write_other hg.aEnd_lt hs.capA hs.aux hw hAlt
+               (by rcases hg.dA_F with h | h <;> omega),
+             capA := hs.capA }
     · simpa [M.adv] using hs.r15
     · simpa [M.adv] using hs.r14
     · simpa [M.adv] using hs.r13
@@ -172,7 +175,10 @@ theorem st_mem (hg : Geom c) (hs : Rel0 c p s x) {a v : W} {m : Memory 64}
     refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_,
              stack := wf_stack hg hs hw' hAlt hA, regs := wf_regs_mb hg hs hw' hAlt ⟨hA1, hA2⟩,
              mem := ?_, rs := wf_rs hg hs hw' hAlt hA, irvalid := ?_, xvalid := ?_,
-             capD := hs.capD, capR := hs.capR }
+             capD := hs.capD, capR := hs.capR, rbp := by simpa [M.adv] using hs.rbp,
+             aux := aux_write_other hg.aEnd_lt hs.capA hs.aux hw' hAlt
+               (by rcases hg.dA_M with h | h <;> omega),
+             capA := hs.capA }
     · simpa [M.adv] using hs.r15
     · simpa [M.adv] using hs.r14
     · simpa [M.adv] using hs.r13

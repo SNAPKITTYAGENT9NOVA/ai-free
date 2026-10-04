@@ -30,7 +30,7 @@ theorem sim_jmp_ok (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
   have hat' : XAt code base [.jmp (off t)] := hat
   obtain ⟨f0, _⟩ := hat'
   refine ⟨{ x with pc := off t }, XSteps.single (by rw [xstep_of_fetch (by rw [hpc]; exact f0)]; rfl),
-    hs.congr rfl rfl rfl rfl rfl rfl, rfl⟩
+    hs.congr rfl rfl rfl rfl rfl rfl rfl, rfl⟩
 
 /-- `branch t`: both outcomes. -/
 theorem sim_branch_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x)
@@ -56,7 +56,7 @@ theorem sim_branch_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s 
   let x4 : M := { x3.adv with flags := some (logicFlags (x3.regs rax &&& x3.regs rax)) }
   have hst4 : step code x3 = .next x4 := by
     rw [xstep_of_fetch (m := x3) (fetch_cast f2 (by omega))]; rfl
-  have hr4 : Rel0 c p { s with dstack := d } x4 := hr3.congr rfl rfl rfl rfl rfl rfl
+  have hr4 : Rel0 c p { s with dstack := d } x4 := hr3.congr rfl rfl rfl rfl rfl rfl rfl
   have hpc4 : x4.pc = base + 4 + 3 := by simp [x4, M.adv]; omega
   have hfl4 : x4.flags = some (logicFlags (cc &&& cc)) := by simp [x4, hax3]
   by_cases hc : cc = 0#64
@@ -64,13 +64,13 @@ theorem sim_branch_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s 
       rw [xstep_of_fetch (m := x4) (fetch_cast f3 (by omega))]
       simp [exec, hfl4, hc, Cc.holds, logicFlags]
     refine ⟨x4.adv, (((hs1.trans hs2).trans hs3).trans (XSteps.single hst4)).trans
-      (XSteps.single hst5), hr4.congr rfl rfl rfl rfl rfl rfl, ?_⟩
+      (XSteps.single hst5), hr4.congr rfl rfl rfl rfl rfl rfl rfl, ?_⟩
     simp [hc, Word.isTrue, M.adv, hpc4, isize, ufSize]
   · have hst5 : step code x4 = .next { x4 with pc := off t } := by
       rw [xstep_of_fetch (m := x4) (fetch_cast f3 (by omega))]
       simp [exec, hfl4, hc, Cc.holds, logicFlags]
     refine ⟨{ x4 with pc := off t }, (((hs1.trans hs2).trans hs3).trans (XSteps.single hst4)).trans
-      (XSteps.single hst5), hr4.congr rfl rfl rfl rfl rfl rfl, ?_⟩
+      (XSteps.single hst5), hr4.congr rfl rfl rfl rfl rfl rfl rfl, ?_⟩
     simp [hc, Word.isTrue]
 
 theorem sim_halt (hs : Rel0 c p s x) (hpc : x.pc = base)
@@ -93,7 +93,7 @@ theorem sim_call_core (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t :
   have hA1 : c.sp0 - 8 * c.rcap ≤ c.sp0 - 8 * (s.rstack.length + 1) := by omega
   have hA2 : c.sp0 - 8 * (s.rstack.length + 1) < c.sp0 := by omega
   have hAlt : c.sp0 - 8 * (s.rstack.length + 1) < 2 ^ 64 := by omega
-  have hvalid := hs.xvalid.2.2.2 _ hA1 hA2
+  have hvalid := hs.xvalid.2.2.2.1 _ hA1 hA2
   have hsub : x.regs rsp - 8#64 = ofN (c.sp0 - 8 * (s.rstack.length + 1)) := by
     rw [hs.rsp]
     show ofN _ - ofN 8 = _
@@ -109,7 +109,11 @@ theorem sim_call_core (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t :
   have hdE := hg.dEnd_lt
   have hcap := hs.capD
   refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, stack := ?_, regs := ?_,
-           mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD, capR := ?_ }
+           mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD, capR := ?_,
+           rbp := by simpa [M.setReg] using hs.rbp,
+           aux := aux_write_other hg.aEnd_lt hs.capA hs.aux hw hAlt
+             (by rcases hg.dA_K with h | h <;> omega),
+           capA := hs.capA }
   · simpa [M.setReg] using hs.r15
   · simpa [M.setReg] using hs.r14
   · simpa [M.setReg] using hs.r13
@@ -213,7 +217,8 @@ theorem sim_ret_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base)
     rfl
   refine ⟨_, ((XSteps.single hst1).trans (XSteps.single hst2)).trans (XSteps.single hst3), ?_, rfl⟩
   refine { r15 := ?_, r14 := ?_, r13 := ?_, r12 := ?_, rsp := ?_, stack := ?_, regs := ?_,
-           mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD, capR := ?_ }
+           mem := ?_, rs := ?_, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD, capR := ?_,
+           rbp := by simpa [M.setReg, x1, M.adv] using hs.rbp, aux := hs.aux, capA := hs.capA }
   · simpa [M.setReg, x1, M.adv] using hs.r15
   · simpa [M.setReg, x1, M.adv] using hs.r14
   · simpa [M.setReg, x1, M.adv] using hs.r13

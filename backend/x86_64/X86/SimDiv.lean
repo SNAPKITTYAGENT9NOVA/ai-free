@@ -26,6 +26,7 @@ theorem rel0_scratch (hs : Rel0 c p s x) {x' : M} (hm : x'.mem = x.mem)
     (hr _ (by decide) (by decide) (by decide) (by decide))
     (hr _ (by decide) (by decide) (by decide) (by decide))
     (hr _ (by decide) (by decide) (by decide) (by decide))
+    (hr _ (by decide) (by decide) (by decide) (by decide))
 
 theorem zg_pass (hs : Rel0 c p s x) {b : W} (hb : x.regs rcx = b) (hne : b ≠ 0#64) {t : Nat}
     (ht : t = x.pc + 3)
@@ -42,7 +43,7 @@ theorem zg_pass (hs : Rel0 c p s x) {b : W} (hb : x.regs rcx = b) (hne : b ≠ 0
   have hg := guard_pass (code := code) (pc := x.pc + 1) (m := x1) (c := .ne) (t := .divideByZero)
     (f := logicFlags (b &&& b)) (by rw [e]; exact ⟨f1, f2, trivial⟩) hpc1 hfl hhold
   refine ⟨{ x1 with pc := x.pc + 1 + 2 }, (XSteps.single hst1).trans hg, ?_, by simp, rfl, rfl⟩
-  exact hs.congr rfl rfl rfl rfl rfl rfl
+  exact hs.congr rfl rfl rfl rfl rfl rfl rfl
 
 theorem zg_trap (hs : Rel0 c p s x) (hb : x.regs rcx = 0#64) {t : Nat}
     (hat : XAt code x.pc [.test rcx rcx, .jcc .ne t, .exitTrap .divideByZero]) (ht : t = x.pc + 3) :
@@ -177,7 +178,7 @@ theorem sdiv_core (hs : Rel0 c p s x) {a b : W} (ha : x.regs rax = a) (hb : x.re
   have hst1 : step code x = .next x1 := by rw [xstep_of_fetch f0]; rfl
   have hpc1 : x1.pc = x.pc + 1 := by simp [x1, M.adv]
   have hfl : x1.flags = some (subFlags b (BitVec.ofInt 64 (-1))) := by simp [x1, hb]
-  have hr1 : Rel0 c p s x1 := hs.congr rfl rfl rfl rfl rfl rfl
+  have hr1 : Rel0 c p s x1 := hs.congr rfl rfl rfl rfl rfl rfl rfl
   have hax1 : x1.regs rax = a := by simpa [x1, M.adv] using ha
   have hcx1 : x1.regs rcx = b := by simpa [x1, M.adv] using hb
   by_cases hb1 : b = BitVec.ofInt 64 (-1)
@@ -186,7 +187,7 @@ theorem sdiv_core (hs : Rel0 c p s x) {a b : W} (ha : x.regs rax = a) (hb : x.re
       rw [xstep_of_fetch (m := x1) (fetch_cast f1 (by omega))]
       simp [exec, hfl, holds_ne, hb1, M.adv]
     have hpc2 : x1.adv.pc = x.pc + 2 := by simp [M.adv, hpc1]
-    have hr2 : Rel0 c p s x1.adv := hr1.congr rfl rfl rfl rfl rfl rfl
+    have hr2 : Rel0 c p s x1.adv := hr1.congr rfl rfl rfl rfl rfl rfl rfl
     have hax2 : x1.adv.regs rax = a := by simpa [M.adv] using hax1
     let x3 := x1.adv.arith rax (0#64 - x1.adv.regs rax)
     have hst3 : step code x1.adv = .next x3 := by
@@ -196,7 +197,7 @@ theorem sdiv_core (hs : Rel0 c p s x) {a b : W} (ha : x.regs rax = a) (hb : x.re
     have hst4 : step code x3 = .next { x3 with pc := t2 } := by
       rw [xstep_of_fetch (m := x3) (fetch_cast f3 (by omega))]; rfl
     refine ⟨{ x3 with pc := t2 }, (((XSteps.single hst1).trans (XSteps.single hst2)).trans
-      (XSteps.single hst3)).trans (XSteps.single hst4), hr3.congr rfl rfl rfl rfl rfl rfl,
+      (XSteps.single hst3)).trans (XSteps.single hst4), hr3.congr rfl rfl rfl rfl rfl rfl rfl,
       by simp [ht2], ?_⟩
     have h3 : x3.regs rax = 0#64 - a := by simp [x3, M.arith, M.setReg, hax2]
     show x3.regs rax = a.sdiv b
@@ -207,7 +208,7 @@ theorem sdiv_core (hs : Rel0 c p s x) {a b : W} (ha : x.regs rax = a) (hb : x.re
       rw [xstep_of_fetch (m := x1) (fetch_cast f1 (by omega))]
       have hb1' : (b != BitVec.ofInt 64 (-1)) = true := by simpa using hb1
       simp only [exec, hfl, holds_ne, hb1', ite_true]
-    have hr2 : Rel0 c p s { x1 with pc := t1 } := hr1.congr rfl rfl rfl rfl rfl rfl
+    have hr2 : Rel0 c p s { x1 with pc := t1 } := hr1.congr rfl rfl rfl rfl rfl rfl rfl
     have hax2 : ({ x1 with pc := t1 } : M).regs rax = a := hax1
     have hcx2 : ({ x1 with pc := t1 } : M).regs rcx = b := hcx1
     let x3 : M := ({ x1 with pc := t1 } : M).mov rdx (if (({ x1 with pc := t1 } : M).regs rax).msb
@@ -337,7 +338,7 @@ theorem sim_select_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s 
   let x5 : M := { x4.adv with flags := some (logicFlags (x4.regs rcx &&& x4.regs rcx)) }
   have hst5 : step code x4 = .next x5 := by
     rw [xstep_of_fetch (m := x4) (fetch_cast f3 (by omega))]; rfl
-  have hr5 : Rel0 c p s x5 := hr4.congr rfl rfl rfl rfl rfl rfl
+  have hr5 : Rel0 c p s x5 := hr4.congr rfl rfl rfl rfl rfl rfl rfl
   have hpc5 : x5.pc = base + 4 + 4 := by simp [x5, M.adv]; omega
   have hfl5 : x5.flags = some (logicFlags (cc &&& cc)) := by simp [x5, hcx4]
   have hax5 : x5.regs rax = y := by simpa [x5, M.adv] using hax4

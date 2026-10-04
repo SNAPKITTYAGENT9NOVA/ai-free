@@ -13,6 +13,7 @@ Runtime conventions (all fixed here; the assembly runtime in `X86.Emit` establis
 | `r14`    | base of the virtual register file, cell `r` at `r14 + 8r` |
 | `r13`    | base of IR memory; IR word address `a` is at `r13 + 8a` |
 | `r12`    | value of `rsp` at entry; the native stack is the IR return stack |
+| `rbp`    | auxiliary-stack pointer; grows downward, `[rbp]` is the top, empty = `aEnd` |
 | `rax rcx rdx rbx` | scratch |
 
 IR `call`/`ret` are native `call`/`ret`. IR memory is valid exactly on `[0, memSize)`; every
@@ -20,7 +21,8 @@ IR `call`/`ret` are native `call`/`ret`. IR memory is valid exactly on `[0, memS
 counts are checked against `dEnd` before every instruction that pops, so stack underflow
 traps as in the IR semantics. Every instruction that grows the data stack first checks
 `r15 ≥ dBase + 8`, and `call` first checks `rsp ≥ r12 - (8 rcap - 16)`; on overflow the code
-exits 6 (`exitOvf`). IR stacks are unbounded, so this exit has no IR counterpart: it reports that
+exits 6 (`exitOvf`). `tor` likewise checks `rbp ≥ aBase + 8` before growing the auxiliary
+stack, and `fromr`/`rfetch` trap `returnUnderflow` when `rbp = aEnd` (empty). IR stacks are unbounded, so this exit has no IR counterpart: it reports that
 the run exceeded the target's stack capacity.
 
 Every instruction's code has a size that depends only on the instruction, so jump targets are
@@ -38,6 +40,8 @@ structure Layout where
   memSize : Nat
   dLim : W        -- `dBase + 8`: the data stack has room for one more word iff `r15 ≥ dLim`
   rGap : W        -- `8 rcap - 16`: a call has room iff `rsp ≥ r12 - rGap`
+  aEnd : W        -- empty auxiliary stack: `rbp = aEnd`
+  aLim : W        -- `aBase + 8`: the auxiliary stack has room for one more word iff `rbp ≥ aLim`
 
 /-- Stack-underflow guard for `k` operands. -/
 def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
@@ -54,6 +58,14 @@ def ovfD (L : Layout) (base : Nat) : List (Instr Nat) :=
 /-- Return-stack overflow guard: exit 6 unless a call has room on the native stack. -/
 def ovfR (L : Layout) (base : Nat) : List (Instr Nat) :=
   [.movRR rax r12, .movImm rcx L.rGap, .sub rax rcx, .cmp rsp rax, .jcc .ae (base + 6), .exitOvf]
+
+/-- Auxiliary-stack overflow guard: exit 6 unless one more word fits. -/
+def ovfA (L : Layout) (base : Nat) : List (Instr Nat) :=
+  [.movImm rax L.aLim, .cmp rbp rax, .jcc .ae (base + 4), .exitOvf]
+
+/-- Empty-auxiliary-stack guard: trap `returnUnderflow` when `rbp = aEnd`. -/
+def emptyA (L : Layout) (base : Nat) : List (Instr Nat) :=
+  [.movImm rax L.aEnd, .cmp rbp rax, .jcc .ne (base + 4), .exitTrap .returnUnderflow]
 
 def ccOf : WordDialect.Cond → Cc
   | .eq => .e | .ne => .ne | .ult => .b | .ule => .be | .ugt => .a | .uge => .ae
@@ -83,6 +95,9 @@ def isize : WordDialect.Instr 64 → Nat
   | .swap => ufSize 2 + 4
   | .over => ufSize 2 + 7
   | .rot => ufSize 3 + 6
+  | .tor => ufSize 1 + 8
+  | .fromr => 12
+  | .rfetch => 11
   | .halt => 1
 
 /-- Code for one IR instruction placed at x86 index `base`; `off t` is the x86 index of IR
@@ -153,11 +168,19 @@ def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr
     uf L 3 base ++
       [.load rax r15 0, .load rcx r15 8, .load rdx r15 16, .store r15 0 rdx, .store r15 8 rax,
        .store r15 16 rcx]
+  | .tor =>
+    uf L 1 base ++ ovfA L (base + ufSize 1) ++
+      [.load rax r15 0, .addImm r15 8, .addImm rbp (-8), .store rbp 0 rax]
+  | .fromr =>
+    emptyA L base ++ ovfD L (base + 4) ++
+      [.load rax rbp 0, .addImm rbp 8, .addImm r15 (-8), .store r15 0 rax]
+  | .rfetch =>
+    emptyA L base ++ ovfD L (base + 4) ++ [.load rax rbp 0, .addImm r15 (-8), .store r15 0 rax]
   | .halt => [.exitHalt]
 
 theorem lowerInstr_length (L : Layout) (base : Nat) (off : Nat → Nat) (i : WordDialect.Instr 64) :
     (lowerInstr L base off i).length = isize i := by
-  cases i <;> simp [lowerInstr, isize, uf, ufSize, ovfD, ovfR] <;> (try split) <;> simp
+  cases i <;> simp [lowerInstr, isize, uf, ufSize, ovfD, ovfR, ovfA, emptyA] <;> (try split) <;> simp
 
 /-- Prefix sums of instruction sizes: `offs p k` is the x86 index of IR instruction `k`.
 For `k` past the end it is the index of the final bad-pc stub. -/
