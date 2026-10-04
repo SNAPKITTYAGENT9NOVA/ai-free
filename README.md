@@ -119,10 +119,10 @@ Run the audit after building:
 lake env lean formal/Audit.lean
 ```
 
-The current audit reports dependencies of theorems in the `WordDialect`
-namespace, allowing Lean's standard `propext`, `Quot.sound`, and
-`Classical.choice` axioms. It imports the x86-64 library but does not import
-`Wasm`, and it reports unexpected axioms without explicitly failing the command.
+The audit reports the axiom dependencies of every theorem in the `WordDialect`
+namespace across all libraries, including both backends. Lean's standard
+`propext`, `Quot.sound`, and `Classical.choice` are allowed; any other axiom is
+reported as an error, so the command (and CI) fails.
 See [next steps](NEXT_STEPS.md) for proposed improvements.
 
 ## Contributing
