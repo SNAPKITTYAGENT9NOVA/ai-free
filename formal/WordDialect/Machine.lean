@@ -12,6 +12,12 @@ Stack convention: `dstack` is a list whose head is the top of stack. A binary op
 on `a b` (with `b` on top) computes `a op b`, as in Forth.
 
 Code addresses are instruction indices (`Nat`), so control flow is ISA-neutral.
+
+Besides the return stack of code addresses (`rstack`, used only by `call`/`ret`) there is an
+auxiliary data stack (`astack`) of words, used only by `tor` (move the data-stack top onto it),
+`fromr` (move its top back) and `rfetch` (copy its top). `call`/`ret` never touch it, so a value
+parked there survives calls and recursion; this is what Forth's `>R`, `R>`, `R@` and `DO … LOOP`
+need. Taking from an empty auxiliary stack traps `returnUnderflow`.
 Registers are an unbounded file of virtual registers (`Nat → Word n`); mapping them onto
 physical registers is a backend concern.
 -/
@@ -34,6 +40,7 @@ inductive Instr (n : Nat) where
   | push   (r : Nat)
   | pop    (r : Nat)
   | dup | drop | swap | over | rot
+  | tor | fromr | rfetch
   | halt
 
 inductive Trap where
@@ -48,6 +55,7 @@ structure State (n : Nat) where
   pc     : Nat
   dstack : List (Word n)
   rstack : List Nat
+  astack : List (Word n)
   regs   : Nat → Word n
   mem    : Memory n
 
@@ -116,6 +124,15 @@ def exec {n : Nat} (i : Instr n) (s : State n) : Outcome n :=
   | .swap, b :: a :: d => s.fall (a :: b :: d)
   | .over, b :: a :: d => s.fall (a :: b :: a :: d)
   | .rot,  c :: b :: a :: d => s.fall (a :: c :: b :: d)
+  | .tor, a :: d => .next { s with pc := s.pc + 1, dstack := d, astack := a :: s.astack }
+  | .fromr, d =>
+      match s.astack with
+      | a :: as => .next { s with pc := s.pc + 1, dstack := a :: d, astack := as }
+      | [] => .trapped .returnUnderflow
+  | .rfetch, d =>
+      match s.astack with
+      | a :: _ => s.fall (a :: d)
+      | [] => .trapped .returnUnderflow
   | .halt, _ => .halted s
   | _, _ => .trapped .stackUnderflow
 
