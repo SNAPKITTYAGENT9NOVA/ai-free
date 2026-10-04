@@ -13,14 +13,16 @@ namespace Wasm
 theorem sim_jmp (hc : c < p.length ∨ c = p.length) {code : List WI} {t : Nat}
     (hat : code = [i32c (min t n)]) :
     ∃ x', execL code x x' ∧ x'.pc = ofN (min t n) := by
-  sorry
+  refine ⟨{ x with stack := .i32 (ofN (min t n)) :: x.stack }, by simp [hat, execL, stepI, i32c], rfl⟩
 
 /-- Conditional branch: if nonzero, jump to target; else fall through. -/
 theorem sim_branch_ok {code : List WI} {c_val d : Word 64} {t : Nat}
     (hstack : s.dstack = c_val :: d) (hc : Word.isTrue c_val = true)
     (hat : code = uf L 1 ++ [i32c (min t n), i32c (k + 1)] ++ ldS 0 ++ [.i64const 0#64, .i64ne, .select] ++ spAdd 8) :
     ∃ x', execL code x x' ∧ x'.pc = ofN (min t n) := by
-  sorry
+  have hc_ne : c_val ≠ 0#64 := Word.isTrue_iff.mp hc
+  use { x with stack := .i32 (ofN (min t n)) :: x.stack }
+  refine ⟨by simp [hat, execL_append, execL, stepI, i32c, ldS, spAdd, hc_ne], rfl⟩
 
 theorem sim_branch_fall {code : List WI} {c_val d : Word 64} {t : Nat} (k : Nat)
     (hstack : s.dstack = c_val :: d) (hc : Word.isTrue c_val = false)
@@ -54,7 +56,7 @@ theorem sim_ret_trap {code : List WI}
 theorem sim_halt {code : List WI}
     (hat : code = [.exitHalt]) :
     execI code x (.halted x) := by
-  sorry
+  simp [hat, execI, stepI]
 
 end Wasm
 end WordDialect
