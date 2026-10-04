@@ -22,6 +22,9 @@ run or emit built-in samples; they do not parse arbitrary source files.
 | `backend/x86_64/` | x86-64 model, lowering, assembly emission, simulation proofs, and `wordc` |
 | `backend/wasm/` | WebAssembly model, lowering, WAT emission, simulation and whole-program preservation proofs, and `wasmw` |
 
+For a file-by-file tour of every Lean module, with diagrams of the pipeline, the proof
+structure of each backend and the trust boundaries, see [`docs/README.md`](docs/README.md).
+
 The authoritative IR semantics are in
 [`formal/WordDialect/Machine.lean`](formal/WordDialect/Machine.lean).
 Words are parameterized by bit width; both executable backends use 64-bit words.
