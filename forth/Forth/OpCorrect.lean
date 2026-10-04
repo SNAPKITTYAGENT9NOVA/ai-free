@@ -18,12 +18,14 @@ theorem compileOp_straight {n : Nat} (o : Op) :
   cases o <;> simp [compileOp, cmpFlagCode, Instr.isStraight]
 
 theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
-    (h : o.sem ⟨s.dstack, s.mem⟩ = .ok st') :
+    (h : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .ok st') :
     execSeq (compileOp o) s =
       .next { s with pc := s.pc + (compileOp o : List (Instr n)).length,
-                     dstack := st'.stack, mem := st'.mem } := by
+                     dstack := st'.stack, mem := st'.mem,
+                     astack := st'.rstack } := by
   obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
+    rcases as with _ | ⟨u, _ | ⟨v, _ | ⟨w, as⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>
     first
@@ -32,10 +34,11 @@ theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
          simp [compileOp, cmpFlagCode, execSeq, exec, State.fall, flag, BitVec.mul_comm, *])
 
 theorem compileOp_err {n : Nat} (o : Op) (s : State n) (t : Trap)
-    (h : o.sem ⟨s.dstack, s.mem⟩ = .error t) :
+    (h : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .error t) :
     execSeq (compileOp o) s = .trapped t := by
   obtain ⟨pc, d, rs, as, regs, mem⟩ := s
   cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, d⟩⟩⟩ <;>
+    rcases as with _ | ⟨u, _ | ⟨v, _ | ⟨w, as⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>
     first

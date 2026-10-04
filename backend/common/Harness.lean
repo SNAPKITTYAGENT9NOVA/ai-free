@@ -150,6 +150,24 @@ def samplesFrontends : List Sample :=
        : SUM ( n -- 0+...+n ) DUP 0= IF EXIT THEN DUP 1 - RECURSE + ;\n\
        1071 462 GCD  20 SUM"
   , forthTextSample "forth_text_exit_dead_code" ": F 1 EXIT 2 3 ; : G F F + EXIT F ; G"
+  , forthTextSample "forth_text_do_loop_sum" "0 10 0 DO I + LOOP  0 1 0 DO I 7 + + LOOP"
+  , forthTextSample "forth_text_nested_loops" "0 3 0 DO 4 0 DO I J * + LOOP LOOP"
+  , forthTextSample "forth_text_rstack_across_call"
+      ": BUMP ( R: x -- x+1 ) R> 1 + >R ; : PEEK R@ ; 5 >R BUMP BUMP PEEK R>"
+  , forthTextSample "forth_text_rstack_recursive"
+      ": SUMR ( n -- 0+...+n ) DUP 0= IF EXIT THEN DUP >R 1 - RECURSE R> + ;\n10 SUMR"
+  , forthTextSample "forth_text_trap_fromr_empty" "1 2 R>"
+  , forthTextSample "forth_text_trap_rfetch_empty" "1 >R R> R@"
+  , forthTextSample "forth_text_loop_calls_loop"
+      ": TRI ( n -- 0+...+n-1 ) 0 SWAP 0 DO I + LOOP ;\n0 6 1 DO I TRI + LOOP  4 TRI"
+  , forthTextSample "forth_text_loop_exit"
+      ": FIND3 10 0 DO I 3 = IF I EXIT THEN LOOP 99 ; FIND3 R> R>"
+  , forthTextSample "forth_text_loop_recursive"
+      ": F ( acc n -- acc' ) DUP IF DUP 0 DO SWAP I + SWAP LOOP 1 - RECURSE ELSE DROP THEN ;\n\
+       0 3 F"
+  , forthTextSample "forth_text_trap_do_underflow" "1 DO LOOP"
+  , forthTextSample "forth_text_trap_loop_rdrop" "3 0 DO R> DROP LOOP"
+  , forthTextSample "forth_text_trap_j_outside" "1 >R 2 >R J"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

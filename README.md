@@ -87,18 +87,21 @@ last argument is the number of IR memory words (default 16):
 ```
 
 [`examples/forth/`](examples/forth) has sample programs, including a recursive
-word and a trap two calls deep.
+word, a trap two calls deep, and `DO … LOOP` / `>R R>` (`loops.fs`).
 
 ## Proof and validation status
 
 - Forth has a compilation correctness proof for its modeled subset, including
   colon definitions (`: name ... ;`, recursion and `RECURSE` allowed) lowered
   to IR `call`/`ret`, `EXIT` (lowered to `ret`), `VARIABLE` (memory cells
-  `0 … k-1`), `CONSTANT`, `0=` and `MOD`:
+  `0 … k-1`), `CONSTANT`, `0=`, `MOD`, the return-data stack words
+  `>R R> R@` (lowered to the IR auxiliary stack `tor`/`fromr`/`rfetch`, which
+  `call`/`ret` never touch) and `DO … LOOP` with `I` and `J` (loop parameters
+  on that stack, so they survive calls and recursion):
   `WordDialect.Forth.Program.compile_correct` in
-  [`Forth/Correct.lean`](forth/Forth/Correct.lean). `>R R>` and `DO … LOOP`
-  are not supported: the IR return stack cannot hold data (see
-  [NEXT_STEPS.md](NEXT_STEPS.md)). Forth source text is parsed by `Forth.parse`
+  [`Forth/Correct.lean`](forth/Forth/Correct.lean). Because the return-data
+  stack is separate from call frames, unbalanced `>R`/`R>` across `EXIT` or a
+  call is defined behaviour (see `Forth/Semantics.lean`). Forth source text is parsed by `Forth.parse`
   ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); `Forth.print` prints a
   program back, and `WordDialect.Forth.parse_print` proves
   `parse (print P) = .ok P` for every well-formed program
