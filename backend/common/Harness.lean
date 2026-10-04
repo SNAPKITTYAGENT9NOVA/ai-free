@@ -24,7 +24,9 @@ structure Sample where
   prog : Prog 64
   mem : List Nat
   nregs : Nat := 4
-
+  /-- Set when the sample could not be built (e.g. Forth source failed to parse); `check`
+  then reports an error instead of running anything. -/
+  buildError : Option String := none
 
 def mkMem (img : List Nat) : Memory 64 := Memory.ofImage img
 
@@ -72,6 +74,8 @@ def parseDump (s : Sample) (b : ByteArray) : Option Result :=
 abbrev Runner := Sample → IO (Except String Result)
 
 def check (run : Runner) (s : Sample) : IO Bool := do
+  if let some e := s.buildError then
+    IO.println s!"ERROR {s.name}: {e}"; return false
   let exp := expected s
   match exp with
   | .timeout => IO.println s!"SKIP  {s.name} (IR did not terminate within fuel)"; return true
@@ -88,6 +92,13 @@ def check (run : Runner) (s : Sample) : IO Bool := do
 
 def forthSample (name : String) (b : Forth.Block) (mem : List Nat := List.replicate 16 0) : Sample :=
   { name, prog := Forth.compileProgram b, mem }
+
+/-- A sample written as Forth source text. A parse failure becomes a reported error. -/
+def forthTextSample (name : String) (src : String) (mem : List Nat := List.replicate 16 0) :
+    Sample :=
+  match Forth.parse src with
+  | .ok P => { name, prog := P.compile, mem }
+  | .error e => { name, prog := [], mem, buildError := some s!"Forth parse error: {e}" }
 
 open Forth in
 def forthOps (ops : List Op) : Block := ops.foldr (fun o b => .op o b) .nil
@@ -112,6 +123,14 @@ def samplesFrontends : List Sample :=
   , forthSample "forth_trap_div0" (forthOps [.lit 1, .lit 0, .div])
   , forthSample "forth_trap_underflow" (forthOps [.add])
   , forthSample "forth_trap_badaddr" (forthOps [.lit 1000, .fetch])
+  , forthTextSample "forth_text_sum_recursive" Forth.sumSrc
+  , forthTextSample "forth_text_fib_recursive"
+      ": FIB ( n -- fib[n] ) DUP 2 < IF ELSE DUP 1 - FIB SWAP 2 - FIB + THEN ;\n15 FIB"
+  , forthTextSample "forth_text_gcd_words"
+      ": MOD ( a b -- a mod b ) OVER OVER / * - ;\n\
+       : GCD ( a b -- g ) BEGIN SWAP OVER MOD DUP 0 = UNTIL DROP ;\n\
+       1071 462 GCD 3 !  3 @  \\ store the result at address 3, read it back"
+  , forthTextSample "forth_text_trap_in_word" ": INNER 1 0 / ; : OUTER 7 INNER 8 ; 5 OUTER"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

@@ -23,12 +23,10 @@ def dEnd : Nat := dBase + 8 * capacity
 /-- Return-stack capacity in entries: 512 KiB of the native stack below the entry `rsp`. -/
 def rcap : Nat := 65536
 
-def layoutFor (s : Sample) : X86.Layout :=
-  { dEnd := BitVec.ofNat 64 dEnd, memSize := s.mem.length, dLim := BitVec.ofNat 64 (dBase + 8),
-    rGap := BitVec.ofNat 64 (8 * rcap - 16) }
-
 def runtimeFor (s : Sample) : X86.Emit.Runtime :=
-  { dEnd := dEnd, capacity := capacity, memImage := s.mem, nregs := s.nregs }
+  { dEnd := dEnd, capacity := capacity, rcap := rcap, memImage := s.mem, nregs := s.nregs }
+
+def layoutFor (s : Sample) : X86.Layout := (runtimeFor s).layout
 
 def asmFor (s : Sample) : String :=
   X86.Emit.program (runtimeFor s) (X86.lowerProg (layoutFor s) s.prog)

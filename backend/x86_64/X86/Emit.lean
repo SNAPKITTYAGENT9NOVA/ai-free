@@ -83,15 +83,24 @@ def instr : Instr Nat → String
 def body (code : List (Instr Nat)) : String :=
   String.intercalate "\n" (code.zipIdx.map fun (i, k) => s!"{lbl k}:\n\t{instr i}") ++ "\n"
 
-/-- Data-stack placement: `capacity` words ending at `dEnd`. -/
+/-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack capacity in entries,
+IR memory image and register-file size. -/
 structure Runtime where
   dEnd : Nat
   capacity : Nat
+  rcap : Nat
   memImage : List Nat
   nregs : Nat
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 8 * r.capacity
 
+/-- The lowering's view of the runtime: the constants the guards and bounds checks use. -/
+def Runtime.layout (r : Runtime) : Layout :=
+  { dEnd := BitVec.ofNat 64 r.dEnd, memSize := r.memImage.length,
+    dLim := BitVec.ofNat 64 (r.dBase + 8), rGap := BitVec.ofNat 64 (8 * r.rcap - 16) }
+
+/-- The runtime prologue. Its model is `X86.Emit.prologueCode` (`X86/Init.lean`), where each `lea`
+is the `movImm` of the address the linker resolves the symbol to; keep the two in step. -/
 def prologue (r : Runtime) : String :=
   "\t.intel_syntax noprefix\n\t.text\n\t.globl _start\n_start:\n" ++
   "\tmov r12, rsp\n\tlea r13, [rip + irmem]\n\tlea r14, [rip + regfile]\n" ++

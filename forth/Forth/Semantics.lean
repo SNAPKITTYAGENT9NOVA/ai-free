@@ -27,6 +27,7 @@ inductive Op where
   | and | or | xor | invert | lshift | rshift
   | eq | ne | lt | gt | ult | ugt
   | fetch | store
+  deriving DecidableEq, Repr
 
 structure FState (n : Nat) where
   stack : List (Word n)
@@ -72,49 +73,71 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
 end Op
 
 /-- A Forth block. `ite t e rest` is `IF t ELSE e THEN rest`; `untilL body rest` is
-`BEGIN body UNTIL rest`. -/
+`BEGIN body UNTIL rest`; `call i rest` executes the colon definition with index `i` in the
+dictionary, then `rest`. -/
 inductive Block where
   | nil
   | op (o : Op) (rest : Block)
   | ite (t e rest : Block)
   | untilL (body rest : Block)
+  | call (i : Nat) (rest : Block)
+  deriving DecidableEq, Repr
 
-/-- Big-step semantics. `Run b st r` says running `b` from `st` produces result `r`.
-Non-terminating runs have no derivation. -/
-inductive Run {n : Nat} : Block → FState n → Except Trap (FState n) → Prop where
-  | nil {st} : Run .nil st (.ok st)
+/-- A Forth program: a dictionary of colon definitions (word `i` is `defs[i]`) and the main
+block. Definitions may call themselves and each other. -/
+structure Program where
+  defs : List Block
+  main : Block
+  deriving DecidableEq, Repr
+
+/-- Big-step semantics. `Run defs b st r` says running `b` from `st`, with dictionary `defs`,
+produces result `r`. Non-terminating runs (including unbounded recursion) have no derivation.
+
+Calling an index outside the dictionary is an explicit error, `badPc`: it is the trap the
+lowered code raises, since such a call targets the address just past the program. The parser
+never produces such a call. -/
+inductive Run {n : Nat} (defs : List Block) : Block → FState n → Except Trap (FState n) → Prop where
+  | nil {st} : Run defs .nil st (.ok st)
   | opOk {o rest st st' r} :
-      o.sem st = .ok st' → Run rest st' r → Run (.op o rest) st r
+      o.sem st = .ok st' → Run defs rest st' r → Run defs (.op o rest) st r
   | opErr {o rest st t} :
-      o.sem st = .error t → Run (.op o rest) st (.error t)
+      o.sem st = .error t → Run defs (.op o rest) st (.error t)
   | iteUnder {t e rest m} :
-      Run (.ite t e rest) ⟨[], m⟩ (.error .stackUnderflow)
+      Run defs (.ite t e rest) ⟨[], m⟩ (.error .stackUnderflow)
   | iteTrue {t e rest c d m st1 r} :
-      Word.isTrue c = true → Run t ⟨d, m⟩ (.ok st1) → Run rest st1 r →
-      Run (.ite t e rest) ⟨c :: d, m⟩ r
+      Word.isTrue c = true → Run defs t ⟨d, m⟩ (.ok st1) → Run defs rest st1 r →
+      Run defs (.ite t e rest) ⟨c :: d, m⟩ r
   | iteTrueErr {t e rest c d m x} :
-      Word.isTrue c = true → Run t ⟨d, m⟩ (.error x) →
-      Run (.ite t e rest) ⟨c :: d, m⟩ (.error x)
+      Word.isTrue c = true → Run defs t ⟨d, m⟩ (.error x) →
+      Run defs (.ite t e rest) ⟨c :: d, m⟩ (.error x)
   | iteFalse {t e rest c d m st1 r} :
-      Word.isTrue c = false → Run e ⟨d, m⟩ (.ok st1) → Run rest st1 r →
-      Run (.ite t e rest) ⟨c :: d, m⟩ r
+      Word.isTrue c = false → Run defs e ⟨d, m⟩ (.ok st1) → Run defs rest st1 r →
+      Run defs (.ite t e rest) ⟨c :: d, m⟩ r
   | iteFalseErr {t e rest c d m x} :
-      Word.isTrue c = false → Run e ⟨d, m⟩ (.error x) →
-      Run (.ite t e rest) ⟨c :: d, m⟩ (.error x)
+      Word.isTrue c = false → Run defs e ⟨d, m⟩ (.error x) →
+      Run defs (.ite t e rest) ⟨c :: d, m⟩ (.error x)
   | untilBodyErr {body rest st x} :
-      Run body st (.error x) → Run (.untilL body rest) st (.error x)
+      Run defs body st (.error x) → Run defs (.untilL body rest) st (.error x)
   | untilUnder {body rest st m} :
-      Run body st (.ok ⟨[], m⟩) → Run (.untilL body rest) st (.error .stackUnderflow)
+      Run defs body st (.ok ⟨[], m⟩) → Run defs (.untilL body rest) st (.error .stackUnderflow)
   | untilExit {body rest st c d m r} :
-      Run body st (.ok ⟨c :: d, m⟩) → Word.isTrue c = true → Run rest ⟨d, m⟩ r →
-      Run (.untilL body rest) st r
+      Run defs body st (.ok ⟨c :: d, m⟩) → Word.isTrue c = true → Run defs rest ⟨d, m⟩ r →
+      Run defs (.untilL body rest) st r
   | untilAgain {body rest st c d m r} :
-      Run body st (.ok ⟨c :: d, m⟩) → Word.isTrue c = false →
-      Run (.untilL body rest) ⟨d, m⟩ r → Run (.untilL body rest) st r
+      Run defs body st (.ok ⟨c :: d, m⟩) → Word.isTrue c = false →
+      Run defs (.untilL body rest) ⟨d, m⟩ r → Run defs (.untilL body rest) st r
+  | callOk {i rest st body st1 r} :
+      defs[i]? = some body → Run defs body st (.ok st1) → Run defs rest st1 r →
+      Run defs (.call i rest) st r
+  | callErr {i rest st body x} :
+      defs[i]? = some body → Run defs body st (.error x) → Run defs (.call i rest) st (.error x)
+  | callUndef {i rest st} :
+      defs[i]? = none → Run defs (.call i rest) st (.error .badPc)
 
 /-- The run relation is functional: a block and a state determine the result. -/
-theorem Run.deterministic {n : Nat} {b : Block} {st : FState n} {r₁ r₂ : Except Trap (FState n)}
-    (h₁ : Run b st r₁) (h₂ : Run b st r₂) : r₁ = r₂ := by
+theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState n}
+    {r₁ r₂ : Except Trap (FState n)}
+    (h₁ : Run defs b st r₁) (h₂ : Run defs b st r₂) : r₁ = r₂ := by
   induction h₁ generalizing r₂ with
   | nil => cases h₂; rfl
   | opOk hs _ ih =>
@@ -176,6 +199,22 @@ theorem Run.deterministic {n : Nat} {b : Block} {st : FState n} {r₁ r₂ : Exc
     | untilUnder hb' => have := ihb hb'; cases this
     | untilExit hb' hc' _ => have := ihb hb'; cases this; rw [hc] at hc'; cases hc'
     | untilAgain hb' _ hl' => have := ihb hb'; cases this; exact ihl hl'
+  | callOk hd hb hr ihb ihr =>
+    cases h₂ with
+    | callOk hd' hb' hr' =>
+      rw [hd] at hd'; cases hd'; have := ihb hb'; cases this; exact ihr hr'
+    | callErr hd' hb' => rw [hd] at hd'; cases hd'; have := ihb hb'; cases this
+    | callUndef hd' => rw [hd] at hd'; cases hd'
+  | callErr hd hb ihb =>
+    cases h₂ with
+    | callOk hd' hb' _ => rw [hd] at hd'; cases hd'; have := ihb hb'; cases this
+    | callErr hd' hb' => rw [hd] at hd'; cases hd'; have := ihb hb'; cases this; rfl
+    | callUndef hd' => rw [hd] at hd'; cases hd'
+  | callUndef hd =>
+    cases h₂ with
+    | callOk hd' => rw [hd] at hd'; cases hd'
+    | callErr hd' => rw [hd] at hd'; cases hd'
+    | callUndef => rfl
 
 end Forth
 end WordDialect

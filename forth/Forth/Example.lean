@@ -13,7 +13,7 @@ namespace Forth
 def fiveDupPlus : Block := .op (.lit 5) (.op .dup (.op .add .nil))
 
 theorem fiveDupPlus_run (mem : Memory 64) :
-    Run fiveDupPlus ⟨[], mem⟩ (.ok ⟨[10#64], mem⟩) :=
+    Run [] fiveDupPlus ⟨[], mem⟩ (.ok ⟨[10#64], mem⟩) :=
   .opOk (st' := ⟨[5#64], mem⟩) (by simp [Op.sem])
     (.opOk (st' := ⟨[5#64, 5#64], mem⟩) (by simp [Op.sem])
       (.opOk (st' := ⟨[10#64], mem⟩) (by simp [Op.sem]) .nil))

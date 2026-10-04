@@ -78,7 +78,15 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
 
 ## Proof and validation status
 
-- Forth and BCPL have compilation correctness proofs for their modeled subsets.
+- Forth has a compilation correctness proof for its modeled subset, including
+  colon definitions (`: name ... ;`, recursion allowed) lowered to IR
+  `call`/`ret`: `WordDialect.Forth.Program.compile_correct` in
+  [`Forth/Correct.lean`](forth/Forth/Correct.lean). Forth source text is parsed
+  by `Forth.parse` ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); the parser
+  is not verified, only checked on concrete inputs
+  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the
+  harness samples written as source text.
+  BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.
 - The x86-64 model has whole-program preservation theorems in
@@ -92,6 +100,13 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry, bounded code addresses, and valid register indices.
   `wordc check` also runs three unbounded programs and requires exit 6.
+  `WordDialect.X86.Emit.binary_correct` starts from the binary's entry point:
+  the runtime prologue's effect is proved, and what the loader provides at
+  `_start` (entry `rsp`, the `.data` image, the zero-filled `.bss` register
+  file, addressable regions, disjoint placement) is one explicit assumption,
+  `Loader.Holds`. From there the code reaches the IR outcome from `State.init`,
+  or exits 6. Its program hypotheses are `17 * length < 2^64` and valid
+  register indices. See [`X86/Init.lean`](backend/x86_64/X86/Init.lean).
 - The WebAssembly model has whole-program preservation theorems in
   [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
   loop from a related state halts in a related state when the IR halts, and
