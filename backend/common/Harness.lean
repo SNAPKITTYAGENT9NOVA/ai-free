@@ -13,7 +13,7 @@ and reports either the dumped final state or the exit code of a trap. The harnes
 program under the Lean semantics (`WordDialect.run`) and compares.
 
 Trap exit codes are common to all backends: 1 stackUnderflow, 2 badAddress, 3 divideByZero,
-4 badPc, 5 returnUnderflow. On halt a backend writes, as raw little-endian 64-bit words, the data
+4 badPc, 5 returnUnderflow; 6 is a target stack overflow, which has no IR counterpart. On halt a backend writes, as raw little-endian 64-bit words, the data
 stack depth, the data stack (top first), the IR memory and the virtual registers.
 -/
 
@@ -26,9 +26,7 @@ structure Sample where
   nregs : Nat := 4
 
 
-def mkMem (img : List Nat) : Memory 64 :=
-  { cell := fun a => BitVec.ofNat 64 (img.getD a.toNat 0),
-    valid := fun a => decide (a.toNat < img.length) }
+def mkMem (img : List Nat) : Memory 64 := Memory.ofImage img
 
 inductive Result where
   | halted (stack mem regs : List Nat)

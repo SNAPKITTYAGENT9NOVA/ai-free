@@ -9,6 +9,12 @@ execution results.
 
 namespace WordDialect
 
+/-- IR memory initialised from a list of words: word `a` holds `img[a]` (modulo `2^n`), and exactly
+the addresses below `img.length` are valid. -/
+def Memory.ofImage {n : Nat} (img : List Nat) : Memory n :=
+  { cell := fun a => BitVec.ofNat n (img.getD a.toNat 0),
+    valid := fun a => decide (a.toNat < img.length) }
+
 /-- Start of execution: `pc = 0`, empty stacks, all registers zero, given memory. -/
 def State.init {n : Nat} (mem : Memory n) : State n :=
   { pc := 0, dstack := [], rstack := [], regs := fun _ => 0#n, mem := mem }
