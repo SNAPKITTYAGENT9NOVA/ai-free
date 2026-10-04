@@ -27,6 +27,7 @@ theorem XSteps.trans {code : List (Instr Nat)} {m m1 m2 : M}
 inductive XExec (code : List (Instr Nat)) : M → Out → Prop where
   | halt {m m' : M} : step code m = .halted m' → XExec code m (.halted m')
   | trap {m : M} {t : Trap} : step code m = .trapped t → XExec code m (.trapped t)
+  | ovf {m : M} : step code m = .overflow → XExec code m .overflow
   | next {m m1 : M} {o : Out} : step code m = .next m1 → XExec code m1 o → XExec code m o
 
 theorem XExec.of_steps {code : List (Instr Nat)} {m m1 : M} {o : Out}

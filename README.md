@@ -81,11 +81,17 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
 - Forth and BCPL have compilation correctness proofs for their modeled subsets.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.
-- The x86-64 model has a whole-program preservation theorem,
-  `WordDialect.X86.lowerProg_correct`, in
-  [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). Its assumptions include
-  valid memory geometry, bounded code addresses, valid register indices, and
-  sufficient stack capacity throughout execution.
+- The x86-64 model has whole-program preservation theorems in
+  [`X86/Correct.lean`](backend/x86_64/X86/Correct.lean). The generated code
+  checks for room before every instruction that grows the data stack and before
+  every `call` (the return stack is the native stack, capped at 65536 entries
+  below the entry `rsp`), and exits with code 6 when the stack is full.
+  `WordDialect.X86.lowerProg_correct_or_overflow` has no stack-capacity
+  assumption: the code reaches the IR outcome or exits 6.
+  `WordDialect.X86.lowerProg_correct` adds the assumption that the run stays
+  within capacity, and then the outcome is exactly the IR's. Both assume valid
+  memory geometry, bounded code addresses, and valid register indices.
+  `wordc check` also runs three unbounded programs and requires exit 6.
 - The WebAssembly model has whole-program preservation theorems in
   [`Wasm/Correct.lean`](backend/wasm/Wasm/Correct.lean). Running the dispatch
   loop from a related state halts in a related state when the IR halts, and

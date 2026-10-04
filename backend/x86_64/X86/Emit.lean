@@ -12,7 +12,7 @@ The runtime (`prologue`, `epilogue`) is the only hand-written assembly. It
 * sets `r12 r13 r14 r15` to the conventions in `X86.Lower`,
 * implements `exitHalt` as: write `depth`, the data stack, IR memory and the virtual register
   file to stdout (raw little-endian 64-bit words), then `exit(0)`,
-* implements `exitTrap t` as `exit(code t)`.
+* implements `exitTrap t` as `exit(code t)` and `exitOvf` (stack overflow) as `exit(6)`.
 -/
 
 namespace WordDialect
@@ -78,6 +78,7 @@ def instr : Instr Nat → String
   | .ret => "ret"
   | .exitHalt => "jmp .Lhalt"
   | .exitTrap t => s!"jmp .Ltrap{trapCode t}"
+  | .exitOvf => "jmp .Ltrap6"
 
 def body (code : List (Instr Nat)) : String :=
   String.intercalate "\n" (code.zipIdx.map fun (i, k) => s!"{lbl k}:\n\t{instr i}") ++ "\n"
@@ -108,7 +109,7 @@ def epilogue (r : Runtime) : String :=
   sysWrite "lea rsi, [rip + irmem]" (toString (8 * m)) ++
   sysWrite "lea rsi, [rip + regfile]" (toString (8 * r.nregs)) ++
   "\txor rdi, rdi\n\tjmp .Lexit\n" ++
-  String.join ((List.range 5).map fun k => s!".Ltrap{k + 1}:\n\tmov rdi, {k + 1}\n\tjmp .Lexit\n") ++
+  String.join ((List.range 6).map fun k => s!".Ltrap{k + 1}:\n\tmov rdi, {k + 1}\n\tjmp .Lexit\n") ++
   ".Lexit:\n\tmov rax, 60\n\tsyscall\n" ++
   "\t.data\n\t.balign 8\nirmem:\n" ++
   String.join (r.memImage.map fun v => s!"\t.quad {v}\n") ++

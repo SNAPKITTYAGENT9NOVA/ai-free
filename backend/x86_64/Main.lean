@@ -20,9 +20,12 @@ open WordDialect
 def dBase : Nat := 0x10000000
 def capacity : Nat := 65536
 def dEnd : Nat := dBase + 8 * capacity
+/-- Return-stack capacity in entries: 512 KiB of the native stack below the entry `rsp`. -/
+def rcap : Nat := 65536
 
 def layoutFor (s : Sample) : X86.Layout :=
-  { dEnd := BitVec.ofNat 64 dEnd, memSize := s.mem.length }
+  { dEnd := BitVec.ofNat 64 dEnd, memSize := s.mem.length, dLim := BitVec.ofNat 64 (dBase + 8),
+    rGap := BitVec.ofNat 64 (8 * rcap - 16) }
 
 def runtimeFor (s : Sample) : X86.Emit.Runtime :=
   { dEnd := dEnd, capacity := capacity, memImage := s.mem, nregs := s.nregs }
@@ -51,6 +54,22 @@ def runNative (s : Sample) : IO (Except String Result) := do
     return .ok (.trap code.toNat)
 
 
+/-- Programs whose IR run never terminates and grows a stack without bound: the native code must
+stop them with the overflow exit (code 6) instead of running off the end of a stack. -/
+def overflowSamples : List Sample :=
+  [ { name := "ovf_word_loop", prog := [.word 1#64, .jmp 0], mem := [] },
+    { name := "ovf_dup_loop", prog := [.word 1#64, .dup, .jmp 1], mem := [] },
+    { name := "ovf_call_loop", prog := [.call 0], mem := [] } ]
+
+def checkOverflow : IO Bool := do
+  let mut ok := true
+  for s in overflowSamples do
+    match ← runNative s with
+    | .ok (.trap 6) => IO.println s!"PASS  {s.name}  overflow exit 6"
+    | .ok got => IO.println s!"FAIL  {s.name}  expected overflow exit 6, got {repr got}"; ok := false
+    | .error e => IO.println s!"ERROR {s.name}: {e}"; ok := false
+  return ok
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["emit", name] =>
@@ -59,5 +78,7 @@ def main (args : List String) : IO UInt32 := do
     | none => IO.eprintln "unknown sample"; return 1
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
-    return (if ← checkAll runNative count then 0 else 1)
+    let agree ← checkAll runNative count
+    let ovf ← checkOverflow
+    return (if agree && ovf then 0 else 1)
   | _ => IO.eprintln "usage: wordc check [fuzzCount] | wordc emit <sample>"; return 2

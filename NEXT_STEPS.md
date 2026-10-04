@@ -2,18 +2,7 @@
 
 Suggested development order. Each item names the gap it closes in the current code.
 
-## 1. Discharge the stack-capacity hypothesis on x86-64
-
-The WebAssembly backend guards every stack-growing instruction and exits 6 on
-overflow, and `Wasm.lowerProg_correct_or_overflow` has no capacity hypothesis.
-`X86.lowerProg_correct` still assumes the IR run never exceeds the data-stack
-or native-stack capacity (`Fits`), because the x86-64 code does not check for
-overflow. Port the same design: a guard before every push and every `call`
-(the native `call` also uses the machine stack), exit 6 on overflow, and an
-`_or_overflow` theorem without `Fits`. Add the same unbounded-program checks to
-`wordc check`.
-
-## 2. Prove the runtime establishes the entry relation
+## 1. Prove the runtime establishes the entry relation
 
 `Wasm.init_rel` (and `X86.init_rel`) take the initial machine state as
 hypotheses: empty operand stack, `pc = 0`, `sp = dEnd`, `rp = rEnd`, and the
@@ -22,7 +11,7 @@ prologue that sets this up is emitted as text in `Wasm/Emit.lean` and is not
 modelled. Modelling the prologue (globals initialisation and data segments)
 would let the end-to-end theorem start from the module's actual entry state.
 
-## 3. Forth: word definitions and a text frontend
+## 2. Forth: word definitions and a text frontend
 
 The Forth subset has no colon definitions, and programs are built as Lean
 values; neither command-line tool parses source files.

@@ -10,13 +10,20 @@ Whole-program preservation: running the lowered x86 code from a state related to
   stack, virtual registers, IR memory and return stack agree with `s'`);
 * IR `trapped t`  ⇒  the x86 code exits with the same trap `t`.
 
-Hypotheses (all explicit):
-* `Geom c`            the memory regions are disjoint and within the 64-bit address space;
-* `L` matches `c`     data-stack end and IR memory size;
+Every instruction that grows the data stack, and every `call`, checks for room first and exits
+with `overflow` (exit code 6) when the stack is full, so there are two forms:
+
+* `lowerProg_correct_or_overflow` has no capacity hypothesis: the x86 code reaches the IR outcome
+  as above, or exits with `overflow` (the run needed more stack than the target provides);
+* `lowerProg_correct` additionally assumes the IR run stays within the capacities (`Fits` at every
+  reachable state); then no guard fires and the outcome is exactly the IR's.
+
+Hypotheses of both (all explicit):
+* `Geom c`            the memory regions are disjoint and within the 64-bit address space, the
+                      data stack holds at least one word and the return stack at least two;
+* `L` matches `c`     data-stack end and limit, return-stack gap, and IR memory size;
 * `hsz`               code indices fit in 64 bits;
-* `RegsOk`            every `push r`/`pop r` names a register inside the register file;
-* `hb`                the IR run stays within the stack capacities (`Fits`), because the native
-                      code does not check for overflow of the data stack or the native stack.
+* `RegsOk`            every `push r`/`pop r` names a register inside the register file.
 -/
 
 namespace WordDialect
@@ -37,56 +44,105 @@ def Final (c : Cfg) (p : Prog 64) (code : List (Instr Nat)) (x : M) : Outcome 64
 theorem offs_ge {p : Prog 64} {k : Nat} (h : p.length ≤ k) : offs p k = offs p p.length := by
   simp [offs, List.take_of_length_le h, List.take_length]
 
+/-- One IR step from a related state: the bad-pc stub, or the dispatched instruction. -/
+theorem step_sim {c : Cfg} {p : Prog 64} {L : Layout} (hg : Geom c)
+    (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 8))
+    (hLr : L.rGap = ofN (8 * c.rcap - 16)) (hsz : ∀ k, offs p k < 2 ^ 64) (hreg : RegsOk c p)
+    {s : State 64} {x : M} (hs : Rel c p s x) :
+    Sim c p (lowerProg L p) x (WordDialect.step p s) ∨
+      (¬ Fits c s ∧ XExec (lowerProg L p) x .overflow) := by
+  cases hi : p[s.pc]? with
+  | none =>
+    left
+    have hst : WordDialect.step p s = .trapped .badPc := by simp [WordDialect.step, hi]
+    rw [hst]
+    have hge : p.length ≤ s.pc := by
+      by_cases hh : s.pc < p.length
+      · rw [List.getElem?_eq_getElem hh] at hi; simp at hi
+      · omega
+    obtain ⟨f0, _⟩ := lowerProg_stub L p
+    have hpc : x.pc = offs p p.length := by rw [hs.2, offs_ge hge]
+    exact XExec.trap (by rw [xstep_of_fetch (by rw [hpc]; exact f0)]; rfl)
+  | some i =>
+    have hst : WordDialect.step p s = WordDialect.exec i s := by simp [WordDialect.step, hi]
+    rw [hst]
+    exact sim_exec hg hL hMs hLd hLr hsz hs hi (fun r hr => hreg s.pc i hi r hr)
+
+/-- Whole-program preservation, with no capacity hypothesis: the x86 code reaches the IR
+outcome, or exits with `overflow` because a stack was full. -/
+theorem lowerProg_correct_or_overflow {c : Cfg} {p : Prog 64} {L : Layout} (hg : Geom c)
+    (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 8))
+    (hLr : L.rGap = ofN (8 * c.rcap - 16)) (hsz : ∀ k, offs p k < 2 ^ 64) (hreg : RegsOk c p)
+    {s : State 64} {o : Outcome 64} (h : Exec p s o) :
+    ∀ {x : M}, Rel c p s x →
+      Final c p (lowerProg L p) x o ∨ XExec (lowerProg L p) x .overflow := by
+  induction h with
+  | @halt s s' hst =>
+    intro x hs
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨_, h6⟩
+    · exact .inl this
+    · exact .inr h6
+  | @trap s t hst =>
+    intro x hs
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨_, h6⟩
+    · exact .inl this
+    · exact .inr h6
+  | @next s s' o hst _ ih =>
+    intro x hs
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with ⟨x1, hsteps, hrel⟩ | ⟨_, h6⟩
+    · rcases ih hrel with hih | h6
+      · left
+        cases o with
+        | next _ => exact hih.elim
+        | halted s2 =>
+          obtain ⟨x', hx, hr⟩ := hih
+          exact ⟨x', XExec.of_steps hsteps hx, hr⟩
+        | trapped t => exact XExec.of_steps hsteps hih
+      · exact .inr (XExec.of_steps hsteps h6)
+    · exact .inr h6
+
+/-- Whole-program preservation. When the IR run stays within the stack capacities (`Fits` at
+every reachable state), no overflow guard fires and the outcome is exactly the IR's. -/
 theorem lowerProg_correct {c : Cfg} {p : Prog 64} {L : Layout} (hg : Geom c)
-    (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hsz : ∀ k, offs p k < 2 ^ 64)
-    (hreg : RegsOk c p) {s : State 64} {o : Outcome 64} (h : Exec p s o) :
+    (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 8))
+    (hLr : L.rGap = ofN (8 * c.rcap - 16)) (hsz : ∀ k, offs p k < 2 ^ 64) (hreg : RegsOk c p)
+    {s : State 64} {o : Outcome 64} (h : Exec p s o) :
     ∀ {x : M}, Rel c p s x → (∀ s', Steps p s s' → Fits c s') →
       Final c p (lowerProg L p) x o := by
   induction h with
   | @halt s s' hst =>
     intro x hs hb
-    cases hi : p[s.pc]? with
-    | none => simp [WordDialect.step, hi] at hst
-    | some i =>
-      have hsim := sim_exec hg hL hMs hsz hs (hb s Steps.refl) hi (fun r hr => hreg s.pc i hi r hr)
-      simp only [WordDialect.step, hi] at hst
-      rw [hst] at hsim
-      exact hsim
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨hnf, _⟩
+    · exact this
+    · exact absurd (hb s .refl) hnf
   | @trap s t hst =>
     intro x hs hb
-    cases hi : p[s.pc]? with
-    | none =>
-      simp [WordDialect.step, hi] at hst
-      subst hst
-      have hge : p.length ≤ s.pc := by
-        by_cases hh : s.pc < p.length
-        · rw [List.getElem?_eq_getElem hh] at hi; simp at hi
-        · omega
-      have hstub := lowerProg_stub L p
-      obtain ⟨f0, _⟩ := hstub
-      have hpc : x.pc = offs p p.length := by rw [hs.2, offs_ge hge]
-      exact XExec.trap (by rw [xstep_of_fetch (by rw [hpc]; exact f0)]; rfl)
-    | some i =>
-      have hsim := sim_exec hg hL hMs hsz hs (hb s Steps.refl) hi (fun r hr => hreg s.pc i hi r hr)
-      simp only [WordDialect.step, hi] at hst
-      rw [hst] at hsim
-      exact hsim
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with this | ⟨hnf, _⟩
+    · exact this
+    · exact absurd (hb s .refl) hnf
   | @next s s' o hst _ ih =>
     intro x hs hb
-    cases hi : p[s.pc]? with
-    | none => simp [WordDialect.step, hi] at hst
-    | some i =>
-      have hsim := sim_exec hg hL hMs hsz hs (hb s Steps.refl) hi (fun r hr => hreg s.pc i hi r hr)
-      simp only [WordDialect.step, hi] at hst
-      rw [hst] at hsim
-      obtain ⟨x1, hsteps, hrel⟩ := hsim
-      have hih := ih hrel (fun s'' hss => hb s'' (Steps.cons (by simp [WordDialect.step, hi, hst]) hss))
+    have := step_sim hg hL hMs hLd hLr hsz hreg hs
+    rw [hst] at this
+    rcases this with ⟨x1, hsteps, hrel⟩ | ⟨hnf, _⟩
+    · have hih := ih hrel (fun s'' hss => hb s'' (Steps.cons hst hss))
       cases o with
       | next _ => exact hih.elim
       | halted s2 =>
         obtain ⟨x', hx, hr⟩ := hih
         exact ⟨x', XExec.of_steps hsteps hx, hr⟩
       | trapped t => exact XExec.of_steps hsteps hih
+    · exact absurd (hb s .refl) hnf
 
 /-- The state the runtime prologue establishes (`X86.Emit`): empty stacks, `r12 = rsp = sp0`,
 `r13 r14 r15` at the conventions, and the register file and IR memory regions holding the IR

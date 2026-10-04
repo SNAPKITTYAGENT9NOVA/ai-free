@@ -78,22 +78,28 @@ theorem addr_trap (hs : Rel0 c p s x) {rt : Reg} (hrt : rt = rcx ∨ rt = rdx) {
       ⟨fetch_cast f2 (by omega), fetch_cast f3 (by omega), trivial⟩ hpc2 hfl hhold)
 
 theorem sim_push_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
-    (hr : r < c.nregs) (hat : XAt code base (lowerInstr L base off (.push r)))
+    (hr : r < c.nregs) (hLd : L.dLim = ofN (c.dBase + 8))
+    (hat : XAt code base (lowerInstr L base off (.push r)))
     (hfit : c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', XSteps code x x' ∧ Rel0 c p { s with dstack := s.regs r :: s.dstack } x' ∧
       x'.pc = base + isize (.push r : WordDialect.Instr 64) := by
-  have hat' : XAt code base [.load rax Reg.r14 (8 * (r : Int)), .addImm Reg.r15 (-8),
-      .store Reg.r15 0 rax] := hat
-  obtain ⟨f0, f1, f2, _⟩ := hat'
-  have hst : step code x = .next (x.mov rax (s.regs r)) := by
-    rw [xstep_of_fetch (by rw [hpc]; exact f0), ld_reg hs hr rax rfl]
-  have hr1 : Rel0 c p s (x.mov rax (s.regs r)) := mov_rel0 hs rax (scratch_ne rax (by simp)) _
-  have hpc1 : (x.mov rax (s.regs r)).pc = base + 1 := by simp [M.mov, M.setReg, M.adv, hpc]
+  obtain ⟨hato, f0, f1, f2⟩ := xat_ovf3 (L := L) (by exact hat)
+  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfD_pass hg hs hLd hfit hpc hato
+  have hst : step code x0 = .next (x0.mov rax (s.regs r)) := by
+    rw [xstep_of_fetch (by rw [hpc0]; exact f0), ld_reg hr0 hr rax rfl]
+  have hr1 : Rel0 c p s (x0.mov rax (s.regs r)) := mov_rel0 hr0 rax (scratch_ne rax (by simp)) _
+  have hpc1 : (x0.mov rax (s.regs r)).pc = base + 4 + 1 := by simp [M.mov, M.setReg, M.adv, hpc0]
   obtain ⟨x2, hs2, hr2, hpc2, _⟩ := push_pair hg hr1 rax (by decide) hfit
     ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), trivial⟩
-  have hv : (x.mov rax (s.regs r)).regs rax = s.regs r := by simp [M.mov, M.setReg, M.adv]
+  have hv : (x0.mov rax (s.regs r)).regs rax = s.regs r := by simp [M.mov, M.setReg, M.adv]
   rw [hv] at hr2
-  exact ⟨x2, (XSteps.single hst).trans hs2, hr2, by simp [isize]; omega⟩
+  exact ⟨x2, (hs0.trans (XSteps.single hst)).trans hs2, hr2, by simp [isize]; omega⟩
+
+theorem sim_push_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
+    (hLd : L.dLim = ofN (c.dBase + 8)) (hat : XAt code base (lowerInstr L base off (.push r)))
+    (h : ¬ c.dBase + 8 * (s.dstack.length + 1) ≤ c.dEnd) : XExec code x .overflow := by
+  obtain ⟨hato, _⟩ := xat_ovf3 (L := L) (by exact hat)
+  exact ovfD_trap hg hs hLd h hpc hato
 
 theorem sim_pop_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
     {r : Nat} (hr : r < c.nregs) (hat : XAt code base (lowerInstr L base off (.pop r)))

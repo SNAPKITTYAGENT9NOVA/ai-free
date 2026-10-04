@@ -18,7 +18,10 @@ Runtime conventions (all fixed here; the assembly runtime in `X86.Emit` establis
 IR `call`/`ret` are native `call`/`ret`. IR memory is valid exactly on `[0, memSize)`; every
 `load`/`store` is bounds-checked, so an invalid address traps as in the IR semantics. Operand
 counts are checked against `dEnd` before every instruction that pops, so stack underflow
-traps as in the IR semantics.
+traps as in the IR semantics. Every instruction that grows the data stack first checks
+`r15 ≥ dBase + 8`, and `call` first checks `rsp ≥ r12 - (8 rcap - 16)`; on overflow the code
+exits 6 (`exitOvf`). IR stacks are unbounded, so this exit has no IR counterpart: it reports that
+the run exceeded the target's stack capacity.
 
 Every instruction's code has a size that depends only on the instruction, so jump targets are
 absolute code indices computed from prefix sums (`offs`). One definition serves both the
@@ -33,6 +36,8 @@ open Reg
 structure Layout where
   dEnd : W
   memSize : Nat
+  dLim : W        -- `dBase + 8`: the data stack has room for one more word iff `r15 ≥ dLim`
+  rGap : W        -- `8 rcap - 16`: a call has room iff `rsp ≥ r12 - rGap`
 
 /-- Stack-underflow guard for `k` operands. -/
 def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
@@ -42,13 +47,21 @@ def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
 
 def ufSize (k : Nat) : Nat := if k = 0 then 0 else 4
 
+/-- Data-stack overflow guard: exit 6 unless one more word fits. -/
+def ovfD (L : Layout) (base : Nat) : List (Instr Nat) :=
+  [.movImm rax L.dLim, .cmp r15 rax, .jcc .ae (base + 4), .exitOvf]
+
+/-- Return-stack overflow guard: exit 6 unless a call has room on the native stack. -/
+def ovfR (L : Layout) (base : Nat) : List (Instr Nat) :=
+  [.movRR rax r12, .movImm rcx L.rGap, .sub rax rcx, .cmp rsp rax, .jcc .ae (base + 6), .exitOvf]
+
 def ccOf : WordDialect.Cond → Cc
   | .eq => .e | .ne => .ne | .ult => .b | .ule => .be | .ugt => .a | .uge => .ae
   | .slt => .l | .sle => .le | .sgt => .g | .sge => .ge
 
 /-- Code size of one IR instruction. -/
 def isize : WordDialect.Instr 64 → Nat
-  | .word _ | .ptr _ => 3
+  | .word _ | .ptr _ => 7
   | .load => ufSize 1 + 7
   | .store => ufSize 2 + 8
   | .add | .sub | .mul | .and | .or | .xor => ufSize 2 + 5
@@ -61,22 +74,22 @@ def isize : WordDialect.Instr 64 → Nat
   | .select => ufSize 3 + 7
   | .jmp _ => 1
   | .branch _ => ufSize 1 + 4
-  | .call _ => 1
+  | .call _ => 7
   | .ret => 4
-  | .push _ => 3
+  | .push _ => 7
   | .pop _ => ufSize 1 + 3
-  | .dup => ufSize 1 + 3
+  | .dup => ufSize 1 + 7
   | .drop => ufSize 1 + 1
   | .swap => ufSize 2 + 4
-  | .over => ufSize 2 + 3
+  | .over => ufSize 2 + 7
   | .rot => ufSize 3 + 6
   | .halt => 1
 
 /-- Code for one IR instruction placed at x86 index `base`; `off t` is the x86 index of IR
 instruction `t` (clamped to the bad-pc stub for out-of-range targets). -/
 def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr 64 → List (Instr Nat)
-  | .word w => [.movImm rax w, .addImm r15 (-8), .store r15 0 rax]
-  | .ptr p => [.movImm rax p.toWord, .addImm r15 (-8), .store r15 0 rax]
+  | .word w => ovfD L base ++ [.movImm rax w, .addImm r15 (-8), .store r15 0 rax]
+  | .ptr p => ovfD L base ++ [.movImm rax p.toWord, .addImm r15 (-8), .store r15 0 rax]
   | .load =>
     let b0 := base + ufSize 1
     uf L 1 base ++
@@ -125,15 +138,17 @@ def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr
        .store r15 16 rax, .addImm r15 16]
   | .jmp t => [.jmp (off t)]
   | .branch t => uf L 1 base ++ [.load rax r15 0, .addImm r15 8, .test rax rax, .jcc .ne (off t)]
-  | .call t => [.call (off t)]
+  | .call t => ovfR L base ++ [.call (off t)]
   | .ret =>
     [.cmp rsp r12, .jcc .ne (base + 3), .exitTrap .returnUnderflow, .ret]
-  | .push r => [.load rax r14 (8 * (r : Int)), .addImm r15 (-8), .store r15 0 rax]
+  | .push r => ovfD L base ++ [.load rax r14 (8 * (r : Int)), .addImm r15 (-8), .store r15 0 rax]
   | .pop r => uf L 1 base ++ [.load rax r15 0, .addImm r15 8, .store r14 (8 * (r : Int)) rax]
-  | .dup => uf L 1 base ++ [.load rax r15 0, .addImm r15 (-8), .store r15 0 rax]
+  | .dup =>
+    uf L 1 base ++ ovfD L (base + ufSize 1) ++ [.load rax r15 0, .addImm r15 (-8), .store r15 0 rax]
   | .drop => uf L 1 base ++ [.addImm r15 8]
   | .swap => uf L 2 base ++ [.load rax r15 0, .load rcx r15 8, .store r15 0 rcx, .store r15 8 rax]
-  | .over => uf L 2 base ++ [.load rax r15 8, .addImm r15 (-8), .store r15 0 rax]
+  | .over =>
+    uf L 2 base ++ ovfD L (base + ufSize 2) ++ [.load rax r15 8, .addImm r15 (-8), .store r15 0 rax]
   | .rot =>
     uf L 3 base ++
       [.load rax r15 0, .load rcx r15 8, .load rdx r15 16, .store r15 0 rdx, .store r15 8 rax,
@@ -142,7 +157,7 @@ def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr
 
 theorem lowerInstr_length (L : Layout) (base : Nat) (off : Nat → Nat) (i : WordDialect.Instr 64) :
     (lowerInstr L base off i).length = isize i := by
-  cases i <;> simp [lowerInstr, isize, uf, ufSize] <;> split <;> simp
+  cases i <;> simp [lowerInstr, isize, uf, ufSize, ovfD, ovfR] <;> (try split) <;> simp
 
 /-- Prefix sums of instruction sizes: `offs p k` is the x86 index of IR instruction `k`.
 For `k` past the end it is the index of the final bad-pc stub. -/
