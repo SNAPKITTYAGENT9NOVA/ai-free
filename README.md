@@ -106,7 +106,14 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
   within capacity, and then the outcome is exactly the IR's. Both assume valid
   memory geometry within 32-bit linear memory, fewer than `2^32` instructions,
   and valid register indices. `wasmw check` also runs three unbounded programs
-  and requires exit 6. The proof modules, all exported by `Wasm.lean`:
+  and requires exit 6.
+  `WordDialect.Wasm.Emit.module_correct` closes the loop from the emitted
+  module: from the state WebAssembly instantiation produces for its
+  declarations (globals, zeroed memory, the IR memory image as a data segment),
+  the start function reaches the IR outcome from `State.init`, or exits 6. Its
+  only hypotheses are about the program: the register file and memory image fit
+  the runtime layout, fewer than `2^32` instructions, and valid register
+  indices. The proof modules, all exported by `Wasm.lean`:
 
   | Module | Contents |
   | --- | --- |
@@ -117,6 +124,7 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
   | `Wasm/SimCtl.lean` | `jmp`, `branch`, `call`, `ret` (and its underflow trap), `halt`, and the bad-pc stub |
   | `Wasm/SimExec.lean` | One-step simulation for every instruction and outcome (`sim_step`) |
   | `Wasm/Correct.lean` | Dispatch-loop induction (`lowerProg_correct_or_overflow`, `lowerProg_correct`) and entry relation (`init_rel`) |
+  | `Wasm/Init.lean` | The instantiated module's state, the runtime layout's geometry, and the end-to-end `module_correct` |
 - Proofs concern the defined machine models. The emitted artifacts are also
   tested through real assemblers/runtimes; those execution checks are separate
   evidence from the formal proofs.

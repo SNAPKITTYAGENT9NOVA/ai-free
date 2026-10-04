@@ -13,3 +13,4 @@ import Wasm.SimMem
 import Wasm.SimCtl
 import Wasm.SimExec
 import Wasm.Correct
+import Wasm.Init

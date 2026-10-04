@@ -26,6 +26,7 @@ def Runtime.dEnd (r : Runtime) : Nat := r.dBase + 8 * 65536
 def Runtime.rBase (r : Runtime) : Nat := r.dEnd
 def Runtime.rEnd (r : Runtime) : Nat := r.rBase + 8 * 4096
 def Runtime.pages (r : Runtime) : Nat := (r.rEnd + 65535) / 65536
+def Runtime.msize (r : Runtime) : Nat := 65536 * r.pages
 
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := r.dEnd, rEnd := r.rEnd, rf := r.rf, mb := r.mb, M := r.memImage.length,
@@ -69,8 +70,11 @@ def hexByte (n : Nat) : String :=
   let s := String.ofList (Nat.toDigits 16 n)
   "\\" ++ (if s.length < 2 then "0" ++ s else s)
 
+/-- Byte `i` (little-endian) of the word `w`, as placed in the data segment. -/
+def byteOf (w i : Nat) : Nat := (w / 256 ^ i) % 256
+
 def wordBytes (w : Nat) : String :=
-  String.join ((List.range 8).map fun i => hexByte ((w / 256 ^ i) % 256))
+  String.join ((List.range 8).map fun i => hexByte (byteOf w i))
 
 def program (r : Runtime) (p : Prog 64) : String :=
   let m := r.memImage.length
