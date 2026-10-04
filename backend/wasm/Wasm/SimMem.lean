@@ -119,11 +119,12 @@ theorem sim_load_ok (hg : Geom c) (hL : L = c.layout) (hMs : c.M = s.mem_size)
   · simp only [execL_append]
     rw [hguard]
     simp only [Option.bind_some, execL_append, h1, hexec_memaddr, hexec_load, hexec_store, hexec_pc]
-  · have hrel := ld_mem hg hs hread haddr
-    have : Rel0 c p { s with dstack := v :: d } { x with mem := x.mem, globals := x.globals,
-           stack := .i32 (ofN (k + 1)) :: .i32 (ofN (c.dEnd - 8 * (d.length + 1))) :: x.stack } := by
-      refine Rel0.congr (hs.setStack _) rfl (hs.sp) (hs.rp)
-    exact this
+  · -- The Rel0 relation is preserved after writing v to the dstack location
+    have hwrite : x.mem.write64 (c.dEnd - 8 * (d.length + 1)) v = some x.mem := by
+      simp [Memory.write64_eq_self hX (hs.size) (by omega)]
+    have hwr := wr_stack hg hs (j := 0) (by simp [hlen]) hwrite
+    simp only [List.set_zero, hlen] at hwr
+    exact Rel0.congr hwr rfl (hs.sp) (hs.rp)
   · simp [List.length_append, i32c, ldS, memAddr, spAdd, uf]
 
 theorem sim_load_trap (hg : Geom c) (hL : L = c.layout) (hMs : c.M = s.mem_size)
@@ -197,10 +198,16 @@ theorem sim_store_ok (hg : Geom c) (hL : L = c.layout) (hMs : c.M = s.mem_size)
   refine ⟨{ x with stack := .i32 (ofN (k + 1)) :: .i32 (ofN (c.dEnd - 8 * d.length)) :: x.stack, mem := mem',
              globals := setG x.globals spG (.i32 (ofN (c.dEnd - 8 * d.length))) }, ?_, ?_, ?_⟩
   · simp only [execL_append, hexec_memaddr, hexec_lds, hexec_store, hexec_sp, hexec_pc]
-  · have : c.dEnd - 8 * (d.length + 2) + 16 = c.dEnd - 8 * d.length := by omega
-    simp only [this]
-    refine Rel0.congr (hs.setStack _) rfl ?_ (hs.rp)
-    simp [setG, spG]
+  · -- The Rel0 relation is preserved after writing to memory and adjusting sp
+    have heq_sp : c.dEnd - 8 * (d.length + 2) + 16 = c.dEnd - 8 * d.length := by omega
+    -- Use wr_stack to handle the memory write at dstack[0]
+    have hwr := wr_stack hg hs (j := 0) (by simp [hlen]) hw'
+    simp only [List.set_zero, hlen] at hwr
+    -- The sp is adjusted to reflect the popped dstack
+    have hadj := adj_sp hg hwr (n := 2) (by simp [hlen])
+    simp only [heq_sp] at hadj
+    -- Apply congr to handle globals update
+    exact Rel0.congr hadj rfl (by simp [setG, spG, heq_sp]) (hs.rp)
   · simp [List.length_append, uf, i32c, ldS, memAddr, spAdd]
     omega
 
