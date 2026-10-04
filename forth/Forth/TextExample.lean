@@ -1,5 +1,6 @@
 import Forth.Correct
 import Forth.Parse
+import Forth.Print
 import Forth.Eval
 import Forth.Example
 
@@ -176,6 +177,24 @@ theorem sumExitProg_machine (mem : Memory 64) :
       s'.dstack = [55#64] ∧ s'.mem = mem := by
   have := Program.compile_correct (sumExitProg_run mem)
   simpa using this
+
+/-! ## Printing -/
+
+theorem print_sumExit :
+    print sumExitProg = ": W0 DUP 0= IF EXIT ELSE THEN DUP 1 - W0 + ; 10 W0 " := by rfl
+
+theorem print_var :
+    print varProg = "VARIABLE V VARIABLE V 10 0 ! 32 1 ! 0 @ 1 @ + 1 ! 1 @ " := by rfl
+
+theorem sumExitProg_wf : sumExitProg.WF := by
+  refine ⟨fun i body h => ?_, by simp [sumExitProg, Block.WF]⟩
+  match i, h with
+  | 0, h => simp only [sumExitProg, List.getElem?_cons_zero, Option.some.injEq] at h; subst h
+            simp [Block.WF]
+
+/-- An instance of the proved round trip `parse_print`. -/
+theorem parse_print_sumExit : parse (print sumExitProg) = .ok sumExitProg :=
+  parse_print _ sumExitProg_wf
 
 end Forth
 end WordDialect

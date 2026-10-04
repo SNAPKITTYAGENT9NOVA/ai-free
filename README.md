@@ -79,13 +79,21 @@ Execution checks write temporary artifacts under `/tmp/wordc` and `/tmp/wasmw`.
 ## Proof and validation status
 
 - Forth has a compilation correctness proof for its modeled subset, including
-  colon definitions (`: name ... ;`, recursion allowed) lowered to IR
-  `call`/`ret`: `WordDialect.Forth.Program.compile_correct` in
-  [`Forth/Correct.lean`](forth/Forth/Correct.lean). Forth source text is parsed
-  by `Forth.parse` ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); the parser
-  is not verified, only checked on concrete inputs
-  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the
-  harness samples written as source text.
+  colon definitions (`: name ... ;`, recursion and `RECURSE` allowed) lowered
+  to IR `call`/`ret`, `EXIT` (lowered to `ret`), `VARIABLE` (memory cells
+  `0 … k-1`), `CONSTANT`, `0=` and `MOD`:
+  `WordDialect.Forth.Program.compile_correct` in
+  [`Forth/Correct.lean`](forth/Forth/Correct.lean). `>R R>` and `DO … LOOP`
+  are not supported: the IR return stack cannot hold data (see
+  [NEXT_STEPS.md](NEXT_STEPS.md)). Forth source text is parsed by `Forth.parse`
+  ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); `Forth.print` prints a
+  program back, and `WordDialect.Forth.parse_print` proves
+  `parse (print P) = .ok P` for every well-formed program
+  ([`Forth/Print.lean`](forth/Forth/Print.lean)). That `parse` only yields
+  well-formed programs, and its handling of text `print` never emits (comments,
+  case, `CONSTANT`, `RECURSE`), is checked on concrete inputs
+  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the harness
+  samples written as source text, not proved.
   BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.

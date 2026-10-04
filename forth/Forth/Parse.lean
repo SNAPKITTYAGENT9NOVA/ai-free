@@ -27,7 +27,9 @@ Parsing (`parse`), case-insensitive:
   the stack at run time; here it must be a literal, resolved at parse time.)
 * Top-level code outside definitions forms the main block, in source order.
 * Anything else is an error (`unknown word`), as are unbalanced control words, nested
-  definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`.
+  definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`. In particular
+  `>R R>` and `DO … LOOP` are not supported: the IR has no return stack for data words (see
+  `NEXT_STEPS.md`).
 
 Name lookup order: dictionary, then built-in words, then numbers.
 
@@ -145,6 +147,18 @@ inductive Item where
   | prim (w : Block → Block)
   | bad (msg : String)
 
+/-- Look up a (non-keyword) token `t`, upper-cased `u`: dictionary, built-ins, numbers. -/
+def lookupWord (dict : Dict) (t u : Tok) : Item :=
+  match dict.lookup u with
+  | some w => .prim w
+  | none =>
+    match opTable.lookup u with
+    | some o => .prim (.op o)
+    | none =>
+      match number u with
+      | some z => .prim (.op (.lit z))
+      | none => .bad s!"unknown word: {showTok t}"
+
 /-- Classify a token; `self` is the index of the word being defined, if any. -/
 def classify (dict : Dict) (self : Option Nat) (t : Tok) : Item :=
   let u := upper t
@@ -159,16 +173,7 @@ def classify (dict : Dict) (self : Option Nat) (t : Tok) : Item :=
     match self with
     | some _ => .prim .exit
     | none => .bad "EXIT outside a definition"
-  else
-    match dict.lookup u with
-    | some w => .prim w
-    | none =>
-      match opTable.lookup u with
-      | some o => .prim (.op o)
-      | none =>
-        match number u with
-        | some z => .prim (.op (.lit z))
-        | none => .bad s!"unknown word: {showTok t}"
+  else lookupWord dict t u
 
 /-- Parse a block up to the end of input or a stop word. Returns the block, the stop word
 met (`none` at end of input) and the tokens after it. -/
