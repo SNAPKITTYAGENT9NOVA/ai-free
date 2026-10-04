@@ -8,13 +8,18 @@ Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
 `CONSTANT`, `0=` and `MOD` are covered by `Forth.Program.compile_correct`; a
 text parser (`Forth.parse`) and a printer (`Forth.print`) exist, with the round
 trip `parse (print P) = .ok P` proved for well-formed programs
-(`Forth.parse_print`). `wordc forth` / `wasmw forth` run a Forth source file
-on either backend. Remaining:
+(`Forth.parse_print`). The converse direction is proved in
+`Forth/ParseProps.lean`: every successful parse is well formed (`parse_wf`), so
+`print` is a canonical form (`parse_print_of_parse`), and the handling of case,
+comments, `CONSTANT` and `RECURSE` is characterised by lemmas. `wordc forth` /
+`wasmw forth` run a Forth source file on either backend. Remaining:
 
-- The round trip shows `parse` inverts `print`; the converse direction is not
-  proved (that every successful `parse` yields a `Program.WF` program, and what
-  `parse` does on text `print` never produces: comments, lower case,
-  `CONSTANT`, `RECURSE`). Those are checked on concrete inputs only.
+- The parser lemmas have side conditions where the text-level statement would
+  otherwise be false (a `( … )` comment body without `)`, `\` or newline, after
+  text not ending inside a `(` comment; case-insensitivity up to the spelling in
+  error messages). Not proved: that the fuel bounds of `parseSeq`/`parseTop`
+  are never exhausted (the "too deeply nested" / "too long" errors are
+  unreachable), and a full specification of `parse` as a grammar.
 - `>R R>` and `DO … LOOP` (with `I`) are not implemented, because the current
   IR has no faithful place for return-stack data. Its return stack holds code
   addresses only and is touched only by `call`/`ret`. Values left on the data

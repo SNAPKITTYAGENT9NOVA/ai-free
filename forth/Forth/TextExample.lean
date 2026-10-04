@@ -1,6 +1,7 @@
 import Forth.Correct
 import Forth.Parse
 import Forth.Print
+import Forth.ParseProps
 import Forth.Eval
 import Forth.Example
 
@@ -195,6 +196,47 @@ theorem sumExitProg_wf : sumExitProg.WF := by
 /-- An instance of the proved round trip `parse_print`. -/
 theorem parse_print_sumExit : parse (print sumExitProg) = .ok sumExitProg :=
   parse_print _ sumExitProg_wf
+
+/-! ## The converse direction (`Forth.ParseProps`) -/
+
+/-- Well-formedness comes from the parse, with no case analysis. -/
+theorem varProg_wf : varProg.WF := parse_wf parse_var
+
+/-- Printing is canonical: the printed text of any parsed program parses back to it. -/
+theorem parse_print_var : parse (print varProg) = .ok varProg := parse_print_of_parse parse_var
+
+/-- Case-insensitivity, proved for all sources by `parse_case_insensitive`. -/
+theorem parse_square_lower :
+    (parse ": sq dup * ; 7 SQ").toOption = (parse ": SQ DUP * ; 7 sq").toOption :=
+  parse_case_insensitive (String.ext (by simp only [String.toList_map]; decide))
+
+/-- Only error messages keep the original spelling. -/
+theorem parse_unknown_lower : parse "1 foo" = .error "unknown word: foo" := by rfl
+
+/-- A `( … )` comment tokenizes like a space (`tokenize_paren_comment`). -/
+theorem tokenize_paren_example :
+    Parse.tokenize ("1 \\ x" ++ " ( " ++ "any ( text" ++ " ) " ++ "2") =
+      Parse.tokenize ("1 \\ x" ++ " " ++ "2") :=
+  tokenize_paren_comment ⟨_, rfl⟩ (by decide)
+
+/-- A `\` comment runs to the end of the line (`tokenize_line_comment`). -/
+theorem tokenize_line_example :
+    Parse.tokenize ("1" ++ " \\ " ++ "2 ( 3" ++ "\n" ++ "4") = Parse.tokenize ("1" ++ "\n" ++ "4") :=
+  tokenize_line_comment (by decide)
+
+/-- `5 CONSTANT five`: the literal leaves the main block and `five` (any case) is `5`. -/
+theorem parse_constant_case :
+    parse "5 CONSTANT five FIVE Five +" =
+      .ok ⟨[], .op (.lit 5) (.op (.lit 5) (.op .add .nil)), 0⟩ := by rfl
+
+theorem constant_step :
+    Parse.parseTop 3 [] [] 0 .nil [['5'], ['c', 'o', 'n', 's', 't', 'a', 'n', 't'], ['X']] =
+      Parse.parseTop 2 [(['X'], Block.op (.lit 5))] [] 0 .nil [] :=
+  parseTop_constant_lit rfl rfl rfl
+
+/-- `RECURSE` and the word's own name parse the same inside its definition. -/
+theorem parse_recurse_name :
+    parse ": F DUP IF 1 - RECURSE THEN ; 3 F" = parse ": F DUP IF 1 - F THEN ; 3 F" := by rfl
 
 end Forth
 end WordDialect

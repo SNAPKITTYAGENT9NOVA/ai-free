@@ -34,7 +34,9 @@ Parsing (`parse`), case-insensitive:
 Name lookup order: dictionary, then built-in words, then numbers.
 
 Everything is structurally recursive on `List Char` / fuel, so concrete parses are checked by
-`decide`/`rfl`. `Forth.Print` proves `parse (print P) = .ok P` for well-formed programs.
+`decide`/`rfl`. `Forth.Print` proves `parse (print P) = .ok P` for well-formed programs;
+`Forth.ParseProps` proves the converse direction (`parse_wf`: every successful parse is
+well formed) and the claims above about case, comments, `CONSTANT` and `RECURSE`.
 -/
 
 namespace WordDialect

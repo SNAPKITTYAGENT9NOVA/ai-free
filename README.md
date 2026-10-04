@@ -102,11 +102,18 @@ word and a trap two calls deep.
   ([`Forth/Parse.lean`](forth/Forth/Parse.lean)); `Forth.print` prints a
   program back, and `WordDialect.Forth.parse_print` proves
   `parse (print P) = .ok P` for every well-formed program
-  ([`Forth/Print.lean`](forth/Forth/Print.lean)). That `parse` only yields
-  well-formed programs, and its handling of text `print` never emits (comments,
-  case, `CONSTANT`, `RECURSE`), is checked on concrete inputs
-  ([`Forth/TextExample.lean`](forth/Forth/TextExample.lean)) and by the harness
-  samples written as source text, not proved.
+  ([`Forth/Print.lean`](forth/Forth/Print.lean)). Conversely,
+  `WordDialect.Forth.parse_wf` proves that every successful parse yields a
+  well-formed program, so `print` is a canonical form
+  (`parse_print_of_parse`), and lemmas characterise the text `print` never
+  emits: `parse_toUpper` (upper-casing the source does not change the result,
+  up to the spelling in error messages), `tokenize_paren_comment` /
+  `tokenize_line_comment` (comments tokenize like whitespace, with stated side
+  conditions), `parseTop_constant` / `classify_constant` (`n CONSTANT X` makes
+  `X` the literal `n`) and `classify_recurse` / `parseSeq_recurse_name`
+  (`RECURSE` is a call of the word being defined)
+  ([`Forth/ParseProps.lean`](forth/Forth/ParseProps.lean)); examples in
+  [`Forth/TextExample.lean`](forth/Forth/TextExample.lean).
   BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and
   matrix dot products have dedicated correctness results and a worked example.
