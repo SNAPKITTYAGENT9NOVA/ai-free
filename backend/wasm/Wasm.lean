@@ -9,3 +9,7 @@ import Wasm.Guard
 import Wasm.SimAlu
 import Wasm.SimAlu2
 import Wasm.SimStack
+import Wasm.SimMem
+import Wasm.SimCtl
+import Wasm.SimExec
+import Wasm.Correct
