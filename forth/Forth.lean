@@ -5,5 +5,6 @@ import Forth.Correct
 import Forth.Eval
 import Forth.Parse
 import Forth.Print
+import Forth.ParseProps
 import Forth.Example
 import Forth.TextExample
