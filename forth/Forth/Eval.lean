@@ -16,6 +16,8 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
   | 0, _, _ => none
   | _ + 1, .nil, st => some (.ok st)
   | _ + 1, .exit _, st => some (.exit st)
+  | _ + 1, .leave _, ⟨d, m, _ :: _ :: rs⟩ => some (.leave ⟨d, m, rs⟩)
+  | _ + 1, .leave _, _ => some (.error .returnUnderflow)
   | f + 1, .op o rest, st =>
     match o.sem st with
     | .ok st' => eval defs f rest st'
@@ -26,12 +28,14 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
     | none => none
     | some (.error x) => some (.error x)
     | some (.exit st1) => some (.exit st1)
+    | some (.leave st1) => some (.leave st1)
     | some (.ok st1) => eval defs f rest st1
   | f + 1, .untilL body rest, st =>
     match eval defs f body st with
     | none => none
     | some (.error x) => some (.error x)
     | some (.exit st1) => some (.exit st1)
+    | some (.leave st1) => some (.leave st1)
     | some (.ok ⟨[], _, _⟩) => some (.error .stackUnderflow)
     | some (.ok ⟨c :: d, m, rs⟩) =>
       if Word.isTrue c then eval defs f rest ⟨d, m, rs⟩
@@ -44,17 +48,31 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
       | none => none
       | some (.error x) => some (.error x)
       | some (.exit st1) => eval defs f rest st1
+      | some (.leave st1) => eval defs f rest st1
       | some (.ok st1) => eval defs f rest st1
   | f + 1, .doLoop body rest, ⟨i :: l :: d, m, rs⟩ =>
     match eval defs f body ⟨d, m, i :: l :: rs⟩ with
     | none => none
     | some (.error x) => some (.error x)
     | some (.exit st1) => some (.exit st1)
+    | some (.leave st1) => eval defs f rest st1
     | some (.ok ⟨d1, m1, i1 :: l1 :: rs1⟩) =>
       if i1 + 1#n = l1 then eval defs f rest ⟨d1, m1, rs1⟩
       else eval defs f (.doLoop body rest) ⟨(i1 + 1#n) :: l1 :: d1, m1, rs1⟩
     | some (.ok _) => some (.error .returnUnderflow)
   | _ + 1, .doLoop _ _, _ => some (.error .stackUnderflow)
+  | f + 1, .plusLoop body rest, ⟨i :: l :: d, m, rs⟩ =>
+    match eval defs f body ⟨d, m, i :: l :: rs⟩ with
+    | none => none
+    | some (.error x) => some (.error x)
+    | some (.exit st1) => some (.exit st1)
+    | some (.leave st1) => eval defs f rest st1
+    | some (.ok ⟨k :: d1, m1, i1 :: l1 :: rs1⟩) =>
+      if loopCrossed i1 l1 k then eval defs f rest ⟨d1, m1, rs1⟩
+      else eval defs f (.plusLoop body rest) ⟨(i1 + k) :: l1 :: d1, m1, rs1⟩
+    | some (.ok ⟨[], _, _ :: _ :: _⟩) => some (.error .stackUnderflow)
+    | some (.ok _) => some (.error .returnUnderflow)
+  | _ + 1, .plusLoop _ _, _ => some (.error .stackUnderflow)
 
 theorem eval_sound {n : Nat} {defs : List Block} :
     ∀ (fuel : Nat) (b : Block) (st : FState n) (r : Res n),
@@ -67,6 +85,12 @@ theorem eval_sound {n : Nat} {defs : List Block} :
     cases b with
     | nil => simp only [eval, Option.some.injEq] at h; subst h; exact .nil
     | exit rest => simp only [eval, Option.some.injEq] at h; subst h; exact .exit
+    | leave rest =>
+      obtain ⟨d, m, rs⟩ := st
+      rcases rs with _ | ⟨a, _ | ⟨b, rs⟩⟩
+      · simp only [eval, Option.some.injEq] at h; subst h; exact .leaveUnder (by simp)
+      · simp only [eval, Option.some.injEq] at h; subst h; exact .leaveUnder (by simp)
+      · simp only [eval, Option.some.injEq] at h; subst h; exact .leaveOk
     | op o rest =>
       simp only [eval] at h
       split at h
@@ -90,6 +114,11 @@ theorem eval_sound {n : Nat} {defs : List Block} :
           cases hc : Word.isTrue c
           · rw [hc] at hx; exact .iteFalseStop hc (ih _ _ _ hx) rfl
           · rw [hc] at hx; exact .iteTrueStop hc (ih _ _ _ hx) rfl
+        · rename_i x hx
+          cases h
+          cases hc : Word.isTrue c
+          · rw [hc] at hx; exact .iteFalseStop hc (ih _ _ _ hx) rfl
+          · rw [hc] at hx; exact .iteTrueStop hc (ih _ _ _ hx) rfl
         · rename_i st1 hx
           cases hc : Word.isTrue c
           · rw [hc] at hx; exact .iteFalse hc (ih _ _ _ hx) (ih _ _ _ h)
@@ -98,6 +127,7 @@ theorem eval_sound {n : Nat} {defs : List Block} :
       simp only [eval] at h
       split at h
       · cases h
+      · rename_i x hx; cases h; exact .untilBodyStop (ih _ _ _ hx) rfl
       · rename_i x hx; cases h; exact .untilBodyStop (ih _ _ _ hx) rfl
       · rename_i x hx; cases h; exact .untilBodyStop (ih _ _ _ hx) rfl
       · rename_i m rs hx; cases h; exact .untilUnder (ih _ _ _ hx)
@@ -115,6 +145,7 @@ theorem eval_sound {n : Nat} {defs : List Block} :
         · rename_i x hx; cases h; exact .callErr hi (ih _ _ _ hx)
         · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) rfl (ih _ _ _ h)
         · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) rfl (ih _ _ _ h)
+        · rename_i st1 hx; exact .callOk hi (ih _ _ _ hx) rfl (ih _ _ _ h)
     | doLoop body rest =>
       obtain ⟨d, m, rs⟩ := st
       rcases d with _ | ⟨i, _ | ⟨l, d⟩⟩
@@ -125,6 +156,7 @@ theorem eval_sound {n : Nat} {defs : List Block} :
       · cases h
       · rename_i x hx; cases h; exact .doBodyStop (ih _ _ _ hx) rfl
       · rename_i x hx; cases h; exact .doBodyStop (ih _ _ _ hx) rfl
+      · rename_i st1 hx; exact .doLeave (ih _ _ _ hx) (ih _ _ _ h)
       · rename_i d1 m1 i1 l1 rs1 hx
         split at h
         · exact .doDone (ih _ _ _ hx) ‹_› (ih _ _ _ h)
@@ -136,6 +168,31 @@ theorem eval_sound {n : Nat} {defs : List Block} :
         · exact .doTestUnder (ih _ _ _ hx) (by simp)
         · exact .doTestUnder (ih _ _ _ hx) (by simp)
         · exact absurd rfl (hne d1 m1 a b rs1)
+    | plusLoop body rest =>
+      obtain ⟨d, m, rs⟩ := st
+      rcases d with _ | ⟨i, _ | ⟨l, d⟩⟩
+      · simp only [eval, Option.some.injEq] at h; subst h; exact .plusUnder (by simp)
+      · simp only [eval, Option.some.injEq] at h; subst h; exact .plusUnder (by simp)
+      simp only [eval] at h
+      split at h
+      · cases h
+      · rename_i x hx; cases h; exact .plusBodyStop (ih _ _ _ hx) rfl
+      · rename_i x hx; cases h; exact .plusBodyStop (ih _ _ _ hx) rfl
+      · rename_i st1 hx; exact .plusLeave (ih _ _ _ hx) (ih _ _ _ h)
+      · rename_i k d1 m1 i1 l1 rs1 hx
+        split at h
+        · exact .plusDone (ih _ _ _ hx) ‹_› (ih _ _ _ h)
+        · rename_i hc; exact .plusAgain (ih _ _ _ hx) (by simpa using hc) (ih _ _ _ h)
+      · rename_i m1 i1 l1 rs1 hx; cases h; exact .plusStepUnder (ih _ _ _ hx)
+      · rename_i st1 hne1 hne2 hx
+        cases h
+        obtain ⟨d1, m1, rs1⟩ := st1
+        rcases rs1 with _ | ⟨a, _ | ⟨b, rs1⟩⟩
+        · exact .plusTestUnder (ih _ _ _ hx) (by simp)
+        · exact .plusTestUnder (ih _ _ _ hx) (by simp)
+        · cases d1 with
+          | nil => exact absurd rfl (hne2 m1 a b rs1)
+          | cons k d1 => exact absurd rfl (hne1 k d1 m1 a b rs1)
 
 end Forth
 end WordDialect

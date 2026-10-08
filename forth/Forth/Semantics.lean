@@ -23,8 +23,9 @@ may assume exactly that those cells are valid (`Program.MemOk`) and nothing abou
 cell, nor about the initial contents of any cell. A variable's name pushes its address, so
 after parsing it is a literal; a `CONSTANT` is likewise a literal.
 
-`EXIT` leaves the word being executed, so a run of a block ends in one of three ways (`Res`):
-it falls off the end, it executes `EXIT`, or it traps.
+`EXIT` leaves the word being executed and `LEAVE` the innermost loop, so a run of a block ends
+in one of four ways (`Res`): it falls off the end, it executes `EXIT`, it executes `LEAVE`, or it
+traps.
 
 Return-data stack: `FState.rstack` is a stack of words *separate from the call frames*, exactly
 like the IR's auxiliary stack `astack` (which a call or return never touches). `>R` moves the
@@ -45,9 +46,23 @@ top of the return-data stack (the innermost index; it is `R@` under another name
 (`Op.loopJ`) its third item (the next outer index): both are defined everywhere, trapping
 `returnUnderflow` when the stack is too short, so they are also allowed outside a loop. Loop
 parameters live on the return-data stack, so they survive calls and recursion. An `EXIT` (or a
-trap) inside a loop body ends the loop and the word *without* removing the loop parameters (there
-is no `UNLOOP`): they stay on the return-data stack, just as the compiled `RET` leaves the IR's
-auxiliary stack alone.
+trap) inside a loop body ends the loop and the word *without* removing the loop parameters: they
+stay on the return-data stack, just as the compiled `RET` leaves the IR's auxiliary stack alone.
+`UNLOOP` (`Op.unloop`) removes the top two return-data items (`returnUnderflow` if there are
+fewer), so `UNLOOP EXIT` leaves a loop and its word cleanly.
+
+`limit start DO body step +LOOP` (`Block.plusLoop`) is the same, except that after each run of
+`body` the step is taken from the data stack (`returnUnderflow` first if the return-data stack
+holds fewer than two items, then `stackUnderflow` if the data stack is empty), the index becomes
+`index + step`, and the loop ends when `loopCrossed index limit step` holds: the index crossed
+the boundary between `limit - 1` and `limit` (ANS Forth's rule, see `Forth.LoopProps`).
+
+`LEAVE` (`Block.leave`) removes the loop parameters (`returnUnderflow` if there are fewer than
+two return-data items) and ends the innermost enclosing loop at once: its result `Res.leave st`
+propagates out of `IF` and `BEGIN … UNTIL` like `EXIT`, and the loop continues with the code
+after `LOOP`/`+LOOP` from `st`. The parser only accepts `LEAVE` inside a loop of its own block;
+elsewhere it is still defined: it ends a called word like `EXIT` (`Res.returned`), and the main
+block like falling off its end. `?DO` needs no rule: it is parsed to an `IF` around `DO`.
 -/
 
 namespace WordDialect
@@ -62,7 +77,7 @@ inductive Op where
   | and | or | xor | invert | lshift | rshift
   | eq | ne | lt | gt | ult | ugt | zeq
   | fetch | store
-  | tor | fromr | rfetch | loopI | loopJ
+  | tor | fromr | rfetch | loopI | loopJ | unloop
   deriving DecidableEq, Repr
 
 /-- A Forth state: the data stack, memory, and the return-data stack (`>R`/`R>`/`R@` and the
@@ -119,6 +134,8 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
   | .loopI, ⟨_, _, []⟩ => .error .returnUnderflow
   | .loopJ, ⟨d, m, a :: b :: c :: r⟩ => .ok ⟨c :: d, m, a :: b :: c :: r⟩
   | .loopJ, _ => .error .returnUnderflow
+  | .unloop, ⟨d, m, _ :: _ :: r⟩ => .ok ⟨d, m, r⟩
+  | .unloop, _ => .error .returnUnderflow
   | _, _ => .error .stackUnderflow
 
 end Op
@@ -127,7 +144,8 @@ end Op
 `BEGIN body UNTIL rest`; `call i rest` executes the colon definition with index `i` in the
 dictionary, then `rest`; `exit rest` is `EXIT`, which leaves the current word (`rest` is dead
 code, kept so that a block records its source text); `doLoop body rest` is
-`DO body LOOP rest`. -/
+`DO body LOOP rest`; `plusLoop body rest` is `DO body +LOOP rest`; `leave rest` is `LEAVE`
+(`rest` is dead code too). -/
 inductive Block where
   | nil
   | op (o : Op) (rest : Block)
@@ -136,6 +154,8 @@ inductive Block where
   | call (i : Nat) (rest : Block)
   | exit (rest : Block)
   | doLoop (body rest : Block)
+  | plusLoop (body rest : Block)
+  | leave (rest : Block)
   deriving DecidableEq, Repr
 
 /-- A Forth program: a dictionary of colon definitions (word `i` is `defs[i]`), the main
@@ -151,11 +171,12 @@ structure Program where
 def Program.MemOk {n : Nat} (P : Program) (mem : Memory n) : Prop :=
   ∀ a, a < P.vars → mem.valid (BitVec.ofNat n a) = true
 
-/-- How a run of a block ends: it fell off the end (`ok`), it executed `EXIT` (`exit`), or it
-trapped (`error`). -/
+/-- How a run of a block ends: it fell off the end (`ok`), it executed `EXIT` (`exit`), it
+executed `LEAVE` (`leave`, with the loop parameters already removed), or it trapped (`error`). -/
 inductive Res (n : Nat) where
   | ok (st : FState n)
   | exit (st : FState n)
+  | leave (st : FState n)
   | error (t : Trap)
 
 namespace Res
@@ -164,13 +185,30 @@ def isOk {n : Nat} : Res n → Bool
   | .ok _ => true
   | _ => false
 
-/-- The state a called word returns with: after falling off its end or after `EXIT`. -/
+/-- `EXIT` or a trap: the results a loop does not catch (it catches `LEAVE`). -/
+def isStop {n : Nat} : Res n → Bool
+  | .exit _ => true
+  | .error _ => true
+  | _ => false
+
+/-- The state a called word returns with: after falling off its end, after `EXIT`, or after a
+`LEAVE` outside any loop of the word. -/
 def returned {n : Nat} : Res n → Option (FState n)
   | .ok st => some st
   | .exit st => some st
+  | .leave st => some st
   | .error _ => none
 
 end Res
+
+/-- The `+LOOP` exit test, on the index `i`, limit `l` and step `k`: with `o = i - l`, the sign of
+`((k + o) xor o) and (o xor k)`, i.e. `o + k` and `o` differ in sign while `o` and `k` differ in
+sign too. This is the signed overflow of `(o - 2^(n-1)) + k`, i.e. ANS Forth's rule that the loop
+ends when the index crosses the boundary between `l - 1` and `l`
+(`Forth.loopCrossed_eq_saddOverflow`); with step `1` it is `i + 1 = l`, the `LOOP` test
+(`Forth.loopCrossed_one`). -/
+def loopCrossed {n : Nat} (i l k : Word n) : Bool :=
+  Cond.eval .slt (((k + (i - l)) ^^^ (i - l)) &&& ((i - l) ^^^ k)) 0#n
 
 /-- Big-step semantics. `Run defs b st r` says running `b` from `st`, with dictionary `defs`,
 produces result `r`. Non-terminating runs (including unbounded recursion) have no derivation.
@@ -220,10 +258,17 @@ inductive Run {n : Nat} (defs : List Block) : Block → FState n → Res n → P
       defs[i]? = some body → Run defs body st (.error x) → Run defs (.call i rest) st (.error x)
   | callUndef {i rest st} :
       defs[i]? = none → Run defs (.call i rest) st (.error .badPc)
+  | leaveOk {rest d m a b rs} :
+      Run defs (.leave rest) ⟨d, m, a :: b :: rs⟩ (.leave ⟨d, m, rs⟩)
+  | leaveUnder {rest st} :
+      st.rstack.length < 2 → Run defs (.leave rest) st (.error .returnUnderflow)
   | doUnder {body rest st} :
       st.stack.length < 2 → Run defs (.doLoop body rest) st (.error .stackUnderflow)
   | doBodyStop {body rest i l d m rs r} :
-      Run defs body ⟨d, m, i :: l :: rs⟩ r → r.isOk = false →
+      Run defs body ⟨d, m, i :: l :: rs⟩ r → r.isStop = true →
+      Run defs (.doLoop body rest) ⟨i :: l :: d, m, rs⟩ r
+  | doLeave {body rest i l d m rs st1 r} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.leave st1) → Run defs rest st1 r →
       Run defs (.doLoop body rest) ⟨i :: l :: d, m, rs⟩ r
   | doTestUnder {body rest i l d m rs st1} :
       Run defs body ⟨d, m, i :: l :: rs⟩ (.ok st1) → st1.rstack.length < 2 →
@@ -235,6 +280,29 @@ inductive Run {n : Nat} (defs : List Block) : Block → FState n → Res n → P
       Run defs body ⟨d, m, i :: l :: rs⟩ (.ok ⟨d1, m1, i1 :: l1 :: rs1⟩) → i1 + 1#n ≠ l1 →
       Run defs (.doLoop body rest) ⟨(i1 + 1#n) :: l1 :: d1, m1, rs1⟩ r →
       Run defs (.doLoop body rest) ⟨i :: l :: d, m, rs⟩ r
+  | plusUnder {body rest st} :
+      st.stack.length < 2 → Run defs (.plusLoop body rest) st (.error .stackUnderflow)
+  | plusBodyStop {body rest i l d m rs r} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ r → r.isStop = true →
+      Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ r
+  | plusLeave {body rest i l d m rs st1 r} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.leave st1) → Run defs rest st1 r →
+      Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ r
+  | plusTestUnder {body rest i l d m rs st1} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.ok st1) → st1.rstack.length < 2 →
+      Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ (.error .returnUnderflow)
+  | plusStepUnder {body rest i l d m rs i1 l1 m1 rs1} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.ok ⟨[], m1, i1 :: l1 :: rs1⟩) →
+      Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ (.error .stackUnderflow)
+  | plusDone {body rest i l d m rs i1 l1 k d1 m1 rs1 r} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.ok ⟨k :: d1, m1, i1 :: l1 :: rs1⟩) →
+      loopCrossed i1 l1 k = true →
+      Run defs rest ⟨d1, m1, rs1⟩ r → Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ r
+  | plusAgain {body rest i l d m rs i1 l1 k d1 m1 rs1 r} :
+      Run defs body ⟨d, m, i :: l :: rs⟩ (.ok ⟨k :: d1, m1, i1 :: l1 :: rs1⟩) →
+      loopCrossed i1 l1 k = false →
+      Run defs (.plusLoop body rest) ⟨(i1 + k) :: l1 :: d1, m1, rs1⟩ r →
+      Run defs (.plusLoop body rest) ⟨i :: l :: d, m, rs⟩ r
 
 /-- The run relation is functional: a block and a state determine the result. -/
 theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState n}
@@ -321,24 +389,37 @@ theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState
     | callOk hd' => rw [hd] at hd'; cases hd'
     | callErr hd' => rw [hd] at hd'; cases hd'
     | callUndef => rfl
+  | leaveOk => cases h₂ with
+    | leaveOk => rfl
+    | leaveUnder hl => (simp at hl; try omega)
+  | leaveUnder hl => cases h₂ with
+    | leaveOk => (simp at hl; try omega)
+    | leaveUnder => rfl
   | doUnder hl =>
     cases h₂ with
     | doUnder => rfl
-    | doBodyStop => (simp at hl; try omega)
-    | doTestUnder => (simp at hl; try omega)
-    | doDone => (simp at hl; try omega)
-    | doAgain => (simp at hl; try omega)
+    | _ => (simp at hl; try omega)
   | doBodyStop hb hk ihb =>
     cases h₂ with
     | doUnder hl => (simp at hl; try omega)
     | doBodyStop hb' => exact ihb hb'
+    | doLeave hb' => have := ihb hb'; subst this; cases hk
     | doTestUnder hb' => have := ihb hb'; subst this; cases hk
     | doDone hb' => have := ihb hb'; subst this; cases hk
     | doAgain hb' => have := ihb hb'; subst this; cases hk
+  | doLeave hb hr ihb ihr =>
+    cases h₂ with
+    | doUnder hl => (simp at hl; try omega)
+    | doBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | doLeave hb' hr' => have := ihb hb'; cases this; exact ihr hr'
+    | doTestUnder hb' => have := ihb hb'; cases this
+    | doDone hb' => have := ihb hb'; cases this
+    | doAgain hb' => have := ihb hb'; cases this
   | doTestUnder hb hl ihb =>
     cases h₂ with
     | doUnder hl' => (simp at hl'; try omega)
     | doBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | doLeave hb' => have := ihb hb'; cases this
     | doTestUnder => rfl
     | doDone hb' => have := ihb hb'; cases this; (simp at hl; try omega)
     | doAgain hb' => have := ihb hb'; cases this; (simp at hl; try omega)
@@ -346,6 +427,7 @@ theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState
     cases h₂ with
     | doUnder hl => (simp at hl; try omega)
     | doBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | doLeave hb' => have := ihb hb'; cases this
     | doTestUnder hb' hl => have := ihb hb'; cases this; (simp at hl; try omega)
     | doDone hb' _ hr' => have := ihb hb'; cases this; exact ihr hr'
     | doAgain hb' hne _ => have := ihb hb'; cases this; exact absurd he hne
@@ -353,9 +435,68 @@ theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState
     cases h₂ with
     | doUnder hl' => (simp at hl'; try omega)
     | doBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | doLeave hb' => have := ihb hb'; cases this
     | doTestUnder hb' hl' => have := ihb hb'; cases this; (simp at hl'; try omega)
     | doDone hb' he _ => have := ihb hb'; cases this; exact absurd he hne
     | doAgain hb' _ hl' => have := ihb hb'; cases this; exact ihl hl'
+  | plusUnder hl =>
+    cases h₂ with
+    | plusUnder => rfl
+    | _ => (simp at hl; try omega)
+  | plusBodyStop hb hk ihb =>
+    cases h₂ with
+    | plusUnder hl => (simp at hl; try omega)
+    | plusBodyStop hb' => exact ihb hb'
+    | plusLeave hb' => have := ihb hb'; subst this; cases hk
+    | plusTestUnder hb' => have := ihb hb'; subst this; cases hk
+    | plusStepUnder hb' => have := ihb hb'; subst this; cases hk
+    | plusDone hb' => have := ihb hb'; subst this; cases hk
+    | plusAgain hb' => have := ihb hb'; subst this; cases hk
+  | plusLeave hb hr ihb ihr =>
+    cases h₂ with
+    | plusUnder hl => (simp at hl; try omega)
+    | plusBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | plusLeave hb' hr' => have := ihb hb'; cases this; exact ihr hr'
+    | plusTestUnder hb' => have := ihb hb'; cases this
+    | plusStepUnder hb' => have := ihb hb'; cases this
+    | plusDone hb' => have := ihb hb'; cases this
+    | plusAgain hb' => have := ihb hb'; cases this
+  | plusTestUnder hb hl ihb =>
+    cases h₂ with
+    | plusUnder hl' => (simp at hl'; try omega)
+    | plusBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | plusLeave hb' => have := ihb hb'; cases this
+    | plusTestUnder => rfl
+    | plusStepUnder hb' => have := ihb hb'; cases this; (simp at hl; try omega)
+    | plusDone hb' => have := ihb hb'; cases this; (simp at hl; try omega)
+    | plusAgain hb' => have := ihb hb'; cases this; (simp at hl; try omega)
+  | plusStepUnder hb ihb =>
+    cases h₂ with
+    | plusUnder hl' => (simp at hl'; try omega)
+    | plusBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | plusLeave hb' => have := ihb hb'; cases this
+    | plusTestUnder hb' hl => have := ihb hb'; cases this; (simp at hl; try omega)
+    | plusStepUnder => rfl
+    | plusDone hb' => have := ihb hb'; cases this
+    | plusAgain hb' => have := ihb hb'; cases this
+  | plusDone hb he hr ihb ihr =>
+    cases h₂ with
+    | plusUnder hl => (simp at hl; try omega)
+    | plusBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | plusLeave hb' => have := ihb hb'; cases this
+    | plusTestUnder hb' hl => have := ihb hb'; cases this; (simp at hl; try omega)
+    | plusStepUnder hb' => have := ihb hb'; cases this
+    | plusDone hb' _ hr' => have := ihb hb'; cases this; exact ihr hr'
+    | plusAgain hb' hne _ => have := ihb hb'; cases this; rw [he] at hne; cases hne
+  | plusAgain hb hne hl ihb ihl =>
+    cases h₂ with
+    | plusUnder hl' => (simp at hl'; try omega)
+    | plusBodyStop hb' hk => have := ihb hb'; subst this; cases hk
+    | plusLeave hb' => have := ihb hb'; cases this
+    | plusTestUnder hb' hl' => have := ihb hb'; cases this; (simp at hl'; try omega)
+    | plusStepUnder hb' => have := ihb hb'; cases this
+    | plusDone hb' he _ => have := ihb hb'; cases this; rw [he] at hne; cases hne
+    | plusAgain hb' _ hl' => have := ihb hb'; cases this; exact ihl hl'
 
 end Forth
 end WordDialect

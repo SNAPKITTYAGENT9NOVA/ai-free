@@ -8,3 +8,5 @@ import Forth.Print
 import Forth.ParseProps
 import Forth.Example
 import Forth.TextExample
+import Forth.Grammar
+import Forth.LoopProps

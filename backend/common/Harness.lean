@@ -168,6 +168,20 @@ def samplesFrontends : List Sample :=
   , forthTextSample "forth_text_trap_do_underflow" "1 DO LOOP"
   , forthTextSample "forth_text_trap_loop_rdrop" "3 0 DO R> DROP LOOP"
   , forthTextSample "forth_text_trap_j_outside" "1 >R 2 >R J"
+  , forthTextSample "forth_text_plus_loop_up" "0 10 0 DO I + 2 +LOOP  0 10 0 DO I + 3 +LOOP"
+  , forthTextSample "forth_text_plus_loop_down" "0 0 10 DO I + -1 +LOOP  0 -5 5 DO I + -2 +LOOP"
+  , forthTextSample "forth_text_plus_loop_wrap"
+      "0 9223372036854775807 9223372036854775805 DO 1 + 1 +LOOP  0 0 -2 DO 1 + 1 +LOOP"
+  , forthTextSample "forth_text_qdo" "0 5 5 ?DO 1 + LOOP  0 3 0 ?DO 1 + LOOP  0 4 4 ?DO 1 + 2 +LOOP"
+  , forthTextSample "forth_text_leave" "100 0 DO I 5 > IF I LEAVE THEN LOOP  0 4 0 DO 1 + LEAVE LOOP"
+  , forthTextSample "forth_text_leave_nested"
+      "0 4 0 DO 2 0 DO BEGIN LEAVE 1 UNTIL LOOP 1 + LOOP  0 10 0 DO I 3 = IF LEAVE THEN 1 + 2 +LOOP"
+  , forthTextSample "forth_text_unloop_exit"
+      ": FIND7 20 0 DO I 7 = IF I UNLOOP EXIT THEN LOOP 99 ; FIND7 FIND7 +"
+  , forthTextSample "forth_text_trap_plus_loop_nostep" "3 0 DO +LOOP"
+  , forthTextSample "forth_text_trap_plus_loop_rdrop" "3 0 DO R> DROP 1 +LOOP"
+  , forthTextSample "forth_text_trap_leave_rdrop" "3 0 DO R> DROP LEAVE LOOP"
+  , forthTextSample "forth_text_trap_unloop_empty" "1 UNLOOP"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))
