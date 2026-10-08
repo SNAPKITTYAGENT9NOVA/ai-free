@@ -90,7 +90,8 @@ last argument is the number of IR memory words (default 16):
 ```
 
 [`examples/forth/`](examples/forth) has sample programs, including a recursive
-word, a trap two calls deep, and `DO … LOOP` / `>R R>` (`loops.fs`).
+word, a trap two calls deep, `DO … LOOP` / `>R R>` (`loops.fs`), and `+LOOP`, `?DO`,
+`LEAVE` and `UNLOOP` (`leave.fs`).
 
 ## Proof and validation status
 
@@ -99,8 +100,10 @@ word, a trap two calls deep, and `DO … LOOP` / `>R R>` (`loops.fs`).
   to IR `call`/`ret`, `EXIT` (lowered to `ret`), `VARIABLE` (memory cells
   `0 … k-1`), `CONSTANT`, `0=`, `MOD`, the return-data stack words
   `>R R> R@` (lowered to the IR auxiliary stack `tor`/`fromr`/`rfetch`, which
-  `call`/`ret` never touch) and `DO … LOOP` with `I` and `J` (loop parameters
-  on that stack, so they survive calls and recursion):
+  `call`/`ret` never touch), `DO … LOOP` and `DO … +LOOP` with `I`, `J`,
+  `LEAVE` and `UNLOOP` (loop parameters on that stack, so they survive calls
+  and recursion; `+LOOP` uses ANS Forth's crossing rule, proved in
+  [`Forth/LoopProps.lean`](forth/Forth/LoopProps.lean)), and `?DO`:
   `WordDialect.Forth.Program.compile_correct` in
   [`Forth/Correct.lean`](forth/Forth/Correct.lean). Because the return-data
   stack is separate from call frames, unbalanced `>R`/`R>` across `EXIT` or a
@@ -118,7 +121,10 @@ word, a trap two calls deep, and `DO … LOOP` / `>R R>` (`loops.fs`).
   conditions), `parseTop_constant` / `classify_constant` (`n CONSTANT X` makes
   `X` the literal `n`) and `classify_recurse` / `parseSeq_recurse_name`
   (`RECURSE` is a call of the word being defined)
-  ([`Forth/ParseProps.lean`](forth/Forth/ParseProps.lean)); examples in
+  ([`Forth/ParseProps.lean`](forth/Forth/ParseProps.lean)). The parser
+  implements an inductive grammar exactly (`WordDialect.Forth.Grammar.parse_iff`)
+  and never runs out of fuel (`Grammar.parse_ne_fuel`)
+  ([`Forth/Grammar.lean`](forth/Forth/Grammar.lean)); examples in
   [`Forth/TextExample.lean`](forth/Forth/TextExample.lean).
   BCPL has a compilation correctness proof for its modeled subset.
   Wolfram-style scalar arithmetic is interpreted modulo the word width, and

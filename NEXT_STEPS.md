@@ -2,31 +2,49 @@
 
 Suggested development order. Each item names the gap it closes in the current code.
 
-## 1. Forth: parser fuel and a grammar specification
+## Done: Forth loops, parser fuel and grammar
 
 Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
-`CONSTANT`, `0=`, `MOD`, the return-data stack words `>R R> R@` and
-`DO … LOOP` with `I` and `J` are covered by `Forth.Program.compile_correct`.
-The return-data stack is the IR's auxiliary stack (`tor`/`fromr`/`rfetch`),
-which `call`/`ret` never touch, so loop parameters and `>R` values survive
-calls and recursion, and unbalanced use across `EXIT` or a call is defined
-behaviour. A text parser (`Forth.parse`) and a printer (`Forth.print`) exist,
-with the round trip `parse (print P) = .ok P` proved for well-formed programs
-(`Forth.parse_print`). The converse direction is proved in
-`Forth/ParseProps.lean`: every successful parse is well formed (`parse_wf`), so
-`print` is a canonical form (`parse_print_of_parse`), and the handling of case,
-comments, `CONSTANT` and `RECURSE` is characterised by lemmas. `wordc forth` /
-`wasmw forth` run a Forth source file on either backend. Remaining:
+`CONSTANT`, `0=`, `MOD`, the return-data stack words `>R R> R@`, `DO … LOOP`
+and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
+`Forth.Program.compile_correct`. `+LOOP` uses ANS Forth's crossing rule,
+proved in `Forth/LoopProps.lean` (`loopCrossed_eq_saddOverflow`; with step one
+it is the `LOOP` rule, `loopCrossed_one`). The parser implements an inductive
+grammar exactly (`Forth/Grammar.lean`: `parse_iff`, unambiguous by
+`Prog.unique`), its fuel is irrelevant (`parseSeq_fuel`), and the fuel errors
+are unreachable (`parse_ne_fuel`).
 
-- The parser lemmas have side conditions where the text-level statement would
-  otherwise be false (a `( … )` comment body without `)`, `\` or newline, after
-  text not ending inside a `(` comment; case-insensitivity up to the spelling in
-  error messages). Not proved: that the fuel bounds of `parseSeq`/`parseTop`
-  are never exhausted (the "too deeply nested" / "too long" errors are
-  unreachable), and a full specification of `parse` as a grammar.
-- Not implemented: `+LOOP`, `?DO`, `LEAVE` and `UNLOOP`. `LOOP` uses only the
-  equal case of ANS Forth's crossing rule (it ends when `index + 1 = limit`),
-  which is exact for a step of one; `+LOOP` would need the full rule.
+Choices made there, which a later change may want to revisit:
+
+- `?DO` is not a separate construct: it parses to
+  `OVER OVER = IF DROP DROP ELSE DO … LOOP THEN`, so `print` writes that form.
+- `LEAVE` is rejected by the parser outside a loop of its own block, but its
+  semantics is still total: outside a loop it removes two return-data items and
+  ends the word (or the main block).
+- The grammar is stated over tokens and the token classification `classify`.
+  The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
+  by its own grammar.
+
+## 1. Forth: `BEGIN … WHILE … REPEAT`
+
+The IR already has `Frag.whileLoop` with its rules (`while_enter_rule`,
+`while_exit_rule`, `while_back_rule`), used by BCPL. A Forth `Block.whileL`
+needs `Run` rules, a case in `compile_correct`, a parser production and the
+printer and grammar cases.
+
+## 2. Forth: more of the core word set
+
+Not implemented: `?DUP`, `2DUP`, `2DROP`, `2SWAP`, `*/`, `/MOD`, `NEGATE`,
+`ABS`, `MIN`, `MAX`, `CREATE`/`ALLOT`/`,`, and `CASE … OF … ENDOF … ENDCASE`.
+Most are straight-line and need only `Op.sem`, `compileOp` and a parser
+entry (`compileOp_ok` / `compileOp_err` are proved by one tactic for every
+operation).
+
+## 3. Lexer specification
+
+Give `tokenize` an independent specification (a token is a maximal run of
+non-whitespace characters, outside comments) and prove `tokenize` meets it, so
+that `parse_iff` composes into a statement about characters.
 
 ## Ongoing
 

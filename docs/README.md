@@ -308,8 +308,9 @@ state `execSeq` computes (`exec_straight_halt`) or traps with the trap it report
 ## 4. `forth/`: Forth, from text to IR
 
 Forth is the most developed frontend. It has source text, a parser with proofs in both
-directions, colon definitions with recursion, `EXIT`, variables, constants, and the return-stack
-words `>R R> R@` with `DO … LOOP`, `I` and `J`.
+directions and a grammar it provably implements, colon definitions with recursion, `EXIT`,
+variables, constants, and the return-stack words `>R R> R@` with `DO … LOOP`, `DO … +LOOP`,
+`?DO`, `LEAVE`, `UNLOOP`, `I` and `J`.
 
 ```mermaid
 flowchart LR
@@ -318,7 +319,7 @@ flowchart LR
   PR -->|print| T2["canonical text"]
   T2 -->|"parse<br/>(parse_print)"| PR
   PR -->|"Program.compile"| IRP["IR program"]
-  PR -->|"Run (big-step semantics)<br/>eval (sound interpreter)"| RES["Res: ok / exit / error"]
+  PR -->|"Run (big-step semantics)<br/>eval (sound interpreter)"| RES["Res: ok / exit / leave / error"]
   IRP -->|"Exec"| OUT["IR outcome"]
   RES -.->|"Program.compile_correct"| OUT
 ```
@@ -331,10 +332,11 @@ The reference semantics, defined directly on a Forth state with no reference to 
   comparisons, `0=`, stack words, `@ !`, and the return-stack words);
 * `FState`: the data stack, memory, and a return-data stack `rstack` of words;
 * `Block`: `nil`, `op o rest`, `ite t e rest` (`IF … ELSE … THEN`), `untilL body rest`
-  (`BEGIN … UNTIL`), `call i rest` (a colon definition), `exit`, and `doLoop body rest`
-  (`DO … LOOP`);
+  (`BEGIN … UNTIL`), `call i rest` (a colon definition), `exit`, `doLoop body rest`
+  (`DO … LOOP`), `plusLoop body rest` (`DO … +LOOP`) and `leave` (`LEAVE`);
 * `Program`: a dictionary of word bodies `defs`, a `main` block and a variable count `vars`;
-* `Res`: a run ends `ok` (fell off the end), `exit` (ran `EXIT`) or `error t` (trapped);
+* `Res`: a run ends `ok` (fell off the end), `exit` (ran `EXIT`), `leave` (ran `LEAVE`, which the
+  innermost loop catches) or `error t` (trapped);
 * `Run defs b st r`: a big-step relation, with `Run.deterministic`.
 
 The conventions are ANS Forth's: `/` truncates toward zero and `MOD` is the matching remainder;
@@ -343,7 +345,9 @@ assume about memory). The return-data stack is *separate* from call frames, mirr
 auxiliary stack. So unbalanced `>R` across `EXIT` or a call is defined behaviour here rather than
 undefined as in ANS Forth, and the module documents each such choice explicitly. Examples are the
 `LOOP` exit rule (exit when `index+1 = limit`), what `EXIT` inside a loop leaves behind, and `I`/`J`
-outside a loop.
+outside a loop. `+LOOP` ends when `loopCrossed index limit step` holds, which
+`Forth/LoopProps.lean` proves to be ANS Forth's crossing rule (`loopCrossed_eq_saddOverflow`)
+and, for step `1`, the `LOOP` rule (`loopCrossed_one`).
 
 ### `Forth/Compile.lean`
 
@@ -361,10 +365,13 @@ flowchart TB
   X["EXIT"] -.->|"RET (same as end of body)"| C
 ```
 
-Code sizes do not depend on call targets (`compile_size`), so word addresses are prefix sums of
-`Block.size`. `DO body LOOP` lowers, via `Frag.repeatLoop`, to `SWAP TOR TOR`, the body, then a
-test that increments the index, leaves `limit-(index+1)`, branches back while it is nonzero, and
-finally drops both loop parameters.
+Code sizes do not depend on call targets or on the leave target (`compile_size`), so word
+addresses are prefix sums of `Block.size`. `DO body LOOP` lowers to `SWAP TOR TOR`, the body,
+then a test that increments the index, leaves `limit-(index+1)`, branches back while it is
+nonzero, and finally drops both loop parameters (`loopFrag`). `DO body +LOOP` (`plusFrag`) has a
+26-instruction test computing `index+step` and the `loopCrossed` flag, and branches *out* on it.
+`compile addr lv b` takes a *leave target* `lv`: `LEAVE` lowers to `FROMR FROMR DROP DROP JMP lv`,
+and a loop compiles its body with its own end address as the target.
 
 ### `Forth/OpCorrect.lean`
 
@@ -377,17 +384,25 @@ success reaches the corresponding state (`compileOp_ok`), failure traps with the
 The main theorem. `compile_correct` is proved by induction on the `Run` derivation. Whenever the
 reference semantics derives result `r` for block `b`, the machine runs any program that contains
 every word body at its address (`DefsAt`). Started at the block's address, with matching data
-stack, memory and auxiliary stack, and with any return stack, it does exactly one of three things:
+stack, memory and auxiliary stack, and with any return stack, it does exactly one of four things:
 
 * it reaches the end of the block's code with matching stacks and memory and the return stack
   unchanged;
 * for `EXIT`, it reaches a `RET` in the same situation;
+* for `LEAVE`, it reaches the leave target in the same situation;
 * it reaches a state whose next step traps with exactly Forth's trap.
 
 The induction needs no separate argument for recursion, because a call's derivation contains the
 callee's derivation, and a loop iteration's derivation contains the next iteration's.
 `Program.compile_correct` lifts this to whole programs from `State.init`, and
 `compileProgram_correct` is the special case without definitions.
+
+### `Forth/LoopProps.lean`
+
+What the `+LOOP` exit test means. `loopCrossed_eq_saddOverflow`: the loop ends exactly when
+adding the step to `index - limit - 2^(n-1)` overflows as a signed number, which is ANS Forth's
+rule that the index crossed the boundary between `limit - 1` and `limit`. `loopCrossed_one`: with
+step `1` it is the `LOOP` test `index + 1 = limit`.
 
 ### `Forth/Eval.lean`
 
@@ -400,10 +415,11 @@ recursive words, be established by evaluation instead of by hand-built derivatio
 The text frontend. `tokenize` splits on whitespace and removes `\` line comments and `( … )`
 comments (an unterminated `(` is an error). `parse` is case-insensitive. It reads integer
 literals including negative ones, the primitive words, the return-stack words,
-`IF/ELSE/THEN`, `BEGIN/UNTIL`, `DO/LOOP`, colon definitions, `RECURSE`, `EXIT`, `VARIABLE`
-and `CONSTANT`. A name is visible from the start of its own body, which is how recursion by name
+`IF/ELSE/THEN`, `BEGIN/UNTIL`, `DO/LOOP`, `DO/+LOOP`, `?DO` (parsed to an `IF` that skips the
+loop when limit and index are equal), `LEAVE` (only inside a loop: `Program.leaveOK`), colon
+definitions, `RECURSE`, `EXIT`, `VARIABLE` and `CONSTANT`. A name is visible from the start of its own body, which is how recursion by name
 works, and a later definition shadows an earlier one. Every failure returns a message, for
-example "unknown word: FOO", "DO without LOOP" or "definition of X has no ;".
+example "unknown word: FOO", "DO without LOOP or +LOOP" or "definition of X has no ;".
 
 ### `Forth/Print.lean`
 
@@ -412,8 +428,8 @@ A printer from `Program` back to Forth source, and the round trip
     parse_print : P.WF → parse (print P) = .ok P
 
 for every well-formed program. A program is well formed (`Program.WF`) when every call targets
-a word already defined, counting the word being defined, and `EXIT` occurs only inside
-definitions. The proof has two halves: `tokenize_join` (the lexer splits printed text back into
+a word already defined, counting the word being defined, `EXIT` occurs only inside
+definitions, and `LEAVE` only inside loops. The proof has two halves: `tokenize_join` (the lexer splits printed text back into
 the printed tokens) and `parseTokens_print` (the token-level parser inverts the printer).
 
 ### `Forth/ParseProps.lean`
@@ -440,8 +456,16 @@ flowchart LR
   WF -->|"parse_print"| RT["parse (print P) = ok P"]
 ```
 
-What is not proved, and is listed in `NEXT_STEPS.md`: that the parser's fuel bounds are never
-exhausted, and a full grammar specification.
+### `Forth/Grammar.lean`
+
+A fuel-free specification of the parser. `Seq` is an inductive grammar for blocks (a token list
+is a block, a stop word, and the remaining tokens), `Top` the grammar of top-level code with
+definitions, variables and constants, and `Prog` adds the `LEAVE` check. The parser implements
+it exactly: `parseSeq_iff`, `parseTop_iff`, `parseTokens_iff` and `parse_iff` (for every fuel
+larger than the input, which is what `parse` uses), and the grammar is unambiguous
+(`Seq.unique`, `Prog.unique`). The fuel is irrelevant: `parseSeq_fuel` (same result, error
+message included, for all such fuel) and `parse_ne_fuel` (`parse` never reports
+`input too deeply nested` or `input too long`).
 
 ### `Forth/Example.lean` and `Forth/TextExample.lean`
 
@@ -449,7 +473,9 @@ exhausted, and a full grammar specification.
 `TextExample.lean` does the same from source text, and pins the parser's behaviour on concrete
 inputs: comments and case, `BEGIN/UNTIL`, words outside the subset, unknown words, use before
 definition, a missing `;`, unbalanced control structures, a recursive `SUM` whose compiled
-program halts with `55`, and examples for each newer word.
+program halts with `55`, and examples for each newer word, including `+LOOP` counting up and
+down, `?DO` skipping its loop, `LEAVE`, `UNLOOP EXIT`, and the rejection of `LEAVE` outside a
+loop.
 
 ## 5. `bcpl/`: BCPL statements to IR
 
