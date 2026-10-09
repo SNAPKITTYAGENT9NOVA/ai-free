@@ -90,6 +90,9 @@ def opTok : Op → Tok
   | .twoSwap => ['2', 'S', 'W', 'A', 'P'] | .divMod => ['/', 'M', 'O', 'D']
   | .negate => ['N', 'E', 'G', 'A', 'T', 'E'] | .abs => ['A', 'B', 'S']
   | .min => ['M', 'I', 'N'] | .max => ['M', 'A', 'X']
+  | .umStar => ['U', 'M', '*'] | .umDivMod => ['U', 'M', '/', 'M', 'O', 'D']
+  | .mStar => ['M', '*'] | .smRem => ['S', 'M', '/', 'R', 'E', 'M']
+  | .starSlashMod => ['*', '/', 'M', 'O', 'D'] | .starSlash => ['*', '/']
 
 def printBlock : Block → List Tok
   | .nil => []

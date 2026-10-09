@@ -171,7 +171,10 @@ def opTable : List (Tok × Op) :=
     (['2', 'D', 'U', 'P'], .twoDup), (['2', 'D', 'R', 'O', 'P'], .twoDrop),
     (['2', 'S', 'W', 'A', 'P'], .twoSwap), (['/', 'M', 'O', 'D'], .divMod),
     (['N', 'E', 'G', 'A', 'T', 'E'], .negate), (['A', 'B', 'S'], .abs),
-    (['M', 'I', 'N'], .min), (['M', 'A', 'X'], .max) ]
+    (['M', 'I', 'N'], .min), (['M', 'A', 'X'], .max),
+    (['U', 'M', '*'], .umStar), (['U', 'M', '/', 'M', 'O', 'D'], .umDivMod),
+    (['M', '*'], .mStar), (['S', 'M', '/', 'R', 'E', 'M'], .smRem),
+    (['*', '/', 'M', 'O', 'D'], .starSlashMod), (['*', '/'], .starSlash) ]
 
 def digitsAux : Nat → List Char → Option Nat
   | acc, [] => some acc

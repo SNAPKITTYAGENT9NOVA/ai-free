@@ -35,7 +35,7 @@ theorem parse_begin_until :
   rfl
 
 /-- Words outside the supported subset (only the words listed in `Forth.Parse`) are errors. -/
-theorem parse_not_in_subset : parse "1 2 3 */" = .error "unknown word: */" := by rfl
+theorem parse_not_in_subset : parse "1 2 3 FM/MOD" = .error "unknown word: FM/MOD" := by rfl
 
 theorem parse_unknown : parse "1 FOO" = .error "unknown word: FOO" := by rfl
 
@@ -524,6 +524,40 @@ theorem parse_create_in_def :
       .error "VARIABLE, CONSTANT, CREATE, ALLOT or , inside definition of F" := by rfl
 theorem parse_comma_needs_literal :
     parse "1 DUP ," = .error ", needs a number literal immediately before it" := by rfl
+
+/-! ## Double-cell arithmetic -/
+
+theorem parse_double :
+    parse "UM* UM/MOD M* SM/REM */MOD */" =
+      .ok ⟨[], .op .umStar (.op .umDivMod (.op .mStar (.op .smRem (.op .starSlashMod
+        (.op .starSlash .nil))))), 0⟩ := by rfl
+
+/-- `M*` gives the double-cell product (low word, then high word); `UM*` the unsigned one. -/
+theorem mstar_run (mem : Memory 64) :
+    Run [] (.op (.lit (-3)) (.op (.lit 7) (.op .mStar (.op (.lit (-1)) (.op (.lit 2)
+        (.op .umStar .nil)))))) ⟨[], mem, []⟩
+      (.ok ⟨[1#64, BitVec.ofInt 64 (-2), BitVec.ofInt 64 (-1), BitVec.ofInt 64 (-21)], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
+/-- `SM/REM` divides `(lo, hi)` symmetrically; `UM/MOD` unsigned: `2^64 / 3`. -/
+theorem smrem_run (mem : Memory 64) :
+    Run [] (.op (.lit (-7)) (.op (.lit (-1)) (.op (.lit 2) (.op .smRem (.op (.lit 0) (.op (.lit 1)
+        (.op (.lit 3) (.op .umDivMod .nil)))))))) ⟨[], mem, []⟩
+      (.ok ⟨[6148914691236517205#64, 1#64, BitVec.ofInt 64 (-3), BitVec.ofInt 64 (-1)], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
+/-- `*/MOD` and `*/` keep the full product: `2^62 * 4 / 8 = 2^61` although `2^62 * 4` overflows. -/
+theorem starSlash_run (mem : Memory 64) :
+    Run [] (.op (.lit 6) (.op (.lit 7) (.op (.lit 4) (.op .starSlashMod (.op (.lit 4611686018427387904)
+        (.op (.lit 4) (.op (.lit 8) (.op .starSlash .nil)))))))) ⟨[], mem, []⟩
+      (.ok ⟨[2305843009213693952#64, 10#64, 2#64], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
+/-- A quotient that does not fit a word traps, like division by zero. -/
+theorem starSlash_overflow (mem : Memory 64) :
+    Run [] (.op (.lit 4611686018427387904) (.op (.lit 4) (.op (.lit 2) (.op .starSlash .nil))))
+      ⟨[], mem, []⟩ (.error .divideByZero) :=
+  eval_sound 10 _ _ _ (by rfl)
 
 end Forth
 end WordDialect

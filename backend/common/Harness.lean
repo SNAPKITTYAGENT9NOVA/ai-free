@@ -90,15 +90,20 @@ def check (run : Runner) (s : Sample) : IO Bool := do
 
 /-! ## Programs from the frontends -/
 
+/-- Registers a compiled Forth program may use: the double-cell words keep their loop state
+in virtual registers `0 … 7` (`Forth.Double`); other Forth code uses none. -/
+def forthRegs : Nat := 8
+
 def forthSample (name : String) (b : Forth.Block) (mem : List Nat := List.replicate 16 0) : Sample :=
-  { name, prog := Forth.compileProgram b, mem }
+  { name, prog := Forth.compileProgram b, mem, nregs := forthRegs }
 
 /-- A sample written as Forth source text. A parse failure becomes a reported error. The memory
 image is extended with zero cells if the program's `VARIABLE`s (cells `0 … vars - 1`) need more. -/
 def forthTextSample (name : String) (src : String) (mem : List Nat := List.replicate 16 0) :
     Sample :=
   match Forth.parse src with
-  | .ok P => { name, prog := P.compile, mem := mem ++ List.replicate (P.vars - mem.length) 0 }
+  | .ok P => { name, prog := P.compile, mem := mem ++ List.replicate (P.vars - mem.length) 0,
+               nregs := forthRegs }
   | .error e => { name, prog := [], mem, buildError := some s!"Forth parse error: {e}" }
 
 open Forth in
@@ -199,6 +204,19 @@ def samplesFrontends : List Sample :=
   , forthTextSample "forth_text_allot" "CREATE B 3 ALLOT VARIABLE X 9 X ! X @ X"
   , forthTextSample "forth_text_trap_divmod0" "1 0 /MOD"
   , forthTextSample "forth_text_trap_twoswap" "1 2 3 2SWAP"
+  , forthTextSample "forth_text_um_star" "7 6 UM* -1 -1 UM* -1 2 UM*"
+  , forthTextSample "forth_text_um_divmod" "-2 3 7 UM/MOD 0 1 3 UM/MOD 5 0 2 UM/MOD"
+  , forthTextSample "forth_text_m_star"
+      "-3 7 M* -3 -7 M* -9223372036854775808 -9223372036854775808 M* 9223372036854775807 2 M*"
+  , forthTextSample "forth_text_sm_rem"
+      "7 0 2 SM/REM -7 -1 2 SM/REM 7 0 -2 SM/REM -7 -1 -2 SM/REM -9223372036854775808 -1 1 SM/REM"
+  , forthTextSample "forth_text_star_slash"
+      "6 7 4 */MOD -6 7 4 */ 4611686018427387904 4 8 */ -9223372036854775808 -1 -1 */"
+  , forthTextSample "forth_text_trap_um_divmod_overflow" "0 5 5 UM/MOD"
+  , forthTextSample "forth_text_trap_sm_rem_overflow" "-9223372036854775808 -1 -1 SM/REM"
+  , forthTextSample "forth_text_trap_star_slash0" "1 2 0 */"
+  , forthTextSample "forth_text_trap_star_slash_overflow" "4611686018427387904 4 2 */"
+  , forthTextSample "forth_text_trap_star_slash_underflow" "1 2 */MOD"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

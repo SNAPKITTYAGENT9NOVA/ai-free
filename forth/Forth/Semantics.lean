@@ -19,6 +19,17 @@ Conventions (ANS Forth):
 * `/MOD ( a b -- rem quot )` is `MOD` and `/` together; `NEGATE` is `0 - a`; `ABS`, `MIN` and
   `MAX` compare as signed numbers (`ABS` of the most negative number is itself, as it wraps).
   `2DUP 2DROP 2SWAP` act on pairs.
+* Double-cell numbers are pairs `( lo hi )`, `hi` on top, standing for `hi * 2^n + lo`.
+  `UM* ( a b -- lo hi )` is the full unsigned product. `UM/MOD ( lo hi u -- rem quot )` divides
+  the unsigned double-cell number by `u`; it traps `divideByZero` unless `hi < u`, which is
+  exactly when the quotient fits in one word (so also when `u = 0`). `M* ( a b -- lo hi )` is the
+  full signed product: `lo` and `hi` are the two words of `a * b` as a `2n`-bit two's-complement
+  number (`hi` is `a * b / 2^n`, rounded down). `SM/REM ( lo hi v -- rem quot )` divides the
+  signed double-cell number `hi * 2^n + lo` by `v` with truncation toward zero (`Int.tdiv` and
+  `Int.tmod`, like `/` and `MOD`); it traps `divideByZero` when `v = 0` or the quotient does not
+  fit in a signed word.
+* `*/MOD ( n1 n2 n3 -- rem quot )` divides the full product `n1 * n2` (never wrapped) by `n3`, as
+  `M*` then `SM/REM`, trapping in the same cases; `*/ ( n1 n2 n3 -- quot )` keeps the quotient.
 
 Memory: `FState.mem` is the whole IR memory; `@`/`!` trap `badAddress` outside its valid
 cells. The `VARIABLE`s of a program are the cells `0 … vars - 1` (`Program.vars`); a program
@@ -86,6 +97,7 @@ inductive Op where
   | fetch | store
   | tor | fromr | rfetch | loopI | loopJ | unloop
   | twoDup | twoDrop | twoSwap | divMod | negate | abs | min | max
+  | umStar | umDivMod | mStar | smRem | starSlashMod | starSlash
   deriving DecidableEq, Repr
 
 /-- A Forth state: the data stack, memory, and the return-data stack (`>R`/`R>`/`R@` and the
@@ -142,6 +154,33 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
   | .abs, ⟨a :: d, m, r⟩ => .ok ⟨(if Cond.eval .slt a 0#n then 0#n - a else a) :: d, m, r⟩
   | .min, ⟨b :: a :: d, m, r⟩ => .ok ⟨(if Cond.eval .slt a b then a else b) :: d, m, r⟩
   | .max, ⟨b :: a :: d, m, r⟩ => .ok ⟨(if Cond.eval .sgt a b then a else b) :: d, m, r⟩
+  | .umStar, ⟨b :: a :: d, m, r⟩ =>
+      .ok ⟨BitVec.ofNat n (a.toNat * b.toNat / 2 ^ n) :: BitVec.ofNat n (a.toNat * b.toNat) :: d, m, r⟩
+  | .umDivMod, ⟨u :: hi :: lo :: d, m, r⟩ =>
+      if hi.toNat < u.toNat then
+        .ok ⟨BitVec.ofNat n ((hi.toNat * 2 ^ n + lo.toNat) / u.toNat) ::
+          BitVec.ofNat n ((hi.toNat * 2 ^ n + lo.toNat) % u.toNat) :: d, m, r⟩
+      else .error .divideByZero
+  | .mStar, ⟨b :: a :: d, m, r⟩ =>
+      .ok ⟨BitVec.ofInt n (a.toInt * b.toInt / (2 ^ n : Nat)) :: BitVec.ofInt n (a.toInt * b.toInt) :: d,
+        m, r⟩
+  | .smRem, ⟨v :: hi :: lo :: d, m, r⟩ =>
+      if v.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (hi.toInt * 2 ^ n + lo.toNat).tdiv v.toInt ∧
+          (hi.toInt * 2 ^ n + lo.toNat).tdiv v.toInt < 2 ^ (n - 1) then
+        .ok ⟨BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).tdiv v.toInt) ::
+          BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).tmod v.toInt) :: d, m, r⟩
+      else .error .divideByZero
+  | .starSlashMod, ⟨c :: b :: a :: d, m, r⟩ =>
+      if c.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (a.toInt * b.toInt).tdiv c.toInt ∧
+          (a.toInt * b.toInt).tdiv c.toInt < 2 ^ (n - 1) then
+        .ok ⟨BitVec.ofInt n ((a.toInt * b.toInt).tdiv c.toInt) ::
+          BitVec.ofInt n ((a.toInt * b.toInt).tmod c.toInt) :: d, m, r⟩
+      else .error .divideByZero
+  | .starSlash, ⟨c :: b :: a :: d, m, r⟩ =>
+      if c.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (a.toInt * b.toInt).tdiv c.toInt ∧
+          (a.toInt * b.toInt).tdiv c.toInt < 2 ^ (n - 1) then
+        .ok ⟨BitVec.ofInt n ((a.toInt * b.toInt).tdiv c.toInt) :: d, m, r⟩
+      else .error .divideByZero
   | .tor, ⟨a :: d, m, r⟩ => .ok ⟨d, m, a :: r⟩
   | .fromr, ⟨d, m, a :: r⟩ => .ok ⟨a :: d, m, r⟩
   | .fromr, ⟨_, _, []⟩ => .error .returnUnderflow
@@ -154,6 +193,11 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
   | .unloop, ⟨d, m, _ :: _ :: r⟩ => .ok ⟨d, m, r⟩
   | .unloop, _ => .error .returnUnderflow
   | _, _ => .error .stackUnderflow
+
+/-- The operations whose code is a loop rather than straight-line code. -/
+def loopy : Op → Bool
+  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash => true
+  | _ => false
 
 end Op
 
