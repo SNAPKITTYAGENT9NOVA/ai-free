@@ -6,6 +6,7 @@ import Wolfram
 import X86
 import Wasm
 import A64
+import RV
 import Lean
 open Lean Elab Command
 

@@ -4,11 +4,11 @@
 
 UniversalWord, hosted here as `ai-free`, brings Forth, a BCPL subset, and Wolfram-style scalar and matrix computations into a shared intermediate language. Its central character is the machine word: a fixed-width value that can carry an integer, a truth flag, or a memory address. Around that value, the project builds reference semantics, translations, reusable proofs, target machine models, emitters, and executable comparison harnesses.
 
-Think of this repository as a railway atlas. The source frontends are departure stations. Universal Word IR is the interchange where their different expressions become a common instruction stream. The x86-64, AArch64 and WebAssembly backends are three routes onward. The Lean modules describe the track, establish how each connection behaves, and carry the argument from a source computation to a target outcome.
+Think of this repository as a railway atlas. The source frontends are departure stations. Universal Word IR is the interchange where their different expressions become a common instruction stream. The x86-64, AArch64, RISC-V and WebAssembly backends are four routes onward. The Lean modules describe the track, establish how each connection behaves, and carry the argument from a source computation to a target outcome.
 
 This README is your guided journey through that atlas. Every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **108 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean` and the 22 files of the AArch64 backend (`backend/arm64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. A more technical file-by-file tour, with Mermaid diagrams of the pipeline, each backend's proof structure and the trust boundaries, is in [`docs/README.md`](docs/README.md). The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **129 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean` the 22 files of the AArch64 backend (`backend/arm64`) and the 21 files of the RISC-V backend (`backend/riscv64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. A more technical file-by-file tour, with Mermaid diagrams of the pipeline, each backend's proof structure and the trust boundaries, is in [`docs/README.md`](docs/README.md). The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Choose your route
 
@@ -23,6 +23,7 @@ This README is your guided journey through that atlas. Every Lean file receives 
 | Native execution | [X86.Lower](backend/x86_64/X86/Lower.lean) | Register conventions, assembly sequences, and guards |
 | WebAssembly execution | [Wasm.Lower](backend/wasm/Wasm/Lower.lean) | Instruction functions and the dispatch loop |
 | ARM64 execution | [A64.Isa](backend/arm64/A64/Isa.lean) | The AArch64 model and how it differs from x86-64 |
+| RISC-V execution | [RV.Isa](backend/riscv64/RV/Isa.lean) | A target without condition flags: compare-and-branch everywhere |
 | Proof dependency inspection | [Audit](formal/Audit.lean) | The project's namespace-wide axiom audit |
 
 The numbered entries are arranged by the computation's journey rather than alphabetical order. Within each region, the order moves from vocabulary and execution toward translation, correctness, examples, and public imports. This makes the map useful both as a reference and as a reading course.
@@ -33,7 +34,7 @@ A `Word n` is a Lean `BitVec n`. Addition, subtraction, and multiplication follo
 
 The IR uses word-addressed memory. Address `a` selects one word; a 64-bit backend places that cell at a corresponding byte address separated by eight bytes. Its data stack is a list with the top at the head. For a binary expression written as `a b op`, `b` is on top and the result is `a op b`. Keeping that convention in mind makes the instruction definitions and compiler output much easier to follow.
 
-Control addresses are instruction indices. The machine has virtual registers, a data stack, a return stack of code addresses, and a separate auxiliary stack of words. Calls and returns use the code-address stack. Forth's return-data operations use the auxiliary stack. That separation lets saved data and loop parameters survive calls and recursion, and it carries through all three backends.
+Control addresses are instruction indices. The machine has virtual registers, a data stack, a return stack of code addresses, and a separate auxiliary stack of words. Calls and returns use the code-address stack. Forth's return-data operations use the auxiliary stack. That separation lets saved data and loop parameters survive calls and recursion, and it carries through all four backends.
 
 Execution can continue, halt, or trap. The executable targets report the shared traps with a common vocabulary:
 
@@ -515,6 +516,94 @@ Exports the AArch64 model, lowering, emitter, simulation modules, whole-program 
 
 Implements `a64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-aarch64` (or directly on an AArch64 Linux host), and compare against Lean. It runs the same fixed, generated, auxiliary-stack, overflow and Forth-file checks as `wordc`.
 
+## Station X: the RISC-V line — files 109–129
+
+The RV64 route keeps the register roles and proof structure of the x86-64 and AArch64 backends, but RISC-V has no condition flags. Every check is a compare-and-branch on two registers, a comparison result comes from a branch around a constant, and `select` branches around a move. There is no indexed addressing and no rotate instruction in the base ISA. `rv64c` runs the emitted binaries under `qemu-riscv64`.
+
+### 109. [Isa.lean](backend/riscv64/RV/Isa.lean) — a machine without flags
+
+Models the emitted RV64IM subset: integer registers, `ld`/`sd`, register-register arithmetic, `sltiu`, `sll`/`srl` with the amount modulo 64, and `divu`/`div` exactly as RISC-V defines them (all ones on a zero divisor; `div` wraps on overflow). The conditional branch `bcc c a b t` takes the IR's own comparison `Cond`, so its meaning needs no flag encoding. `movImm` (the assembler's `li`), far branches, `call` and `ret` are fixed sequences.
+
+### 110. [Lower.lean](backend/riscv64/RV/Lower.lean) — the same track without signals
+
+The data stack uses `s1`, virtual registers use `s2`, IR memory uses `s3`, the empty return stack is `s4`, the return-stack pointer is `s5`, and auxiliary data uses `s6`. Each guard is three instructions (load a limit, `bcc`, trap or overflow stub). Memory access computes the address with `slli` and `add`. `shl`/`shr` mask the result to zero for amounts of 64 or more, and the rotations are two shifts and an `or`.
+
+### 111. [Emit.lean](backend/riscv64/RV/Emit.lean) — print the RISC-V assembly
+
+Prints the model instructions for `clang --target=riscv64-linux-gnu -march=rv64im`. Each conditional branch is printed as the opposite branch over a `j`, so it reaches as far as `j` does. An out-of-range immediate becomes an `.error` directive. The runtime uses `li`/`lla`, places the three stacks in their own sections, and dumps state on halt through Linux system calls.
+
+### 112. [Rel.lean](backend/riscv64/RV/Rel.lean) — match the two timetables
+
+The relation between IR and RISC-V states. The regions and their disjointness are the same as on the other native targets.
+
+### 113. [Run.lean](backend/riscv64/RV/Run.lean) — locate and follow the code
+
+`RSteps`, `RExec` and `RAt`, and the placement of each lowered IR instruction and the trailing bad-pc stub.
+
+### 114. [Seq.lean](backend/riscv64/RV/Seq.lean) — compose short stretches
+
+Straight-line execution (`rseq`), and the branch-and-stub guard lemmas `guard_pass`/`guard_trap` and `ovf_pass`/`ovf_trap`, all stated directly on `Cond.eval` of two registers.
+
+### 115. [Micro.lean](backend/riscv64/RV/Micro.lean) — the smallest useful moves
+
+Local effects of loads, stores, scratch-register writes, stack-pointer adjustment and the two-instruction push.
+
+### 116. [Guard.lean](backend/riscv64/RV/Guard.lean) — check room and operands
+
+The operand-count guard (`bcc .ule`) and the data- and return-stack capacity guards (`bcc .uge`), each with its passing and failing case.
+
+### 117. [SimBin.lean](backend/riscv64/RV/SimBin.lean) — one pattern, many operators
+
+`MidSpec` and the generic binary-operation simulation, as on the other native targets.
+
+### 118. [SimOps.lean](backend/riscv64/RV/SimOps.lean) — arithmetic without rotate
+
+Arithmetic, bitwise operations, shifts and rotations. `mask_lt` justifies the shift mask, and `rotl_shifts`/`rotr_shifts` prove that two shifts and an `or` are the rotations.
+
+### 119. [SimStack.lean](backend/riscv64/RV/SimStack.lean) — rearrange the carried words
+
+Literals, pointers, complement, `dup`, `drop`, `swap`, `over` and `rot`.
+
+### 120. [SimMem.lean](backend/riscv64/RV/SimMem.lean) — compute the address, keep the neighbours
+
+Frame lemmas for the register file and IR memory, and the address computation `idx_addr`/`idx_steps` that replaces indexed addressing.
+
+### 121. [SimMemOps.lean](backend/riscv64/RV/SimMemOps.lean) — perform the checked access
+
+The `bltu` bounds guard and the `push`/`pop` and `load`/`store` simulations, for success and bad-address traps.
+
+### 122. [SimDiv.lean](backend/riscv64/RV/SimDiv.lean) — branches inside an instruction
+
+The divisions after a `bnez` zero guard, and the two instructions whose lowering branches internally: `select` (`beqz` over a `mv`) and `cmp` (`bcc` over setting `0`), each proved for both paths.
+
+### 123. [SimCtl.lean](backend/riscv64/RV/SimCtl.lean) — branch, call, and return
+
+`jmp`, `branch` (`bnez`), `call` and `ret` on the `s5` return stack, and halt.
+
+### 124. [SimAux.lean](backend/riscv64/RV/SimAux.lean) — a separate place for saved data
+
+The auxiliary stack on `s6`: its `bcc` guards and the `tor`, `fromr` and `rfetch` simulations.
+
+### 125. [SimStep.lean](backend/riscv64/RV/SimStep.lean) — every instruction gets a connection
+
+`sim_exec`: every IR instruction, for every outcome, including overflow when a stack is full.
+
+### 126. [Correct.lean](backend/riscv64/RV/Correct.lean) — preserve the complete journey
+
+`lowerProg_correct_or_overflow` and `lowerProg_correct`, with the same hypotheses as the other native targets.
+
+### 127. [Init.lean](backend/riscv64/RV/Init.lean) — begin at the binary entrance
+
+The six-instruction prologue model and its effect, `entry_rel`, and the end-to-end `binary_correct`.
+
+### 128. [RV.lean](backend/riscv64/RV.lean) — the RISC-V library entrance
+
+Exports the RISC-V model, lowering, emitter, simulation modules, whole-program proofs and initialization result.
+
+### 129. [RVMain.lean](backend/riscv64/RVMain.lean) — ride the line under qemu
+
+Implements `rv64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-riscv64` (or directly on a RISC-V Linux host), and compare against Lean, with the same checks as `wordc` and `a64c`.
+
 ## Make your first journey
 
 Install Git and [elan](https://github.com/leanprover/elan), then make `lean` and `lake` available on your path. The repository pins `leanprover/lean4:v4.34.1`; elan selects that toolchain. The Lake package is named `UniversalWord`, and its manifest lists no external package dependencies.
@@ -525,7 +614,7 @@ cd ai-free
 lake build
 ```
 
-The default build includes the semantic and frontend libraries, shared harness, the three backend libraries, and the `wordc`, `wasmw` and `a64c` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 execution uses `clang` and `ld.lld` to build the binary and `qemu-aarch64` (Debian/Ubuntu package `qemu-user`) to run it; on an AArch64 Linux machine it can run directly.
+The default build includes the semantic and frontend libraries, shared harness, the four backend libraries, and the `wordc`, `wasmw`, `a64c` and `rv64c` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 and RISC-V execution use `clang` and `ld.lld` to build the binary and `qemu-aarch64` / `qemu-riscv64` (Debian/Ubuntu package `qemu-user`) to run it; on a matching Linux machine the binaries run directly.
 
 Try a short source file containing `5 DUP +`, or use the repository's [Forth examples](examples/forth). The commands below exercise real source parsing and compilation before comparing target behavior with Lean:
 
@@ -533,9 +622,11 @@ Try a short source file containing `5 DUP +`, or use the repository's [Forth exa
 .lake/build/bin/wordc forth examples/forth/fib.fs
 .lake/build/bin/wasmw forth examples/forth/memory.fs 16
 .lake/build/bin/a64c forth examples/forth/double.fs
+.lake/build/bin/rv64c forth examples/forth/loops.fs
 .lake/build/bin/wordc emit-forth examples/forth/sum.fs > /tmp/sum.s
 .lake/build/bin/wasmw emit-forth examples/forth/sum.fs > /tmp/sum.wat
 .lake/build/bin/a64c emit-forth examples/forth/sum.fs > /tmp/sum-a64.s
+.lake/build/bin/rv64c emit-forth examples/forth/sum.fs > /tmp/sum-rv.s
 ```
 
 The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack. [`leave.fs`](examples/forth/leave.fs) exercises `+LOOP` counting up and down, `?DO`, `LEAVE` and `UNLOOP`, [`while.fs`](examples/forth/while.fs) `BEGIN … WHILE … REPEAT`, [`core.fs`](examples/forth/core.fs) `CASE`, `CREATE`/`ALLOT`/`,` and the core stack and arithmetic words, and [`double.fs`](examples/forth/double.fs) the double-cell words and `*/`.
@@ -546,6 +637,7 @@ For a broader trip, run the fixed samples and three hundred generated programs o
 .lake/build/bin/wordc check 300
 .lake/build/bin/wasmw check 300
 .lake/build/bin/a64c check 300
+.lake/build/bin/rv64c check 300
 ```
 
 With no count, the generated-program count defaults to two hundred. `check 0` runs the fixed checks without generated programs. The shared reference interpreter uses bounded fuel; programs that exhaust it are reported as skipped. Generation uses a fixed seed, helping make comparisons reproducible. Backend checks additionally exercise auxiliary-stack behavior and intentional overflow.
@@ -557,7 +649,7 @@ You can also inspect a built-in sample's output without running the target:
 .lake/build/bin/wasmw emit forth_five_dup_plus > /tmp/five.wat
 ```
 
-Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call_ret`. The shared harness contains the complete sample lists. Native execution artifacts are written under `/tmp/wordc`; WebAssembly artifacts use `/tmp/wasmw`, and AArch64 artifacts `/tmp/a64c`. Successful target output is a binary state dump decoded by the harness, so these commands are most informative when used with the comparison tools or emitter output.
+Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call_ret`. The shared harness contains the complete sample lists. Native execution artifacts are written under `/tmp/wordc`; WebAssembly artifacts use `/tmp/wasmw`, AArch64 artifacts `/tmp/a64c`, and RISC-V artifacts `/tmp/rv64c`. Successful target output is a binary state dump decoded by the harness, so these commands are most informative when used with the comparison tools or emitter output.
 
 ## Read the proofs as a connected story
 

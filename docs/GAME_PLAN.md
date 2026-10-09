@@ -26,7 +26,7 @@ Best starting point: establish semantic equivalence before adding optimizations.
 
 **Status:** in place. The word semantics are in `formal/WordDialect/`, generic over the width
 `n`. The source-to-IR theorems are `Forth.Program.compile_correct`, `BCPL.compile_correct` and
-`Wolfram.dotProgram_correct`. `wordc`, `wasmw` and `a64c` compare the Lean semantics against real
+`Wolfram.dotProgram_correct`. `wordc`, `wasmw`, `a64c` and `rv64c` compare the Lean semantics against real
 execution.
 
 ### 2. Bare-metal and embedded systems
@@ -40,12 +40,12 @@ accesses, and control flow for constrained processors.
 
 This is particularly valuable when you want tight control over what executes on the hardware.
 
-**Status:** x86-64, AArch64 (ARM64) and WebAssembly are each modelled, emitted, and proved
-against their models (`X86.Emit.binary_correct`, `A64.Emit.binary_correct`,
-`Wasm.module_correct`). Memory accesses outside the valid cells trap `badAddress`. AArch64 is
-the instruction set of most current embedded and mobile application processors; its backend is
-tested under `qemu-aarch64`. Microcontroller targets (for example ARM Cortex-M or RISC-V) are
-not modelled yet.
+**Status:** x86-64, AArch64 (ARM64), RISC-V (RV64IM) and WebAssembly are each modelled,
+emitted, and proved against their models (`X86.Emit.binary_correct`, `A64.Emit.binary_correct`,
+`RV.Emit.binary_correct`, `Wasm.module_correct`). Memory accesses outside the valid cells trap
+`badAddress`. AArch64 and RISC-V are the two instruction sets most used in current embedded
+application processors; both backends are tested under qemu. Microcontroller profiles (32-bit
+words, no operating system, for example ARM Cortex-M or RV32) are not modelled yet.
 
 ### 3. Verified GPU and numerical kernels
 
@@ -123,8 +123,8 @@ flowchart TB
 | 1 | Formal word semantics | Establishes exactly what every operation means | Done: `formal/WordDialect/` |
 | 2 | Reference interpreter | Provides executable ground truth | Done: `exec`/`step`, `Forth.eval`, `BCPL` and `Wolfram` evaluators |
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
-| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, Forth example files |
-| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: three (x86-64, AArch64 and WebAssembly), proved against their models |
+| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, Forth example files |
+| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: four (x86-64, AArch64, RISC-V and WebAssembly), proved against their models |
 | 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
@@ -145,8 +145,13 @@ Porting:
 * **AArch64 (ARM64): done.** `backend/arm64` has the model, lowering, emitter, the full
   simulation proof (`A64.Emit.binary_correct`), and the `a64c` driver. CI runs `a64c` under
   `qemu-aarch64`.
-* Next candidates: RISC-V (RV64), whose load/store design is close to AArch64's, and a
-  microcontroller profile (32-bit words, no operating system) for embedded use.
+* **RISC-V (RV64IM): done.** `backend/riscv64` has the model, lowering, emitter, the full
+  simulation proof (`RV.Emit.binary_correct`), and the `rv64c` driver. RISC-V has no condition
+  flags, so its guards and comparisons are compare-and-branch sequences, proved directly against
+  the IR's comparison predicates. CI runs `rv64c` under `qemu-riscv64`.
+* Next candidate: a microcontroller profile (32-bit words, no operating system, for example
+  RV32IM or ARM Cortex-M) for embedded use. The IR and the frontends are already generic in the
+  word width.
 
 ## The strategic opportunity
 

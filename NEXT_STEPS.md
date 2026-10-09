@@ -45,6 +45,13 @@ under `qemu-aarch64` and compares with Lean; CI runs it. Choices a later change 
 the return stack is a linked `.rstack` section (not the OS stack), and the model treats the
 flags as unknown after arithmetic (AArch64 leaves them unchanged).
 
+## Done: RISC-V backend
+
+`backend/riscv64` lowers the IR to RV64IM and proves it end to end
+(`RV.Emit.binary_correct`). RISC-V has no condition flags: guards, `cmp` and `select` are
+compare-and-branch sequences, and the model's branch takes the IR's own `Cond`. `rv64c` runs
+the emitted code under `qemu-riscv64`; CI runs it.
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
@@ -61,6 +68,6 @@ that `parse_iff` composes into a statement about characters.
 
 The formal results cover the Lean machine models. Their agreement with real
 assemblers and runtimes is checked by execution, not proved: keep running
-`wordc check`, `wasmw check` and `a64c check` (CI uses Wasmtime v30.0.2 and
-`qemu-aarch64`) after every change to
+`wordc check`, `wasmw check`, `a64c check` and `rv64c check` (CI uses Wasmtime
+v30.0.2, `qemu-aarch64` and `qemu-riscv64`) after every change to
 a model, lowering or emitter.
