@@ -1,6 +1,7 @@
 # Next steps
 
-Suggested development order. Each item names the gap it closes in the current code.
+Suggested development order. Each item names the gap it closes in the current code. The
+longer-term direction is in [`docs/GAME_PLAN.md`](docs/GAME_PLAN.md).
 
 ## Done: Forth control structures, parser fuel and grammar
 
