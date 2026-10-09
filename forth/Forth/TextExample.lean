@@ -34,8 +34,8 @@ theorem parse_begin_until :
         (.untilL (.op (.lit 1) (.op .sub (.op .dup (.op (.lit 0) (.op .eq .nil))))) .nil), 0⟩ := by
   rfl
 
-/-- `+LOOP` is not in the supported subset (only the words listed in `Forth.Parse`). -/
-theorem parse_not_in_subset : parse "1 +LOOP" = .error "unknown word: +LOOP" := by rfl
+/-- Words outside the supported subset (only the words listed in `Forth.Parse`) are errors. -/
+theorem parse_not_in_subset : parse "1 2 2DUP" = .error "unknown word: 2DUP" := by rfl
 
 theorem parse_unknown : parse "1 FOO" = .error "unknown word: FOO" := by rfl
 
@@ -88,6 +88,7 @@ theorem run_of_eval_stack {n : Nat} {defs : List Block} {fuel : Nat} {b : Block}
     cases r with
     | ok st' => simp [okStack?] at h; exact ⟨st', eval_sound _ _ _ _ he, h⟩
     | exit _ => simp [okStack?] at h
+    | leave _ => simp [okStack?] at h
     | error _ => simp [okStack?] at h
 
 /-! ## `0=` and `MOD` -/
@@ -188,7 +189,7 @@ theorem print_var :
     print varProg = "VARIABLE V VARIABLE V 10 0 ! 32 1 ! 0 @ 1 @ + 1 ! 1 @ " := by rfl
 
 theorem sumExitProg_wf : sumExitProg.WF := by
-  refine ⟨fun i body h => ?_, by simp [sumExitProg, Block.WF]⟩
+  refine ⟨fun i body h => ?_, by simp [sumExitProg, Block.WF], by decide⟩
   match i, h with
   | 0, h => simp only [sumExitProg, List.getElem?_cons_zero, Option.some.injEq] at h; subst h
             simp [Block.WF]
@@ -250,11 +251,12 @@ theorem parse_do_loop :
       .ok ⟨[], .op (.lit 0) (.op (.lit 10) (.op (.lit 0)
         (.doLoop (.op .loopI (.op .add .nil)) .nil))), 0⟩ := by rfl
 
-theorem parse_do_without_loop : parse "10 0 DO I" = .error "DO without LOOP" := by rfl
+theorem parse_do_without_loop : parse "10 0 DO I" = .error "DO without LOOP or +LOOP" := by rfl
 
 theorem parse_loop_without_do : parse "1 LOOP" = .error "unexpected LOOP" := by rfl
 
-theorem parse_do_then : parse "1 IF 10 0 DO THEN LOOP" = .error "DO without LOOP" := by rfl
+theorem parse_do_then : parse "1 IF 10 0 DO THEN LOOP" = .error "DO without LOOP or +LOOP" := by
+  rfl
 
 /-- `0 10 0 DO I + LOOP` sums the indices `0 … 9`. -/
 def loopSumProg : Program :=
@@ -324,6 +326,100 @@ theorem print_find3 :
 
 theorem parse_print_find3 : parse (print find3Prog) = .ok find3Prog :=
   parse_print_of_parse parse_find3
+
+/-! ## `+LOOP`, `?DO`, `LEAVE` and `UNLOOP` -/
+
+theorem parse_plus_loop :
+    parse "10 0 DO I 2 +LOOP" =
+      .ok ⟨[], .op (.lit 10) (.op (.lit 0) (.plusLoop (.op .loopI (.op (.lit 2) .nil)) .nil)), 0⟩ := by
+  rfl
+
+/-- `?DO` parses to the `IF` that skips the loop when limit and index are equal. -/
+theorem parse_qdo :
+    parse "5 0 ?DO I LOOP 7" =
+      .ok ⟨[], .op (.lit 5) (.op (.lit 0)
+        (Block.qdo (.doLoop (.op .loopI .nil) .nil) (.op (.lit 7) .nil))), 0⟩ := by rfl
+
+theorem parse_leave_unloop :
+    parse "3 0 DO LEAVE UNLOOP LOOP" =
+      .ok ⟨[], .op (.lit 3) (.op (.lit 0) (.doLoop (.leave (.op .unloop .nil)) .nil)), 0⟩ := by rfl
+
+/-- `LEAVE` must be inside a loop of its own word: not at top level, not in an `IF` outside a
+loop, and not in a word called from a loop. -/
+theorem parse_leave_outside : parse "LEAVE" = .error "LEAVE outside DO … LOOP" := by rfl
+theorem parse_leave_if : parse "1 IF LEAVE THEN" = .error "LEAVE outside DO … LOOP" := by rfl
+theorem parse_leave_word :
+    parse ": F LEAVE ; 3 0 DO F LOOP" = .error "LEAVE outside DO … LOOP" := by rfl
+theorem parse_plus_loop_without_do : parse "1 +LOOP" = .error "unexpected +LOOP" := by rfl
+
+/-- The crossing rule on concrete values: counting up by one it ends exactly when
+`index + 1 = limit`; counting down it ends after the limit itself has been run. -/
+example : loopCrossed (9#64) 10#64 1#64 = true := by decide
+example : loopCrossed (8#64) 10#64 1#64 = false := by decide
+example : loopCrossed (8#64) 10#64 2#64 = true := by decide
+example : loopCrossed (8#64) 11#64 2#64 = false := by decide
+example : loopCrossed (9#64) 11#64 2#64 = true := by decide
+example : loopCrossed (0#64) 0#64 (-1#64) = true := by decide
+example : loopCrossed (1#64) 0#64 (-1#64) = false := by decide
+
+/-- `0 10 0 DO I + 2 +LOOP`: `0 + 2 + 4 + 6 + 8`. -/
+def evensBlock : Block :=
+  .op (.lit 0) (.op (.lit 10) (.op (.lit 0) (.plusLoop (.op .loopI (.op .add (.op (.lit 2) .nil))) .nil)))
+
+theorem evens_run (mem : Memory 64) :
+    Run [] evensBlock ⟨[], mem, []⟩ (.ok ⟨[20#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem evens_machine (mem : Memory 64) :
+    ∃ s', Exec (compileProgram evensBlock : Prog 64) (State.init mem) (.halted s') ∧
+      s'.dstack = [20#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
+  have := compileProgram_correct (evens_run mem)
+  simpa using this
+
+/-- `0 0 10 DO I + -1 +LOOP`: `10 + 9 + … + 0`, the limit included. -/
+theorem down_run (mem : Memory 64) :
+    Run [] (.op (.lit 0) (.op (.lit 0) (.op (.lit 10)
+      (.plusLoop (.op .loopI (.op .add (.op (.lit (-1)) .nil))) .nil)))) ⟨[], mem, []⟩
+      (.ok ⟨[55#64], mem, []⟩) :=
+  eval_sound 40 _ _ _ (by rfl)
+
+/-- `100 0 DO I 5 > IF I LEAVE THEN LOOP`: the loop ends at index 6, its parameters removed. -/
+def first5Block : Block :=
+  .op (.lit 100) (.op (.lit 0) (.doLoop (.op .loopI (.op (.lit 5) (.op .gt
+    (.ite (.op .loopI (.leave .nil)) .nil .nil)))) .nil))
+
+theorem first5_run (mem : Memory 64) :
+    Run [] first5Block ⟨[], mem, []⟩ (.ok ⟨[6#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem first5_machine (mem : Memory 64) :
+    ∃ s', Exec (compileProgram first5Block : Prog 64) (State.init mem) (.halted s') ∧
+      s'.dstack = [6#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
+  have := compileProgram_correct (first5_run mem)
+  simpa using this
+
+/-- `0 5 5 ?DO 1 + LOOP` skips the loop. -/
+theorem qskip_run (mem : Memory 64) :
+    Run [] (.op (.lit 0) (.op (.lit 5) (.op (.lit 5)
+      (Block.qdo (.doLoop (.op (.lit 1) (.op .add .nil)) .nil) .nil)))) ⟨[], mem, []⟩
+      (.ok ⟨[0#64], mem, []⟩) :=
+  eval_sound 20 _ _ _ (by rfl)
+
+/-- `UNLOOP EXIT` inside a loop leaves the return-data stack empty (compare `find3_run`). -/
+def find7Prog : Program :=
+  ⟨[.op (.lit 20) (.op (.lit 0) (.doLoop (.op .loopI (.op (.lit 7) (.op .eq
+      (.ite (.op .loopI (.op .unloop (.exit .nil))) .nil .nil)))) (.op (.lit 99) .nil)))],
+    .call 0 .nil, 0⟩
+
+theorem parse_find7 :
+    parse ": FIND7 20 0 DO I 7 = IF I UNLOOP EXIT THEN LOOP 99 ; FIND7" = .ok find7Prog := by rfl
+
+theorem find7_run (mem : Memory 64) :
+    Run find7Prog.defs find7Prog.main ⟨[], mem, []⟩ (.ok ⟨[7#64], mem, []⟩) :=
+  eval_sound 40 _ _ _ (by rfl)
+
+theorem parse_print_find7 : parse (print find7Prog) = .ok find7Prog :=
+  parse_print_of_parse parse_find7
 
 end Forth
 end WordDialect

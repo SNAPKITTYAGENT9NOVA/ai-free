@@ -14,9 +14,15 @@ Lexing (`tokenize`):
 Parsing (`parse`), case-insensitive:
 * integer literals, optionally negative (`-12`), taken modulo `2^n` by `Op.lit`;
 * `+ - * / MOD AND OR XOR INVERT LSHIFT RSHIFT = <> < > U< U> 0= DUP DROP SWAP OVER ROT @ !`;
-* `>R R> R@ I J` (return-data stack words; `I` and `J` are ordinary words, also accepted outside
-  a `DO … LOOP`, where they read whatever the return-data stack holds, see `Forth.Semantics`);
-* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`, `DO … LOOP`;
+* `>R R> R@ I J UNLOOP` (return-data stack words; `I`, `J` and `UNLOOP` are ordinary words, also
+  accepted outside a `DO … LOOP`, where they act on whatever the return-data stack holds, see
+  `Forth.Semantics`);
+* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`, `DO … LOOP`, `DO … +LOOP`, and `?DO` in
+  place of `DO`. `?DO` is not a separate construct: `?DO body LOOP rest` parses as
+  `OVER OVER = IF DROP DROP ELSE DO body LOOP THEN rest` (`Block.loopOf`), which skips the loop
+  when limit and index are equal, as ANS `?DO` does;
+* `LEAVE`, which must occur inside a `DO` loop of the same definition or of the main block
+  (otherwise `LEAVE outside DO … LOOP`, checked on the parsed program, `Program.leaveOK`);
 * `: name … ;` colon definitions at top level. A name is visible from the start of its own
   body (so a word may call itself recursively) and in everything after it; a later definition
   of the same name shadows the earlier one. Word `k` (in definition order) is `defs[k]`.
@@ -30,7 +36,7 @@ Parsing (`parse`), case-insensitive:
 * Top-level code outside definitions forms the main block, in source order.
 * Anything else is an error (`unknown word`), as are unbalanced control words, nested
   definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`. A `DO` without
-  its `LOOP` is an error (`DO without LOOP`), and so is a `LOOP` without a `DO`.
+  its `LOOP` or `+LOOP` is an error, and so is a `LOOP` or `+LOOP` without a `DO`.
 
 Name lookup order: dictionary, then built-in words, then numbers.
 
@@ -52,6 +58,8 @@ def Block.append : Block → Block → Block
   | .call i r, b => .call i (r.append b)
   | .exit r, b => .exit (r.append b)
   | .doLoop x r, b => .doLoop x (r.append b)
+  | .plusLoop x r, b => .plusLoop x (r.append b)
+  | .leave r, b => .leave (r.append b)
 
 /-- Split off a trailing literal at the top level of a block (the token just before
 `CONSTANT`). -/
@@ -64,6 +72,34 @@ def Block.dropLastLit : Block → Option (Block × Int)
   | .call i r => r.dropLastLit.map fun p => (.call i p.1, p.2)
   | .exit r => r.dropLastLit.map fun p => (.exit p.1, p.2)
   | .doLoop x r => r.dropLastLit.map fun p => (.doLoop x p.1, p.2)
+  | .plusLoop x r => r.dropLastLit.map fun p => (.plusLoop x p.1, p.2)
+  | .leave r => r.dropLastLit.map fun p => (.leave p.1, p.2)
+
+/-- `?DO`: run the loop `loop` unless limit and index are equal (then drop both); then `rest`. -/
+def Block.qdo (loop rest : Block) : Block :=
+  .op .over (.op .over (.op .eq (.ite (.op .drop (.op .drop .nil)) loop rest)))
+
+/-- The loop `mk body` (`DO`, `q = false`) or its `?DO` form (`q = true`), followed by `rest`. -/
+def Block.loopOf (q : Bool) (mk : Block → Block → Block) (body rest : Block) : Block :=
+  match q with
+  | false => mk body rest
+  | true => Block.qdo (mk body .nil) rest
+
+/-- Every `LEAVE` lies inside a loop body (`inLoop`: inside one already). -/
+def Block.leaveOK : Bool → Block → Bool
+  | _, .nil => true
+  | l, .op _ r => r.leaveOK l
+  | l, .ite t e r => t.leaveOK l && e.leaveOK l && r.leaveOK l
+  | l, .untilL x r => x.leaveOK l && r.leaveOK l
+  | l, .call _ r => r.leaveOK l
+  | l, .exit r => r.leaveOK l
+  | l, .doLoop x r => x.leaveOK true && r.leaveOK l
+  | l, .plusLoop x r => x.leaveOK true && r.leaveOK l
+  | l, .leave r => l && r.leaveOK l
+
+/-- Every `LEAVE` of the program lies inside a loop of its own block. -/
+def Program.leaveOK (P : Program) : Bool :=
+  P.defs.all (Block.leaveOK false) && P.main.leaveOK false
 
 namespace Parse
 
@@ -110,7 +146,7 @@ def opTable : List (Tok × Op) :=
     (['O', 'V', 'E', 'R'], .over), (['R', 'O', 'T'], .rot),
     (['@'], .fetch), (['!'], .store),
     (['>', 'R'], .tor), (['R', '>'], .fromr), (['R', '@'], .rfetch),
-    (['I'], .loopI), (['J'], .loopJ) ]
+    (['I'], .loopI), (['J'], .loopJ), (['U', 'N', 'L', 'O', 'O', 'P'], .unloop) ]
 
 def digitsAux : Nat → List Char → Option Nat
   | acc, [] => some acc
@@ -138,9 +174,13 @@ def kRECURSE : Tok := ['R', 'E', 'C', 'U', 'R', 'S', 'E']
 def kEXIT : Tok := ['E', 'X', 'I', 'T']
 def kDO : Tok := ['D', 'O']
 def kLOOP : Tok := ['L', 'O', 'O', 'P']
+def kPLOOP : Tok := ['+', 'L', 'O', 'O', 'P']
+def kQDO : Tok := ['?', 'D', 'O']
+def kLEAVE : Tok := ['L', 'E', 'A', 'V', 'E']
 
 /-- Words that end the block being parsed. -/
-def stops : List Tok := [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP]
+def stops : List Tok :=
+  [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP, kPLOOP]
 
 /-- Dictionary: (upper-cased name, what the name compiles to), most recent first. A colon
 definition `k` compiles to `Block.call k`; a variable or constant to a literal. -/
@@ -153,7 +193,7 @@ inductive Item where
   | stop (u : Tok)
   | ifK
   | beginK
-  | doK
+  | doK (q : Bool)
   | prim (w : Block → Block)
   | bad (msg : String)
 
@@ -183,13 +223,23 @@ def classify (dict : Dict) (self : Option Nat) (t : Tok) : Item :=
     match self with
     | some _ => .prim .exit
     | none => .bad "EXIT outside a definition"
-  else if u = kDO then .doK
+  else if u = kDO then .doK false
+  else if u = kQDO then .doK true
+  else if u = kLEAVE then .prim .leave
   else lookupWord dict t u
+
+/-- The error for running out of fuel in `parseSeq`. Never produced for the fuel `parse` uses
+(`Forth.Grammar.parseSeq_ne_deep`). -/
+def msgDeep : String := "input too deeply nested"
+
+/-- The error for running out of fuel in `parseTop`. Never produced by `parse`
+(`Forth.Grammar.parse_ne_fuel`). -/
+def msgLong : String := "input too long"
 
 /-- Parse a block up to the end of input or a stop word. Returns the block, the stop word
 met (`none` at end of input) and the tokens after it. -/
 def parseSeq : Nat → Dict → Option Nat → List Tok → Except String (Block × Option Tok × List Tok)
-  | 0, _, _, _ => .error "input too deeply nested"
+  | 0, _, _, _ => .error msgDeep
   | _ + 1, _, _, [] => .ok (.nil, none, [])
   | fuel + 1, dict, self, t :: ts =>
     match classify dict self t with
@@ -216,17 +266,20 @@ def parseSeq : Nat → Dict → Option Nat → List Tok → Except String (Block
         let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
         .ok (.untilL body rest, stop2, ts2)
       else .error "BEGIN without UNTIL"
-    | .doK => do
+    | .doK q => do
       let (body, stop1, ts1) ← parseSeq fuel dict self ts
       if stop1 = some kLOOP then
         let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
-        .ok (.doLoop body rest, stop2, ts2)
-      else .error "DO without LOOP"
+        .ok (Block.loopOf q .doLoop body rest, stop2, ts2)
+      else if stop1 = some kPLOOP then
+        let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
+        .ok (Block.loopOf q .plusLoop body rest, stop2, ts2)
+      else .error "DO without LOOP or +LOOP"
 
 /-- Parse top-level code, definitions, variables and constants. `vars` counts the variables
 so far; `main` accumulates the top-level code so far. -/
 def parseTop : Nat → Dict → List Block → Nat → Block → List Tok → Except String Program
-  | 0, _, _, _, _, _ => .error "input too long"
+  | 0, _, _, _, _, _ => .error msgLong
   | fuel + 1, dict, defs, vars, main, toks => do
     let (b, stop, rest) ← parseSeq (toks.length + 1) dict none toks
     match stop with
@@ -257,8 +310,9 @@ def parseTop : Nat → Dict → List Block → Nat → Block → List Tok → Ex
           parseTop fuel ((upper name, Block.op (.lit z)) :: dict) defs vars (main.append b') rest'
       else .error s!"unexpected {showTok u}"
 
-def parseTokens (toks : List Tok) : Except String Program :=
-  parseTop (toks.length + 1) [] [] 0 .nil toks
+def parseTokens (toks : List Tok) : Except String Program := do
+  let P ← parseTop (toks.length + 1) [] [] 0 .nil toks
+  if P.leaveOK then .ok P else .error "LEAVE outside DO … LOOP"
 
 end Parse
 

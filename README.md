@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is your guided journey through that atlas. Every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the surveyed `master` snapshot, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), contains **81 `.lean` files**. The numbered atlas below covers all 81, including library entry files, executable entry points, and the audit. The count follows the actual source tree so every link leads to an existing file.
+**Inventory note:** the surveyed `master` snapshot, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), contained **81 `.lean` files**; `Forth/LoopProps.lean` and `Forth/Grammar.lean` have since been added. The numbered atlas below covers all 83, including library entry files, executable entry points, and the audit. The count follows the actual source tree so every link leads to an existing file. A more technical file-by-file tour, with Mermaid diagrams of the pipeline, each backend's proof structure and the trust boundaries, is in [`docs/README.md`](docs/README.md).
 
 ## Choose your route
 
@@ -124,17 +124,17 @@ Lifts straight-line code into a complete program by appending `halt`. Its theore
 
 Exports the straight-line, fragment, flag, expression, loop, and whole-program tools through one import. This entry file shows the compiler layer's reusable vocabulary at a glance.
 
-## Station III: Forth, from text to execution — files 18–28
+## Station III: Forth, from text to execution — files 18–30
 
 Forth makes the common machine tangible. Its data-stack operations have direct IR counterparts, while definitions, recursion, variables, return-data operations, and structured loops reveal how the translation grows into a complete source pipeline.
 
 ### 18. [Semantics.lean](forth/Forth/Semantics.lean) — Forth's own account
 
-Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, and `DO … LOOP`. The source return-data stack is separate from call frames.
+Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `UNLOOP`. The source return-data stack is separate from call frames.
 
 ### 19. [Compile.lean](forth/Forth/Compile.lean) — words become instructions
 
-Lowers primitives and blocks into IR fragments. It places the main block before `halt`, then lays out definition bodies followed by `ret`. Definition addresses come from fixed code sizes.
+Lowers primitives and blocks into IR fragments. It places the main block before `halt`, then lays out definition bodies followed by `ret`. Definition addresses come from fixed code sizes. Each block is compiled with a leave target, the end of its innermost loop, where `LEAVE` jumps.
 
 ### 20. [OpCorrect.lean](forth/Forth/OpCorrect.lean) — each primitive keeps its meaning
 
@@ -144,261 +144,269 @@ Proves that lowering a Forth operation produces straight-line code with the beha
 
 Connects source `Run` derivations to compiled machine paths, early returns, and matching traps. `DefsAt` describes dictionary-body placement, including recursive calls. `Program.compile_correct` lifts the argument to an initialized whole program.
 
-### 22. [Eval.lean](forth/Forth/Eval.lean) — a reference you can evaluate
+### 22. [LoopProps.lean](forth/Forth/LoopProps.lean) — where a counted loop stops
+
+Proves that the `+LOOP` exit test is ANS Forth's crossing rule, the signed overflow of `index - limit - 2^(n-1) + step` (`loopCrossed_eq_saddOverflow`), and that with step one it is the `LOOP` test `index + 1 = limit` (`loopCrossed_one`).
+
+### 23. [Eval.lean](forth/Forth/Eval.lean) — a reference you can evaluate
 
 Implements a fuel-bounded source interpreter and proves `eval_sound` against `Run`. Concrete evaluation can therefore supply a source-semantics derivation, including for recursive words.
 
-### 23. [Example.lean](forth/Forth/Example.lean) — five becomes ten
+### 24. [Example.lean](forth/Forth/Example.lean) — five becomes ten
 
 Takes `5 DUP +` through source semantics, compilation, and machine execution. The tiny example makes the entire frontend argument visible without a large program.
 
-### 24. [Parse.lean](forth/Forth/Parse.lean) — the text ticket office
+### 25. [Parse.lean](forth/Forth/Parse.lean) — the text ticket office
 
-Turns source text into a dictionary, main block, and variable count. It handles case-insensitive words, comments, literals, colon definitions, recursion, early exit, variables, constants, conditionals, and loops.
+Turns source text into a dictionary, main block, and variable count. It handles case-insensitive words, comments, literals, colon definitions, recursion, early exit, variables, constants, conditionals, and loops, including `+LOOP`, `?DO` and `LEAVE` (rejected outside a loop).
 
-### 25. [Print.lean](forth/Forth/Print.lean) — a return ticket to text
+### 26. [Print.lean](forth/Forth/Print.lean) — a return ticket to text
 
 Prints programs using canonical variable and definition names, then proves `parse_print` for well-formed programs. The argument covers both token generation and parsing.
 
-### 26. [ParseProps.lean](forth/Forth/ParseProps.lean) — the parser's promises
+### 27. [ParseProps.lean](forth/Forth/ParseProps.lean) — the parser's promises
 
 Proves that successful parsing yields a well-formed program and that printing such a result gives canonical source. Further results cover case behavior, comments, constants, dictionary definitions, and `RECURSE`.
 
-### 27. [TextExample.lean](forth/Forth/TextExample.lean) — the journey in source spelling
+### 28. [Grammar.lean](forth/Forth/Grammar.lean) — the parser's timetable without fuel
 
-Provides concrete examples spanning parsing, reference evaluation, compilation, and machine results. Its subjects include recursive sums, variables, constants, remainder, early exits, nested loops, and return-data operations. It also records parser outcomes for selected malformed inputs.
+Gives the parser an inductive grammar, `Seq` for blocks, `Top` for definitions, variables and constants, and `Prog` for whole programs, and proves the parser accepts exactly its derivations (`parse_iff`), which are unambiguous. The fuel is irrelevant (`parseSeq_fuel`), and `parse` never reports running out of it (`parse_ne_fuel`).
 
-### 28. [Forth.lean](forth/Forth.lean) — the frontend entrance
+### 29. [TextExample.lean](forth/Forth/TextExample.lean) — the journey in source spelling
+
+Provides concrete examples spanning parsing, reference evaluation, compilation, and machine results. Its subjects include recursive sums, variables, constants, remainder, early exits, nested loops, `+LOOP` up and down, `?DO`, `LEAVE`, `UNLOOP`, and return-data operations. It also records parser outcomes for selected malformed inputs.
+
+### 30. [Forth.lean](forth/Forth.lean) — the frontend entrance
 
 Exports the Forth library through one import, bringing its semantics, compiler, proofs, evaluator, text tools, and examples together. For an application, this is the convenient access point.
 
-## Station IV: BCPL and the memory-centered route — files 29–34
+## Station IV: BCPL and the memory-centered route — files 31–36
 
 BCPL reaches the same machine from a different source perspective. Variables are memory cells, values are words, and expression and statement semantics supply the reference for compilation.
 
-### 29. [Semantics.lean](bcpl/BCPL/Semantics.lean) — expressions and statements in words
+### 31. [Semantics.lean](bcpl/BCPL/Semantics.lean) — expressions and statements in words
 
 Defines the supported syntax, operator meanings, expression evaluation, assignment, and statement execution. It includes indirection, address-of, conditionals, and loops. Evaluation order and signed division are explicit, and comparisons use all-ones truth flags.
 
-### 30. [Compile.lean](bcpl/BCPL/Compile.lean) — memory programs enter the interchange
+### 32. [Compile.lean](bcpl/BCPL/Compile.lean) — memory programs enter the interchange
 
 Lowers expressions to stack-producing instruction sequences and statements to fragments. Variables use a supplied address mapping, and statements restore the data stack on completion. Arithmetic and assignments use straight-line code; structured control uses the common fragment toolkit.
 
-### 31. [ExprCorrect.lean](bcpl/BCPL/ExprCorrect.lean) — expression results travel intact
+### 33. [ExprCorrect.lean](bcpl/BCPL/ExprCorrect.lean) — expression results travel intact
 
 Proves straight-line properties and correctness for operator and expression lowering, covering successful values and traps. These results establish the evaluator-to-instruction connection needed by statement compilation.
 
-### 32. [Correct.lean](bcpl/BCPL/Correct.lean) — statements reach their promised memory
+### 34. [Correct.lean](bcpl/BCPL/Correct.lean) — statements reach their promised memory
 
 Proves assignment and statement translation correctness. Successful compiled execution reaches the statement endpoint with the source result's memory and an unchanged data stack; trapping source execution leads to the matching machine trap.
 
-### 33. [Example.lean](bcpl/BCPL/Example.lean) — put five in a cell
+### 35. [Example.lean](bcpl/BCPL/Example.lean) — put five in a cell
 
 Uses the assignment `x := 2 + 3` to demonstrate the complete BCPL route. Given an addressable variable cell, the reference statement produces the expected memory and the compiled machine program stores five there.
 
-### 34. [BCPL.lean](bcpl/BCPL.lean) — the BCPL doorway
+### 36. [BCPL.lean](bcpl/BCPL.lean) — the BCPL doorway
 
 Collects the BCPL semantics, translation, correctness results, and example under one import. The entry file marks a clean frontend boundary: the source language has its own account of execution, then connects through compiler proofs to the shared machine.
 
-## Station V: mathematical expressions and matrix cargo — files 35–39
+## Station V: mathematical expressions and matrix cargo — files 37–41
 
 The Wolfram-style route connects mathematical integer expressions to fixed-width computation. Matrix multiplication then turns that connection into nested loops over a concrete memory layout.
 
-### 35. [Scalar.lean](wolfram/Wolfram/Scalar.lean) — integers meet fixed-width words
+### 37. [Scalar.lean](wolfram/Wolfram/Scalar.lean) — integers meet fixed-width words
 
 Defines scalar expressions for integer literals, symbols, addition, multiplication, subtraction, and negation. Integer evaluation connects to `RExpr` lowering modulo the word width. Compilation and assignment theorems cover successful results and errors.
 
-### 36. [MatrixLayout.lean](wolfram/Wolfram/MatrixLayout.lean) — pack the rows
+### 38. [MatrixLayout.lean](wolfram/Wolfram/MatrixLayout.lean) — pack the rows
 
 Defines partial dot sums, row-major matrix representation with `MatAt`, and destination-prefix updates with `CWritten`. Its lemmas describe extending the written output while preserving source cells outside that region.
 
-### 37. [MatrixDot.lean](wolfram/Wolfram/MatrixDot.lean) — three loops carry the product
+### 39. [MatrixDot.lean](wolfram/Wolfram/MatrixDot.lean) — three loops carry the product
 
 Lowers matrix multiplication into row, column, and accumulation loops using four virtual registers. Geometry conditions specify address bounds and separation. Proofs progress from index expressions and accumulation to cells, rows, the full fragment, and `dotProgram_correct`.
 
-### 38. [MatrixExample.lean](wolfram/Wolfram/MatrixExample.lean) — a product you can recognize
+### 40. [MatrixExample.lean](wolfram/Wolfram/MatrixExample.lean) — a product you can recognize
 
 Instantiates the matrix geometry and memory representation for `[[1,2],[3,4]]` multiplied by `[[5,6],[7,8]]`, whose product is `[[19,22],[43,50]]`. It stores the inputs at word addresses zero and four and the output at eight.
 
-### 39. [Wolfram.lean](wolfram/Wolfram.lean) — the mathematical entrance
+### 41. [Wolfram.lean](wolfram/Wolfram.lean) — the mathematical entrance
 
 Exports the scalar and matrix modules, connecting expression lowering, layout vocabulary, multiplication proofs, and the worked example. Start through this import when constructing a mathematical sample.
 
-## Station VI: the shared observation platform — file 40
+## Station VI: the shared observation platform — file 42
 
-### 40. [Harness.lean](backend/common/Harness.lean) — compare the arrivals
+### 42. [Harness.lean](backend/common/Harness.lean) — compare the arrivals
 
 Defines samples, expected Lean outcomes, target result decoding, the backend `Runner` interface, fixed examples, and generated programs. The harness compares trap codes or final data stack, memory, and virtual registers.
 
-## Station VII: the x86-64 express — files 41–62
+## Station VII: the x86-64 express — files 43–64
 
 The native route implements the IR with concrete registers, guarded stack regions, and GNU assembly. Its proof structure proceeds from machine semantics through local simulation to whole-program and entry-point results.
 
-### 41. [Isa.lean](backend/x86_64/X86/Isa.lean) — the native vehicle
+### 43. [Isa.lean](backend/x86_64/X86/Isa.lean) — the native vehicle
 
 Models the emitted x86-64 instruction subset, registers, condition flags, memory access, and target outcomes. Faults and runtime exits are explicit.
 
-### 42. [Lower.lean](backend/x86_64/X86/Lower.lean) — choose the native track
+### 44. [Lower.lean](backend/x86_64/X86/Lower.lean) — choose the native track
 
 Defines runtime register roles, operand and capacity guards, instruction sizes, offsets, and lowering. The data stack uses `r15`, virtual registers use `r14`, IR memory uses `r13`, entry stack position uses `r12`, and auxiliary data uses `rbp`.
 
-### 43. [Emit.lean](backend/x86_64/X86/Emit.lean) — print the assembly journey
+### 45. [Emit.lean](backend/x86_64/X86/Emit.lean) — print the assembly journey
 
 Prints lowered instructions in GNU assembler Intel syntax and supplies the runtime prologue and output/exit helpers. Runtime declarations establish memory and stack regions. Successful execution writes a binary state dump; traps and overflow use their exit codes.
 
-### 44. [Rel.lean](backend/x86_64/X86/Rel.lean) — match the two timetables
+### 46. [Rel.lean](backend/x86_64/X86/Rel.lean) — match the two timetables
 
 Defines runtime geometry and the relation between IR and native states. It maps stacks, virtual registers, memory, and return addresses into disjoint target regions. Frame lemmas support updates.
 
-### 45. [Run.lean](backend/x86_64/X86/Run.lean) — locate and follow native code
+### 47. [Run.lean](backend/x86_64/X86/Run.lean) — locate and follow native code
 
 Defines native continuing and terminating execution relations, code placement, and theorems locating each lowered IR instruction. It connects offset calculations to the emitted instruction list, including the trailing bad-program-counter stub.
 
-### 46. [Seq.lean](backend/x86_64/X86/Seq.lean) — compose short native stretches
+### 48. [Seq.lean](backend/x86_64/X86/Seq.lean) — compose short native stretches
 
 Provides straight-line native execution and its connection to native step paths. It also proves the conditional-jump-and-trap guard pattern.
 
-### 47. [Flags.lean](backend/x86_64/X86/Flags.lean) — read the signals correctly
+### 49. [Flags.lean](backend/x86_64/X86/Flags.lean) — read the signals correctly
 
 Proves that native condition-code interpretation after subtraction matches all ten IR comparison predicates. The argument accounts for zero, sign, carry, and overflow flags.
 
-### 48. [Micro.lean](backend/x86_64/X86/Micro.lean) — the smallest useful moves
+### 50. [Micro.lean](backend/x86_64/X86/Micro.lean) — the smallest useful moves
 
 Establishes local effects of target loads, stores, scratch-register updates, stack-pointer adjustment, and pushing a word. Each lemma works with the state relation.
 
-### 49. [Guard.lean](backend/x86_64/X86/Guard.lean) — check room and operands
+### 51. [Guard.lean](backend/x86_64/X86/Guard.lean) — check room and operands
 
 Proves operand-count guards and data- and return-stack capacity checks. With enough operands or room, the code continues; otherwise it produces the specified underflow or overflow outcome.
 
-### 50. [SimBin.lean](backend/x86_64/X86/SimBin.lean) — one pattern, many operators
+### 52. [SimBin.lean](backend/x86_64/X86/SimBin.lean) — one pattern, many operators
 
 Defines `MidSpec` and proves a generic binary-operation simulation. The pattern loads two operands, computes in scratch state, stores the result, and removes one stack slot.
 
-### 51. [SimOps.lean](backend/x86_64/X86/SimOps.lean) — instantiate the arithmetic route
+### 53. [SimOps.lean](backend/x86_64/X86/SimOps.lean) — instantiate the arithmetic route
 
 Applies the generic binary pattern to arithmetic, bitwise operations, shifts, rotations, and comparisons. Its middle specifications show the target computation matches the IR operation.
 
-### 52. [SimStack.lean](backend/x86_64/X86/SimStack.lean) — rearrange the carried words
+### 54. [SimStack.lean](backend/x86_64/X86/SimStack.lean) — rearrange the carried words
 
 Proves simulations for literals, pointers, complement, duplication, dropping, swapping, copying a lower stack item, and rotation. Local target-step lemmas support the stack updates.
 
-### 53. [SimMem.lean](backend/x86_64/X86/SimMem.lean) — preserve neighboring regions
+### 55. [SimMem.lean](backend/x86_64/X86/SimMem.lean) — preserve neighboring regions
 
 Develops address and frame lemmas for virtual-register and IR-memory access. It establishes the effects of reading and writing those cells while preserving stack and other-region relations.
 
-### 54. [SimMemOps.lean](backend/x86_64/X86/SimMemOps.lean) — perform the checked access
+### 56. [SimMemOps.lean](backend/x86_64/X86/SimMemOps.lean) — perform the checked access
 
 Proves the address bounds guard and complete simulations for virtual-register push/pop and memory load/store. Both successful access and bad-address traps are covered, with overflow behavior for a growing data stack.
 
-### 55. [SimDiv.lean](backend/x86_64/X86/SimDiv.lean) — handle division's special junctions
+### 57. [SimDiv.lean](backend/x86_64/X86/SimDiv.lean) — handle division's special junctions
 
 Covers unsigned division, signed division, and three-operand selection. The proofs include zero-divisor traps and the signed divisor-minus-one path that avoids native division overflow while preserving modular word semantics.
 
-### 56. [SimCtl.lean](backend/x86_64/X86/SimCtl.lean) — branch, call, and return
+### 58. [SimCtl.lean](backend/x86_64/X86/SimCtl.lean) — branch, call, and return
 
 Proves simulations for jumps, conditional branches, calls, returns, and halt. The native return stack stores lowered return-code indices corresponding to IR addresses. Return underflow and call overflow receive explicit results.
 
-### 57. [SimAux.lean](backend/x86_64/X86/SimAux.lean) — a separate place for saved data
+### 59. [SimAux.lean](backend/x86_64/X86/SimAux.lean) — a separate place for saved data
 
 Proves auxiliary-stack access, push/pop effects, capacity and empty-stack guards, and the `tor`, `fromr`, and `rfetch` simulations. Its dedicated region and `rbp` pointer preserve saved words across native calls.
 
-### 58. [SimStep.lean](backend/x86_64/X86/SimStep.lean) — every instruction gets a connection
+### 60. [SimStep.lean](backend/x86_64/X86/SimStep.lean) — every instruction gets a connection
 
 Combines the instruction-family results into `sim_exec`, covering each IR instruction and continuing, halted, or trapped outcomes. `Fits` describes required stack headroom, and simulation includes overflow where capacity runs out.
 
-### 59. [Correct.lean](backend/x86_64/X86/Correct.lean) — preserve the complete journey
+### 61. [Correct.lean](backend/x86_64/X86/Correct.lean) — preserve the complete journey
 
 Lifts instruction simulation to whole-program behavior. `lowerProg_correct_or_overflow` allows a matching IR outcome or overflow; `lowerProg_correct` gives the matching outcome when reachable states fit. Geometry, layout agreement, code-address bounds, and valid register indices make the program's target contract explicit.
 
-### 60. [Init.lean](backend/x86_64/X86/Init.lean) — begin at the binary entrance
+### 62. [Init.lean](backend/x86_64/X86/Init.lean) — begin at the binary entrance
 
 Models the prologue and proves its effect, then relates the resulting native state to `State.init`. `Loader.Holds` gathers the loader's memory, placement, and entry-stack facts.
 
-### 61. [X86.lean](backend/x86_64/X86.lean) — the native library entrance
+### 63. [X86.lean](backend/x86_64/X86.lean) — the native library entrance
 
 Exports the native model, lowering, emitter, relations, simulation modules, whole-program proofs, and initialization result. This import gives users the complete backend library.
 
-### 62. [Main.lean](backend/x86_64/Main.lean) — take the express for a run
+### 64. [Main.lean](backend/x86_64/Main.lean) — take the express for a run
 
 Implements `wordc`: emit assembly, assemble and link with `as` and `ld`, execute, and compare against Lean. It supports fixed/generated checks and Forth files, plus auxiliary-stack and overflow samples.
 
-## Station VIII: the WebAssembly line — files 63–81
+## Station VIII: the WebAssembly line — files 65–83
 
 WebAssembly offers structured control, typed operands, and byte memory. This route represents each IR instruction as a function returning the next instruction index, then runs those functions through a dispatch loop.
 
-### 63. [Isa.lean](backend/wasm/Wasm/Isa.lean) — the WebAssembly vehicle
+### 65. [Isa.lean](backend/wasm/Wasm/Isa.lean) — the WebAssembly vehicle
 
 Models typed values, globals, byte-addressed linear memory, the emitted instruction subset, function tables, and structured execution. Reads and writes use little-endian bytes; loops and branches obey label discipline. Division and host-exit behavior are explicit.
 
-### 64. [Lower.lean](backend/wasm/Wasm/Lower.lean) — turn jumps into dispatch
+### 66. [Lower.lean](backend/wasm/Wasm/Lower.lean) — turn jumps into dispatch
 
 Lowers each IR instruction to a function returning an `i32` next index. A dispatch loop calls through the function table. Globals track program counter and three stack pointers; memory regions hold registers, IR cells, and stacks.
 
-### 65. [Emit.lean](backend/wasm/Wasm/Emit.lean) — print the module
+### 67. [Emit.lean](backend/wasm/Wasm/Emit.lean) — print the module
 
 Produces WebAssembly text from lowered instructions and supplies memory declarations, data bytes, globals, imports, and the halt helper. Runtime layout constants determine region placement and capacity.
 
-### 66. [Mem.lean](backend/wasm/Wasm/Mem.lean) — eight bytes make a word
+### 68. [Mem.lean](backend/wasm/Wasm/Mem.lean) — eight bytes make a word
 
 Proves that writing eight bytes reconstructs the same 64-bit value on a read at that address. Reads of disjoint cells stay unchanged, and writes preserve memory size.
 
-### 67. [Rel.lean](backend/wasm/Wasm/Rel.lean) — align the two state views
+### 69. [Rel.lean](backend/wasm/Wasm/Rel.lean) — align the two state views
 
 Defines runtime geometry and the relation between IR values and WebAssembly globals and memory. Separate views cover the data stack, registers, IR memory, return addresses, and auxiliary words.
 
-### 68. [Seq.lean](backend/wasm/Wasm/Seq.lean) — join target computations
+### 70. [Seq.lean](backend/wasm/Wasm/Seq.lean) — join target computations
 
 Defines straight-line execution with `execL` and derives the target `Run` relation from successful calculations. Sequencing lemmas handle normal completion and abrupt outcomes, with useful conditional cases.
 
-### 69. [Frame.lean](backend/wasm/Wasm/Frame.lean) — update one region at a time
+### 71. [Frame.lean](backend/wasm/Wasm/Frame.lean) — update one region at a time
 
 Proves how eight-byte writes affect the five state views. Updates to a stack, register, or IR-memory cell preserve the other regions. Further lemmas handle stack-pointer adjustment and pushing or popping return and auxiliary entries.
 
-### 70. [Guard.lean](backend/wasm/Wasm/Guard.lean) — the checked platform edge
+### 72. [Guard.lean](backend/wasm/Wasm/Guard.lean) — the checked platform edge
 
 Proves sequence append behavior, state-relation conveniences, operand guards, and capacity guards. Passing checks preserve the required relation; failing checks produce the appropriate exit.
 
-### 71. [SimAlu.lean](backend/wasm/Wasm/SimAlu.lean) — the arithmetic carriage
+### 73. [SimAlu.lean](backend/wasm/Wasm/SimAlu.lean) — the arithmetic carriage
 
 Provides generic binary-operation simulation and instantiates it for arithmetic, bitwise operations, rotations, and comparisons. It connects two stack-cell loads, a target operation, a result store, and stack adjustment.
 
-### 72. [SimAlu2.lean](backend/wasm/Wasm/SimAlu2.lean) — arithmetic's special connections
+### 74. [SimAlu2.lean](backend/wasm/Wasm/SimAlu2.lean) — arithmetic's special connections
 
 Handles shifts, division, signed division, and complement. Large shift counts yield zero as required by the IR, while division checks zero explicitly. The signed divisor-minus-one case preserves modular semantics while avoiding WebAssembly's signed-division overflow trap.
 
-### 73. [SimStack.lean](backend/wasm/Wasm/SimStack.lean) — move words through memory
+### 75. [SimStack.lean](backend/wasm/Wasm/SimStack.lean) — move words through memory
 
 Proves stack manipulation, selection, literals, pointers, and virtual-register transfers. General push and core-sequence lemmas support multiple operations, with guards for operand availability and capacity.
 
-### 74. [SimMem.lean](backend/wasm/Wasm/SimMem.lean) — find the right eight bytes
+### 76. [SimMem.lean](backend/wasm/Wasm/SimMem.lean) — find the right eight bytes
 
 Proves IR-address checking, conversion to `mb + 8a`, and simulations of load and store. A valid word address reaches the corresponding bytes; an invalid address exits with bad-address code two.
 
-### 75. [SimCtl.lean](backend/wasm/Wasm/SimCtl.lean) — return the next station index
+### 77. [SimCtl.lean](backend/wasm/Wasm/SimCtl.lean) — return the next station index
 
 Covers jumps, branches, calls, returns, halt, and the bad-program-counter stub. Continuing instruction functions leave the next IR index for dispatch. Calls and returns update the dedicated return region; empty returns and full call stacks receive defined exits.
 
-### 76. [SimAux.lean](backend/wasm/Wasm/SimAux.lean) — preserve the saved-word connection
+### 78. [SimAux.lean](backend/wasm/Wasm/SimAux.lean) — preserve the saved-word connection
 
 Proves `tor`, `fromr`, and `rfetch` over the auxiliary region tracked by `$ap`. It covers successful movement and copying, empty-stack code five, and capacity code six.
 
-### 77. [SimExec.lean](backend/wasm/Wasm/SimExec.lean) — one complete dispatch step
+### 79. [SimExec.lean](backend/wasm/Wasm/SimExec.lean) — one complete dispatch step
 
 Combines all instruction-family results into `sim_step`. It defines stack headroom, trap-code mapping, and the relation between one emitted function's execution and one IR outcome.
 
-### 78. [Correct.lean](backend/wasm/Wasm/Correct.lean) — carry the result through the loop
+### 80. [Correct.lean](backend/wasm/Wasm/Correct.lean) — carry the result through the loop
 
 Proves dispatch-loop preservation and lifts it to the module's start function. The two main results offer matching IR behavior with overflow allowed, or exact matching behavior under capacity conditions.
 
-### 79. [Init.lean](backend/wasm/Wasm/Init.lean) — start from an instantiated module
+### 81. [Init.lean](backend/wasm/Wasm/Init.lean) — start from an instantiated module
 
 Constructs initial globals and zeroed memory with the emitted data image, proves runtime geometry and the initial state relation, and establishes `module_correct`. Program-layout fit and register and instruction bounds remain explicit.
 
-### 80. [Wasm.lean](backend/wasm/Wasm.lean) — the WebAssembly library entrance
+### 82. [Wasm.lean](backend/wasm/Wasm.lean) — the WebAssembly library entrance
 
 Exports the target model, lowering, emitter, memory facts, relations, framing, guards, instruction simulations, whole-program correctness, and initialization. One import provides the full WebAssembly backend.
 
-### 81. [WasmMain.lean](backend/wasm/WasmMain.lean) — ride the line in Wasmtime
+### 83. [WasmMain.lean](backend/wasm/WasmMain.lean) — ride the line in Wasmtime
 
 Implements `wasmw`: emit WAT, run it through Wasmtime, and compare target output with Lean. It supports sample checks, generated programs, source Forth execution, and source emission.
 
@@ -423,7 +431,7 @@ Try a short source file containing `5 DUP +`, or use the repository's [Forth exa
 .lake/build/bin/wasmw emit-forth examples/forth/sum.fs > /tmp/sum.wat
 ```
 
-The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack.
+The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack. [`leave.fs`](examples/forth/leave.fs) exercises `+LOOP` counting up and down, `?DO`, `LEAVE` and `UNLOOP`.
 
 For a broader trip, run the fixed samples and three hundred generated programs on each destination:
 
