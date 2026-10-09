@@ -174,7 +174,8 @@ def opTable : List (Tok × Op) :=
     (['M', 'I', 'N'], .min), (['M', 'A', 'X'], .max),
     (['U', 'M', '*'], .umStar), (['U', 'M', '/', 'M', 'O', 'D'], .umDivMod),
     (['M', '*'], .mStar), (['S', 'M', '/', 'R', 'E', 'M'], .smRem),
-    (['*', '/', 'M', 'O', 'D'], .starSlashMod), (['*', '/'], .starSlash) ]
+    (['*', '/', 'M', 'O', 'D'], .starSlashMod), (['*', '/'], .starSlash),
+    (['F', 'M', '/', 'M', 'O', 'D'], .fmMod) ]
 
 def digitsAux : Nat → List Char → Option Nat
   | acc, [] => some acc

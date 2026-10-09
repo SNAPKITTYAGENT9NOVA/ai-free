@@ -306,6 +306,60 @@ theorem smrem_cond {D V : Int} {N H : Nat} (hN : N = 2 * H) (hH : 0 < H) {sq : B
   · have : sq = true := hsq.mpr hs
     rw [iteF hs, this]; simp; omega
 
+/-! ## `FM/MOD` -/
+
+set_option linter.unusedSimpArgs false in
+/-- Floored division and remainder through the absolute values. -/
+theorem fdiv_fmod_natAbs (D V : Int) (hV : V ≠ 0) :
+    D.fdiv V = (if (D < 0 ↔ V < 0) then ((D.natAbs / V.natAbs : Nat) : Int)
+      else -((D.natAbs / V.natAbs + if D.natAbs % V.natAbs = 0 then 0 else 1 : Nat) : Int)) ∧
+    D.fmod V = (if V < 0 then -((if ¬(D < 0 ↔ V < 0) ∧ D.natAbs % V.natAbs ≠ 0
+        then V.natAbs - D.natAbs % V.natAbs else D.natAbs % V.natAbs : Nat) : Int)
+      else ((if ¬(D < 0 ↔ V < 0) ∧ D.natAbs % V.natAbs ≠ 0
+        then V.natAbs - D.natAbs % V.natAbs else D.natAbs % V.natAbs : Nat) : Int)) := by
+  have hdm := Nat.div_add_mod D.natAbs V.natAbs
+  have hb : 0 < V.natAbs := by omega
+  have hR := Nat.mod_lt D.natAbs hb
+  have hD := Int.natAbs_eq D
+  have hVe := Int.natAbs_eq V
+  generalize D.natAbs / V.natAbs = q at *
+  generalize D.natAbs % V.natAbs = r at *
+  generalize D.natAbs = a at *
+  generalize V.natAbs = b at *
+  have hm : ((b * q : Nat) : Int) = (b : Int) * q := by push_cast; rfl
+  rcases hVe with hv | hv <;> rw [hv]
+  · have hpos : (0 : Int) < b := by omega
+    refine (Int.fdiv_fmod_unique hpos).mpr ?_
+    rcases hD with hd | hd <;> rw [hd] <;>
+      repeat' (first | split | (push_cast; (try simp only [Int.mul_neg, Int.mul_add, Int.mul_one]); omega))
+  · have hneg : -(b : Int) < 0 := by omega
+    refine (Int.fdiv_fmod_unique' hneg).mpr ?_
+    rcases hD with hd | hd <;> rw [hd] <;>
+      repeat' (first | split | (push_cast; (try simp only [Int.mul_neg, Int.neg_mul, Int.mul_add,
+        Int.mul_one, Int.neg_neg]); omega))
+
+/-- The overflow test of `FM/MOD`, in terms of the unsigned division of the absolute values. -/
+theorem fmmod_cond {D V : Int} {N H : Nat} (hN : N = 2 * H) (hH : 0 < H) {sq : Bool}
+    (hsq : sq = true ↔ ¬(D < 0 ↔ V < 0)) :
+    (V ≠ 0 ∧ -(H : Int) ≤ D.fdiv V ∧ D.fdiv V < H) ↔
+      (D.natAbs < V.natAbs * N ∧ (D.natAbs / V.natAbs < H ∨
+        (D.natAbs / V.natAbs = H ∧ sq = true ∧ D.natAbs % V.natAbs = 0))) := by
+  rcases Nat.eq_zero_or_pos V.natAbs with hb | hb
+  · have : V = 0 := by omega
+    simp [this]
+  have hV : V ≠ 0 := by omega
+  rw [(fdiv_fmod_natAbs D V hV).1]
+  have key := Nat.div_lt_iff_lt_mul (x := D.natAbs) (y := N) hb
+  rw [Nat.mul_comm, ← key]
+  generalize D.natAbs / V.natAbs = q
+  generalize D.natAbs % V.natAbs = r
+  by_cases hs : (D < 0 ↔ V < 0)
+  · have : sq = false := by cases sq <;> simp_all
+    rw [iteT hs, this]; simp [hV]; omega
+  · have : sq = true := hsq.mpr hs
+    rw [iteF hs, this]
+    by_cases hr : r = 0 <;> simp [hr] <;> omega
+
 end DoubleMath
 end Forth
 end WordDialect

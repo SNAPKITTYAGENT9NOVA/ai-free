@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is your guided journey through that atlas. Every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the surveyed `master` snapshot, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), contained **81 `.lean` files**; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean` and `Forth/DoubleCorrect.lean` have since been added. The numbered atlas below covers all 86, including library entry files, executable entry points, and the audit. The count follows the actual source tree so every link leads to an existing file. A more technical file-by-file tour, with Mermaid diagrams of the pipeline, each backend's proof structure and the trust boundaries, is in [`docs/README.md`](docs/README.md).
+**Inventory note:** the source tree contains **86 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean` and `Forth/DoubleCorrect.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. A more technical file-by-file tour, with Mermaid diagrams of the pipeline, each backend's proof structure and the trust boundaries, is in [`docs/README.md`](docs/README.md). The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Choose your route
 
@@ -130,7 +130,7 @@ Forth makes the common machine tangible. Its data-stack operations have direct I
 
 ### 18. [Semantics.lean](forth/Forth/Semantics.lean) — Forth's own account
 
-Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, `BEGIN … WHILE … REPEAT`, `CASE … ENDCASE`, data space (`CREATE ALLOT ,`), the core stack and arithmetic words, the double-cell words (`UM*`, `UM/MOD`, `M*`, `SM/REM`, `*/MOD`, `*/`), `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `UNLOOP`. The source return-data stack is separate from call frames.
+Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, `BEGIN … WHILE … REPEAT`, `CASE … ENDCASE`, data space (`CREATE ALLOT ,`), the core stack and arithmetic words, the double-cell words (`UM*`, `UM/MOD`, `M*`, `SM/REM`, `FM/MOD`, `*/MOD`, `*/`), `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `UNLOOP`. The source return-data stack is separate from call frames.
 
 ### 19. [Compile.lean](forth/Forth/Compile.lean) — words become instructions
 
@@ -142,11 +142,11 @@ Proves that lowering a Forth operation produces straight-line code with the beha
 
 ### 21. [Double.lean](forth/Forth/Double.lean) — two words for one number
 
-Builds the double-cell words from single-word instructions. `UM*` is a shift-and-add loop and `UM/MOD` a restoring-division loop, each run `n` times by `countedLoop` with its state in virtual registers. `M*` corrects the unsigned product's high word for negative factors. `SM/REM` divides absolute values with `UM/MOD` and puts the signs back. `*/MOD` and `*/` combine `M*` and `SM/REM`.
+Builds the double-cell words from single-word instructions. `UM*` is a shift-and-add loop and `UM/MOD` a restoring-division loop, each run `n` times by `countedLoop` with its state in virtual registers. `M*` corrects the unsigned product's high word for negative factors. `SM/REM` divides absolute values with `UM/MOD` and puts the signs back; `FM/MOD` does the same with a floor adjustment. `*/MOD` and `*/` combine `M*` and `SM/REM`.
 
 ### 22. [DoubleMath.lean](forth/Forth/DoubleMath.lean) — the arithmetic behind the loops
 
-Natural-number and integer facts with no machine in sight: the shift-and-add and restoring-division invariants, one round at a time (`umstar_step`, `umdiv_step`), truncated division through absolute values (`tdiv_natAbs`, `tmod_natAbs`), and the exact overflow condition of `SM/REM` (`smrem_cond`).
+Natural-number and integer facts with no machine in sight: the shift-and-add and restoring-division invariants, one round at a time (`umstar_step`, `umdiv_step`), truncated and floored division through absolute values (`tdiv_natAbs`, `tmod_natAbs`, `fdiv_fmod_natAbs`), and the exact overflow conditions of `SM/REM` and `FM/MOD` (`smrem_cond`, `fmmod_cond`).
 
 ### 23. [DoubleCorrect.lean](forth/Forth/DoubleCorrect.lean) — the loops compute the product and quotient
 

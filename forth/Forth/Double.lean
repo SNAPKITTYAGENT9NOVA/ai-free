@@ -106,6 +106,26 @@ def smRemPost {n : Nat} : List (Instr n) :=
 def smRemFrag {n : Nat} : Frag n :=
   (Frag.ofCode smRemPre).seq (umDivFrag.seq (Frag.ofCode smRemPost))
 
+/-- `FM/MOD` after `UM/MOD`, with the quotient `q` and remainder `r` of the absolute values in
+registers 3 and 1. When the signs differ (register 5) and `r ≠ 0`, the floored result is
+`q + 1` and `|v| - r` (register 7 holds `|v|`); register 2 holds that flag. Trap unless the
+quotient fits: `q <u 2^(n-1)`, or `q = 2^(n-1)` with differing signs and `r = 0`. The remainder
+takes the sign of `v` (registers 5 xor 6), the quotient that of register 5. -/
+def fmModPost {n : Nat} : List (Instr n) :=
+  [.pop 3, .pop 1,
+   .push 1, .word 0#n, .cmp .ne, .push 5, .and, .pop 2,
+   .push 3, .word (BitVec.intMin n), .cmp .ult,
+   .push 3, .word (BitVec.intMin n), .cmp .eq, .push 5, .and, .push 1, .word 0#n, .cmp .eq, .and,
+   .or, .word 1#n, .swap, .div, .drop,
+   .push 7, .push 1, .sub, .push 1, .push 2, .select,
+   .word 0#n, .push 5, .push 6, .xor, .sub, .xor, .push 5, .push 6, .xor, .add,
+   .push 3, .push 2, .add,
+   .word 0#n, .push 5, .sub, .xor, .push 5, .add]
+
+/-- `FM/MOD ( lo hi v -- rem quot )`: `SM/REM`'s preparation, `UM/MOD`, then `fmModPost`. -/
+def fmModFrag {n : Nat} : Frag n :=
+  (Frag.ofCode smRemPre).seq (umDivFrag.seq (Frag.ofCode fmModPost))
+
 /-- `*/MOD ( n1 n2 n3 -- rem quot )`: `n3` to the return-data stack, `M*`, `n3` back, `SM/REM`. -/
 def starSlashModFrag {n : Nat} : Frag n :=
   (Frag.ofCode [.tor]).seq (mStarFrag.seq ((Frag.ofCode [.fromr]).seq smRemFrag))
@@ -133,6 +153,9 @@ theorem starSlashModFrag_size {n : Nat} : (starSlashModFrag : Frag n).size = 187
 
 theorem starSlashFrag_size {n : Nat} : (starSlashFrag : Frag n).size = 189 := by
   simp [starSlashFrag, Frag.seq_size, starSlashModFrag_size, Frag.ofCode_size]
+
+theorem fmModFrag_size {n : Nat} : (fmModFrag : Frag n).size = 141 := by
+  simp [fmModFrag, Frag.seq_size, umDivFrag_size, Frag.ofCode_size, smRemPre, fmModPost]
 
 end Forth
 end WordDialect

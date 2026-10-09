@@ -59,6 +59,61 @@ box the arrow starts or ends at). Dotted arrows are
 *testing*: the proofs are about Lean models of x86-64 and WebAssembly, and the harness checks
 that those models agree with real hardware and a real engine.
 
+### Three levels of description
+
+A correctness claim in this repository connects three levels. The real systems (an x86-64
+processor, Wasmtime) are described by mathematical models: transition systems on machine
+states. Lean states and proves properties of those models as theorems about its own terms, and
+the Lean kernel checks the proofs. The step from models to real systems is not proved; the
+harness tests it.
+
+```mermaid
+flowchart TB
+  subgraph Real["Real world"]
+    R1["x86-64 processor, Wasmtime"]
+    R2["Forth, BCPL and Wolfram programs"]
+  end
+  subgraph Math["Mathematics (semantics)"]
+    M1["Transition systems:<br/>IR step, X86 and Wasm models"]
+    M2["Source semantics:<br/>Forth Run, BCPL exec, Wolfram eval"]
+    M3["Properties: the compiled program<br/>reaches the same result or trap"]
+  end
+  subgraph Sym["Symbols (syntax)"]
+    S1["Lean definitions and theorems<br/>(compile_correct, binary_correct, ...)"]
+    S2["Lean kernel: checks every proof<br/>(formal/Audit.lean lists the axioms)"]
+  end
+  R1 -->|"modelling<br/>(tested by wordc / wasmw)"| M1
+  R2 -->|"modelling"| M2
+  M1 --> M3
+  M2 --> M3
+  M3 -->|"formalisation"| S1
+  S1 --> S2
+```
+
+The IR's machine state is a small von Neumann machine, and each part has a counterpart in a
+conventional processor:
+
+```mermaid
+flowchart LR
+  subgraph St["IR State n (formal/WordDialect/Machine.lean)"]
+    PC["pc<br/>program counter<br/>(an instruction index)"]
+    RG["regs<br/>virtual registers"]
+    DS["dstack<br/>operand stack<br/>(the ALU's inputs and result)"]
+    RS["rstack<br/>return addresses"]
+    AS["astack<br/>saved data words"]
+    MEM["mem<br/>word-addressed memory<br/>(load / store, badAddress outside)"]
+  end
+  PC -->|"fetch p[pc]"| EX["exec: one instruction"]
+  EX --> DS
+  EX --> RG
+  EX --> MEM
+  EX --> PC
+```
+
+Where a conventional processor has an accumulator, the IR has an operand stack. The backends
+map that stack, the registers and the auxiliary stack onto memory (x86-64) or linear memory
+(WebAssembly).
+
 ### Library dependencies
 
 ```mermaid
@@ -311,7 +366,7 @@ Forth is the most developed frontend. It has source text, a parser with proofs i
 directions and a grammar it provably implements, colon definitions with recursion, `EXIT`,
 variables, constants, data space (`CREATE ALLOT ,`), `CASE … ENDCASE`, `BEGIN … WHILE … REPEAT`,
 the core stack and arithmetic words (`?DUP 2DUP 2SWAP /MOD NEGATE ABS MIN MAX`), double-cell
-arithmetic (`UM* UM/MOD M* SM/REM */MOD */`), and the return-stack words `>R R> R@` with
+arithmetic (`UM* UM/MOD M* SM/REM FM/MOD */MOD */`), and the return-stack words `>R R> R@` with
 `DO … LOOP`, `DO … +LOOP`,
 `?DO`, `LEAVE`, `UNLOOP`, `I` and `J`.
 
@@ -401,6 +456,11 @@ get eight):
 * `SM/REM` takes absolute values, negating the dividend as two words with a borrow. It runs
   `UM/MOD`, traps when the unsigned quotient does not fit the signed result, and puts the signs
   back. The quotient's sign is the xor of the operands' signs; the remainder takes the dividend's.
+* `FM/MOD` (floored division) uses `SM/REM`'s preparation and `UM/MOD`. When the signs differ
+  and the remainder `r` is nonzero, the quotient becomes `q + 1` and the remainder `|v| - r`
+  before the signs are applied; the remainder takes `v`'s sign. Its overflow test is
+  `DoubleMath.fmmod_cond`, and `fdiv_fmod_natAbs` states floored division through absolute
+  values.
 * `*/MOD` is `>R M* R> SM/REM`. `*/` adds `SWAP DROP`.
 
 Both loops are `countedLoop`s of `n` rounds. `countedLoop_run'` carries a register invariant,
