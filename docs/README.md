@@ -5,7 +5,7 @@ how it depends on the others, and where the trust boundaries are. It is meant to
 the code. The top-level [README](../README.md) covers setup and commands; this one covers
 structure.
 
-The repository is one Lake package (`UniversalWord`) with seven Lean libraries and two
+The repository is one Lake package (`UniversalWord`) with eight Lean libraries and three
 executables:
 
 | Library / executable | Directory | Role |
@@ -18,6 +18,7 @@ executables:
 | `Harness` | `backend/common/` | Shared differential-testing harness and sample programs |
 | `X86` + `wordc` | `backend/x86_64/` | x86-64 model, lowering, assembly emitter, proofs; native test driver |
 | `Wasm` + `wasmw` | `backend/wasm/` | WebAssembly model, lowering, WAT emitter, proofs; wasmtime test driver |
+| `A64` + `a64c` | `backend/arm64/` | AArch64 model, lowering, assembly emitter, proofs; qemu test driver |
 
 ## 1. The big picture
 
@@ -42,6 +43,7 @@ flowchart LR
   subgraph Targets["Targets"]
     X["x86-64 model + GNU as text<br/>X86.lowerProg<br/>✔ binary_correct"]
     WA["WebAssembly model + WAT text<br/>Wasm.funcsOf<br/>✔ module_correct"]
+    AR["AArch64 model + assembly text<br/>A64.lowerProg<br/>✔ binary_correct"]
   end
   F -->|"Forth.parse"| FB
   FB --> P
@@ -50,19 +52,21 @@ flowchart LR
   P --- S
   P --> X
   P --> WA
+  P --> AR
   X -.->|"wordc: run natively,<br/>compare with Lean"| H["Harness<br/>(differential testing)"]
   WA -.->|"wasmw: run under wasmtime,<br/>compare with Lean"| H
+  AR -.->|"a64c: run under qemu-aarch64,<br/>compare with Lean"| H
 ```
 
 Solid arrows are translations with machine-checked correctness theorems (named with ✔ in the
 box the arrow starts or ends at). Dotted arrows are
-*testing*: the proofs are about Lean models of x86-64 and WebAssembly, and the harness checks
-that those models agree with real hardware and a real engine.
+*testing*: the proofs are about Lean models of x86-64, AArch64 and WebAssembly, and the harness
+checks that those models agree with real hardware (or its emulation) and a real engine.
 
 ### Three levels of description
 
 A correctness claim in this repository connects three levels. The real systems (an x86-64
-processor, Wasmtime) are described by mathematical models: transition systems on machine
+processor, an AArch64 processor, Wasmtime) are described by mathematical models: transition systems on machine
 states. Lean states and proves properties of those models as theorems about its own terms, and
 the Lean kernel checks the proofs. The step from models to real systems is not proved; the
 harness tests it.
@@ -70,11 +74,11 @@ harness tests it.
 ```mermaid
 flowchart TB
   subgraph Real["Real world"]
-    R1["x86-64 processor, Wasmtime"]
+    R1["x86-64 and AArch64 processors,<br/>Wasmtime"]
     R2["Forth, BCPL and Wolfram programs"]
   end
   subgraph Math["Mathematics (semantics)"]
-    M1["Transition systems:<br/>IR step, X86 and Wasm models"]
+    M1["Transition systems:<br/>IR step, X86, A64 and Wasm models"]
     M2["Source semantics:<br/>Forth Run, BCPL exec, Wolfram eval"]
     M3["Properties: the compiled program<br/>reaches the same result or trap"]
   end
@@ -82,7 +86,7 @@ flowchart TB
     S1["Lean definitions and theorems<br/>(compile_correct, binary_correct, ...)"]
     S2["Lean kernel: checks every proof<br/>(formal/Audit.lean lists the axioms)"]
   end
-  R1 -->|"modelling<br/>(tested by wordc / wasmw)"| M1
+  R1 -->|"modelling<br/>(tested by wordc / wasmw / a64c)"| M1
   R2 -->|"modelling"| M2
   M1 --> M3
   M2 --> M3
@@ -272,7 +276,7 @@ mathematical expressions (Wolfram) relies on these.
 `State.init mem` is the start of execution: `pc = 0`, empty data, return and auxiliary stacks,
 all registers zero. `Memory.ofImage img` builds an IR memory from a list of numbers: word `a`
 holds `img[a]` modulo `2^n`, and exactly the addresses below `img.length` are valid. The test
-harness and both backends' end-to-end theorems start from exactly this pair, so "the program run
+harness and all three backends' end-to-end theorems start from exactly this pair, so "the program run
 on the image" means the same thing in the proofs and in the tests. The file closes with the
 specification's own example, Forth `5 DUP +`, run to the stack `[10]`.
 
@@ -899,7 +903,57 @@ addresses), runs the binary, and compares the exit status and dump with the Lean
 also runs the auxiliary-stack and overflow programs. `wordc forth file.fs` runs a Forth source
 file natively.
 
-## 10. Trust boundaries in one place
+## 10. `backend/arm64/`: the AArch64 backend
+
+### The design
+
+The AArch64 backend keeps the x86-64 backend's design: the same register roles, the same
+lowering shape for every IR instruction, and the same proof structure (`Rel`, the `Sim*`
+files, `Correct`, `Init`). Most of its files are the x86-64 files with the registers renamed.
+The differences follow from the machines:
+
+| | x86-64 | AArch64 |
+| --- | --- | --- |
+| data stack, register file, IR memory, auxiliary stack | `r15 r14 r13 rbp` | `x19 x20 x21 x24` |
+| return stack | the native stack (`rsp`, empty at `r12`) | the `.rstack` section (`x23`, empty at `x22`) |
+| IR `call` / `ret` | `call` / `ret` | `adr x30; str x30, [x23, #-8]!; b` and `ldr x30, [x23], #8; br x30` |
+| 64-bit constant | `movabs` | `movz` + three `movk` |
+| `div`, `sdiv` | `div` / `idiv`, with a `-1` path to avoid the overflow fault | `udiv` / `sdiv`, which never fault |
+| `rotl` | `rol` | `neg` then `ror` (`ror_neg`) |
+| conditional move | `cmovcc` | `csel` |
+
+Three model instructions are fixed sequences in the emitted text (`movImm`, `call`, `ret`); the
+model gives each the combined effect of its sequence, and the `call`/`ret` sequences' write to
+`x30` is in the model. The flags are `NZCV`, stored with the carry as the borrow (`NOT C`), so
+each condition code keeps its x86-64 meaning and `Emit` prints its AArch64 name (`b` as `lo`,
+`ae` as `hs`, …). AArch64 only sets flags in `cmp`, `cmn` and `tst`; the model conservatively
+makes them unknown after arithmetic, so a proof that the code never faults never relies on
+flags surviving an arithmetic instruction.
+
+### Files
+
+They correspond one to one to `backend/x86_64/X86/*` (section 9), with these differences:
+
+* **`A64/Isa.lean`, `A64/Lower.lean`, `A64/Emit.lean`**: the model, lowering and emitter above.
+  The emitter prints an `.error` directive for an immediate or displacement that the AArch64
+  encoding cannot hold, so the assembler rejects the program instead of producing different
+  code.
+* **`A64/SimOps.lean`**: `ror_neg`, rotating right by `-n` is rotating left by `n`.
+* **`A64/SimDiv.lean`**: one lemma, `sim_divop_ok`, for both divisions, since after the zero
+  guard each is a single instruction equal to the IR's `BitVec.udiv` / `BitVec.sdiv`.
+* **`A64/SimCtl.lean`**: `call` and `ret` also write `x30`.
+* **`A64/Init.lean`**: a six-instruction prologue. The return stack is a linked section, so
+  `Loader.Holds` has no fact about an entry register, only memory, placement and image facts.
+  `binary_correct` is the end-to-end statement.
+
+### `A64Main.lean` (the `a64c` executable)
+
+It emits assembly, assembles it with `clang --target=aarch64-linux-gnu`, links with `ld.lld`
+(placing `.dstack`, `.rstack` and `.astack` at fixed addresses), runs the binary under
+`qemu-aarch64`, and compares exit status and dump with the Lean semantics, on the same samples,
+generated programs, auxiliary-stack and overflow programs, and Forth files as `wordc`.
+
+## 11. Trust boundaries in one place
 
 Every theorem in this repository is a statement about Lean definitions. What connects them to
 the outside world is listed here, together with how each link is checked.
@@ -914,35 +968,37 @@ flowchart TD
   subgraph Assumed["Assumed, and tested by execution"]
     WM["WebAssembly model = wasmtime"]
     XM["x86 model = hardware"]
+    AM["AArch64 model = hardware<br/>(tested under qemu)"]
     INST["wasm instantiation rule"]
     LDR["ELF loader facts (Loader.Holds)"]
   end
   subgraph Unproved["Not proved (NEXT_STEPS.md)"]
-    FUEL["parser fuel never exhausted"]
-    WORDS["+LOOP, ?DO, LEAVE, UNLOOP"]
+    LEX["lexer against an independent<br/>specification"]
   end
   WM --> T1["wasmw check"]
   INST --> T1
   XM --> T2["wordc check"]
   LDR --> T2
+  AM --> T3["a64c check"]
+  LDR --> T3
 ```
 
 Things to keep in mind when reading the theorems:
 
-* **Stacks are bounded on the targets and unbounded in the IR.** Both backends check before
+* **Stacks are bounded on the targets and unbounded in the IR.** All three backends check before
   every push and every call, and exit 6 when a stack is full. The `_or_overflow` theorems say
   "IR outcome or exit 6"; the theorems without that suffix assume `Fits` and give the exact
   outcome.
 * **Program-level hypotheses are small and checkable.** They are: registers named by
   `push`/`pop` exist (`RegsOk`), the program has fewer than `2^32` instructions (WebAssembly) or
-  `17 · length < 2^64` (x86), and the register file and memory image fit the runtime layout
+  `17 · length < 2^64` (x86-64 and AArch64), and the register file and memory image fit the runtime layout
   (WebAssembly).
-* **The emitted text is generated from the verified instruction lists.** `Wasm.Emit` and
-  `X86.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
+* **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
+  `X86.Emit` and `A64.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap
   stubs), and each module documents them.
 
-## 11. Where to start reading
+## 12. Where to start reading
 
 ```mermaid
 flowchart LR
@@ -951,6 +1007,7 @@ flowchart LR
   C --> D["forth/Forth/Semantics.lean<br/>→ Compile → Correct"]
   B --> E["backend/wasm/Wasm/Lower.lean<br/>→ SimExec → Correct → Init"]
   B --> F["backend/x86_64/X86/Lower.lean<br/>→ SimStep → Correct → Init"]
+  F --> AA["backend/arm64/A64/Isa.lean<br/>(the differences from x86-64)"]
   D --> G["forth/Forth/TextExample.lean<br/>source to machine, concretely"]
 ```
 
@@ -961,15 +1018,16 @@ flowchart LR
   example `sim_add` in `Wasm/SimAlu.lean`. Then read `sim_step`, and finally the top of
   `Init.lean` for the end-to-end statement.
 * For concrete runs, read `forth/Forth/TextExample.lean` and `examples/forth/*.fs`, and run
-  `wordc forth` / `wasmw forth` on them.
+  `wordc forth` / `wasmw forth` / `a64c forth` on them.
 
-## 12. Checking it yourself
+## 13. Checking it yourself
 
 ```sh
-lake build                                   # every library and both executables
+lake build                                   # every library and all three executables
 lake env lean formal/Audit.lean              # fails if any theorem uses a non-standard axiom
 .lake/build/bin/wordc check 300              # x86-64: samples + 300 random programs, natively
 .lake/build/bin/wasmw check 300              # WebAssembly: the same under wasmtime
+.lake/build/bin/a64c check 300               # AArch64: the same under qemu-aarch64
 .lake/build/bin/wordc forth examples/forth/loops.fs
 ```
 

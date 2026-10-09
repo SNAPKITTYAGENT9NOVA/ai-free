@@ -1,6 +1,6 @@
 name = "UniversalWord"
 version = "0.1.0"
-defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw"]
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw", "A64", "a64c"]
 
 [[lean_lib]]
 name = "WordDialect"
@@ -43,3 +43,12 @@ srcDir = "backend/wasm"
 name = "wasmw"
 root = "WasmMain"
 srcDir = "backend/wasm"
+
+[[lean_lib]]
+name = "A64"
+srcDir = "backend/arm64"
+
+[[lean_exe]]
+name = "a64c"
+root = "A64Main"
+srcDir = "backend/arm64"

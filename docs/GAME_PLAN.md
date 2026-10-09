@@ -26,7 +26,7 @@ Best starting point: establish semantic equivalence before adding optimizations.
 
 **Status:** in place. The word semantics are in `formal/WordDialect/`, generic over the width
 `n`. The source-to-IR theorems are `Forth.Program.compile_correct`, `BCPL.compile_correct` and
-`Wolfram.dotProgram_correct`. `wordc` and `wasmw` compare the Lean semantics against real
+`Wolfram.dotProgram_correct`. `wordc`, `wasmw` and `a64c` compare the Lean semantics against real
 execution.
 
 ### 2. Bare-metal and embedded systems
@@ -40,9 +40,12 @@ accesses, and control flow for constrained processors.
 
 This is particularly valuable when you want tight control over what executes on the hardware.
 
-**Status:** x86-64 and WebAssembly are both modelled, emitted, and proved against their models
-(`X86.binary_correct`, `Wasm.module_correct`). Memory accesses outside the valid cells trap
-`badAddress`. No embedded instruction set (ARM, RISC-V, a microcontroller) is modelled yet.
+**Status:** x86-64, AArch64 (ARM64) and WebAssembly are each modelled, emitted, and proved
+against their models (`X86.Emit.binary_correct`, `A64.Emit.binary_correct`,
+`Wasm.module_correct`). Memory accesses outside the valid cells trap `badAddress`. AArch64 is
+the instruction set of most current embedded and mobile application processors; its backend is
+tested under `qemu-aarch64`. Microcontroller targets (for example ARM Cortex-M or RISC-V) are
+not modelled yet.
 
 ### 3. Verified GPU and numerical kernels
 
@@ -120,15 +123,15 @@ flowchart TB
 | 1 | Formal word semantics | Establishes exactly what every operation means | Done: `formal/WordDialect/` |
 | 2 | Reference interpreter | Provides executable ground truth | Done: `exec`/`step`, `Forth.eval`, `BCPL` and `Wolfram` evaluators |
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
-| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, Forth example files |
-| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: two (x86-64 and WebAssembly), proved against their models |
+| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, Forth example files |
+| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: three (x86-64, AArch64 and WebAssembly), proved against their models |
 | 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
 ## Next phase: close out the Lean work, then port
 
 The backends are complete. With `FM/MOD`, the Forth arithmetic word set is complete too. The
-next phase is to finish the remaining Lean items, then port.
+next phase is to finish the remaining Lean items and to port to new targets.
 
 Closing out the Lean side means:
 
@@ -137,7 +140,13 @@ Closing out the Lean side means:
 * the lexer specification, which turns `parse_iff` into a statement about characters;
 * a final pass on the documentation and the inventory, which CI keeps complete.
 
-Porting: *to be specified* (the target language, runtime or platform, and which parts move).
+Porting:
+
+* **AArch64 (ARM64): done.** `backend/arm64` has the model, lowering, emitter, the full
+  simulation proof (`A64.Emit.binary_correct`), and the `a64c` driver. CI runs `a64c` under
+  `qemu-aarch64`.
+* Next candidates: RISC-V (RV64), whose load/store design is close to AArch64's, and a
+  microcontroller profile (32-bit words, no operating system) for embedded use.
 
 ## The strategic opportunity
 

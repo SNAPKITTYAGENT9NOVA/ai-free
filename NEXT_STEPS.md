@@ -37,6 +37,14 @@ Choices made there, which a later change may want to revisit:
   The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
   by its own grammar.
 
+## Done: AArch64 backend
+
+`backend/arm64` lowers the IR to AArch64 with the x86-64 backend's register roles and proof
+structure, and proves it end to end (`A64.Emit.binary_correct`). `a64c` runs the emitted code
+under `qemu-aarch64` and compares with Lean; CI runs it. Choices a later change may revisit:
+the return stack is a linked `.rstack` section (not the OS stack), and the model treats the
+flags as unknown after arithmetic (AArch64 leaves them unchanged).
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
@@ -53,5 +61,6 @@ that `parse_iff` composes into a statement about characters.
 
 The formal results cover the Lean machine models. Their agreement with real
 assemblers and runtimes is checked by execution, not proved: keep running
-`wordc check` and `wasmw check` (CI uses Wasmtime v30.0.2) after every change to
+`wordc check`, `wasmw check` and `a64c check` (CI uses Wasmtime v30.0.2 and
+`qemu-aarch64`) after every change to
 a model, lowering or emitter.
