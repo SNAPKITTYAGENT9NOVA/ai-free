@@ -56,6 +56,9 @@ where `plusTest` (`FROMR FROMR`, then 24 stack instructions) computes `index + s
 `CMP SLT` flag of `loopCrossed`. Here the flag says when to *stop*, so it is a forward branch:
 at `n = 0` the flag is `0` and `loopCrossed` is `false`, and both agree.
 
+`BEGIN cond WHILE body REPEAT` lowers with `Frag.whileLoop`: `cond`, `BRANCH` into the body on a
+true flag, `JMP` past the loop on a false one, then `body` and `JMP` back to `cond`.
+
 `LEAVE` lowers to `FROMR FROMR DROP DROP JMP E`, where `E` (the *leave target*) is the address
 just past the innermost enclosing loop. `compile addr lv b` builds `b` with leave target `lv`;
 a loop builds its body with its own end address. Outside any loop (which the parser rejects)
@@ -142,6 +145,7 @@ def Block.size : Block → Nat
   | .doLoop body rest => (body.size + 14) + rest.size
   | .plusLoop body rest => (body.size + 33) + rest.size
   | .leave rest => 5 + rest.size
+  | .whileL cond body rest => (cond.size + body.size + 3) + rest.size
 
 /-- The code of `DO … LOOP` (without what follows), its body built by `mk` for the leave
 target, which is the end of this code. -/
@@ -173,6 +177,11 @@ def compileS {n : Nat} (addr : Nat → Nat) : Nat → (b : Block) → { f : Frag
     ⟨(Frag.untilLoop (compileS addr lv body).1).seq (compileS addr lv rest).1, by
       simp [Frag.seq_size, Frag.until_size, (compileS addr lv body).2, (compileS addr lv rest).2,
         Block.size]⟩
+  | lv, .whileL cond body rest =>
+    ⟨(Frag.whileLoop (compileS addr lv cond).1 (compileS addr lv body).1).seq
+        (compileS addr lv rest).1, by
+      simp [Frag.seq_size, Frag.while_size, (compileS addr lv cond).2, (compileS addr lv body).2,
+        (compileS addr lv rest).2, Block.size]⟩
   | lv, .call i rest =>
     ⟨(Frag.ofCode [.call (addr i)]).seq (compileS addr lv rest).1, by
       simp [Frag.seq_size, Frag.ofCode_size, (compileS addr lv rest).2, Block.size]⟩
@@ -210,6 +219,10 @@ theorem compile_ite (t e rest : Block) :
 theorem compile_until (body rest : Block) :
     (compile addr lv (.untilL body rest) : Frag n) =
       (Frag.untilLoop (compile addr lv body)).seq (compile addr lv rest) := rfl
+theorem compile_while (cond body rest : Block) :
+    (compile addr lv (.whileL cond body rest) : Frag n) =
+      (Frag.whileLoop (compile addr lv cond) (compile addr lv body)).seq (compile addr lv rest) :=
+  rfl
 theorem compile_call (i : Nat) (rest : Block) :
     (compile addr lv (.call i rest) : Frag n) =
       (Frag.ofCode [.call (addr i)]).seq (compile addr lv rest) := rfl

@@ -309,7 +309,8 @@ state `execSeq` computes (`exec_straight_halt`) or traps with the trap it report
 
 Forth is the most developed frontend. It has source text, a parser with proofs in both
 directions and a grammar it provably implements, colon definitions with recursion, `EXIT`,
-variables, constants, and the return-stack words `>R R> R@` with `DO … LOOP`, `DO … +LOOP`,
+variables, constants, `BEGIN … WHILE … REPEAT`, and the return-stack words `>R R> R@` with
+`DO … LOOP`, `DO … +LOOP`,
 `?DO`, `LEAVE`, `UNLOOP`, `I` and `J`.
 
 ```mermaid
@@ -333,7 +334,8 @@ The reference semantics, defined directly on a Forth state with no reference to 
 * `FState`: the data stack, memory, and a return-data stack `rstack` of words;
 * `Block`: `nil`, `op o rest`, `ite t e rest` (`IF … ELSE … THEN`), `untilL body rest`
   (`BEGIN … UNTIL`), `call i rest` (a colon definition), `exit`, `doLoop body rest`
-  (`DO … LOOP`), `plusLoop body rest` (`DO … +LOOP`) and `leave` (`LEAVE`);
+  (`DO … LOOP`), `plusLoop body rest` (`DO … +LOOP`), `leave` (`LEAVE`) and
+  `whileL cond body rest` (`BEGIN … WHILE … REPEAT`);
 * `Program`: a dictionary of word bodies `defs`, a `main` block and a variable count `vars`;
 * `Res`: a run ends `ok` (fell off the end), `exit` (ran `EXIT`), `leave` (ran `LEAVE`, which the
   innermost loop catches) or `error t` (trapped);
@@ -370,6 +372,7 @@ addresses are prefix sums of `Block.size`. `DO body LOOP` lowers to `SWAP TOR TO
 then a test that increments the index, leaves `limit-(index+1)`, branches back while it is
 nonzero, and finally drops both loop parameters (`loopFrag`). `DO body +LOOP` (`plusFrag`) has a
 26-instruction test computing `index+step` and the `loopCrossed` flag, and branches *out* on it.
+`BEGIN … WHILE … REPEAT` lowers with `Frag.whileLoop`, the combinator BCPL's `while` also uses.
 `compile addr lv b` takes a *leave target* `lv`: `LEAVE` lowers to `FROMR FROMR DROP DROP JMP lv`,
 and a loop compiles its body with its own end address as the target.
 
@@ -415,7 +418,7 @@ recursive words, be established by evaluation instead of by hand-built derivatio
 The text frontend. `tokenize` splits on whitespace and removes `\` line comments and `( … )`
 comments (an unterminated `(` is an error). `parse` is case-insensitive. It reads integer
 literals including negative ones, the primitive words, the return-stack words,
-`IF/ELSE/THEN`, `BEGIN/UNTIL`, `DO/LOOP`, `DO/+LOOP`, `?DO` (parsed to an `IF` that skips the
+`IF/ELSE/THEN`, `BEGIN/UNTIL`, `BEGIN/WHILE/REPEAT`, `DO/LOOP`, `DO/+LOOP`, `?DO` (parsed to an `IF` that skips the
 loop when limit and index are equal), `LEAVE` (only inside a loop: `Program.leaveOK`), colon
 definitions, `RECURSE`, `EXIT`, `VARIABLE` and `CONSTANT`. A name is visible from the start of its own body, which is how recursion by name
 works, and a later definition shadows an earlier one. Every failure returns a message, for
@@ -474,8 +477,8 @@ message included, for all such fuel) and `parse_ne_fuel` (`parse` never reports
 inputs: comments and case, `BEGIN/UNTIL`, words outside the subset, unknown words, use before
 definition, a missing `;`, unbalanced control structures, a recursive `SUM` whose compiled
 program halts with `55`, and examples for each newer word, including `+LOOP` counting up and
-down, `?DO` skipping its loop, `LEAVE`, `UNLOOP EXIT`, and the rejection of `LEAVE` outside a
-loop.
+down, `?DO` skipping its loop, `LEAVE`, `UNLOOP EXIT`, the rejection of `LEAVE` outside a
+loop, and Euclid's algorithm with `WHILE`.
 
 ## 5. `bcpl/`: BCPL statements to IR
 

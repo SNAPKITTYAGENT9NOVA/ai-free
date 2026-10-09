@@ -133,6 +133,11 @@ theorem size_until (body rest : Block) :
     (compile addr lv (.untilL body rest) : Frag n).size =
       ((compile addr lv body : Frag n).size + 2) + (compile addr lv rest : Frag n).size := rfl
 
+theorem size_while (cond body rest : Block) :
+    (compile addr lv (.whileL cond body rest) : Frag n).size =
+      ((compile addr lv cond : Frag n).size + (compile addr lv body : Frag n).size + 3) +
+        (compile addr lv rest : Frag n).size := rfl
+
 theorem size_call (i : Nat) (rest : Block) :
     (compile addr lv (.call i rest) : Frag n).size = 1 + (compile addr lv rest : Frag n).size := rfl
 
@@ -483,6 +488,58 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
     have h1 := until_again_rule (Frag.seq_at hat0).1 hpc1 hd1 hc
     have h3 := ihl lv base { s1 with pc := base, dstack := d } hat rfl rfl hm1 ha1
     exact reaches_cast rfl hrs1 (reaches_trans (hs1.trans h1) h3)
+  | @whileCondStop cond body rest st r _ hk ihc =>
+    intro lv base s hat hpc hd hm ha
+    rw [compile_while] at hat
+    obtain ⟨hc, -⟩ := while_decode (Frag.seq_at hat).1
+    exact reaches_abrupt hk (ihc lv base s hc hpc hd hm ha)
+  | @whileUnder cond body rest st m rs _ ihc =>
+    intro lv base s hat hpc hd hm ha
+    rw [compile_while] at hat
+    obtain ⟨hc, hbr, -⟩ := while_decode (Frag.seq_at hat).1
+    obtain ⟨s1, hs1, hpc1, _, hd1, -, -⟩ := ihc lv base s hc hpc hd hm ha
+    refine ⟨s1, hs1, ?_⟩
+    rw [step_of_fetch (by rw [hpc1]; exact hbr)]
+    exact exec_underflow _ s1 (by simp [hd1, Instr.pops])
+  | @whileExit cond body rest st c d m rs r _ hf _ ihc ihr =>
+    intro lv base s hat hpc hd hm ha
+    rw [compile_while] at hat
+    have hat' := Frag.seq_at hat
+    obtain ⟨hc, -⟩ := while_decode hat'.1
+    obtain ⟨s1, hs1, hpc1, hrs1, hd1, hm1, ha1⟩ := ihc lv base s hc hpc hd hm ha
+    have h1 := while_exit_rule hat'.1 hpc1 hd1 hf
+    have h3 := ihr lv
+      (base + (Frag.whileLoop (compile addr lv cond) (compile addr lv body) : Frag n).size)
+      { s1 with pc := base + (compile addr lv cond : Frag n).size +
+          (compile addr lv body : Frag n).size + 3, dstack := d }
+      hat'.2 (by simp only [Frag.while_size]; omega) rfl hm1 ha1
+    refine reaches_cast ?_ hrs1 (reaches_trans (hs1.trans h1) h3)
+    rw [size_while, Frag.while_size]; omega
+  | @whileBodyStop cond body rest st c d m rs r _ ht _ hk ihc ihb =>
+    intro lv base s hat hpc hd hm ha
+    rw [compile_while] at hat
+    have hat' := Frag.seq_at hat
+    obtain ⟨hc, -, -, hb, -⟩ := while_decode hat'.1
+    obtain ⟨s1, hs1, hpc1, hrs1, hd1, hm1, ha1⟩ := ihc lv base s hc hpc hd hm ha
+    have h1 := while_enter_rule hat'.1 hpc1 hd1 ht
+    have h2 := ihb lv _ { s1 with pc := base + (compile addr lv cond : Frag n).size + 2, dstack := d }
+      hb rfl rfl hm1 ha1
+    exact reaches_abrupt hk (reaches_trans (hs1.trans h1) (reaches_cast rfl hrs1 h2))
+  | @whileAgain cond body rest st c d m rs st2 r _ ht _ _ ihc ihb ihl =>
+    intro lv base s hat hpc hd hm ha
+    have hat0 := hat
+    rw [compile_while] at hat0
+    have hat' := Frag.seq_at hat0
+    obtain ⟨hc, -, -, hb, -⟩ := while_decode hat'.1
+    obtain ⟨s1, hs1, hpc1, hrs1, hd1, hm1, ha1⟩ := ihc lv base s hc hpc hd hm ha
+    have h1 := while_enter_rule hat'.1 hpc1 hd1 ht
+    obtain ⟨s2, hs2, hpc2, hrs2, hd2, hm2, ha2⟩ := ihb lv _
+      { s1 with pc := base + (compile addr lv cond : Frag n).size + 2, dstack := d }
+      hb rfl rfl hm1 ha1
+    have h3 := while_back_rule hat'.1 hpc2
+    have h4 := ihl lv base { s2 with pc := base } hat rfl hd2 hm2 ha2
+    exact reaches_cast rfl (hrs2.trans hrs1)
+      (reaches_trans (hs1.trans (h1.trans (hs2.trans h3))) h4)
   | @callOk i rest st body r1 st1 r hi _ hr1 _ ihb ihr =>
     intro lv base s hat hpc hd hm ha
     rw [compile_call] at hat

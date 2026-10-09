@@ -68,6 +68,8 @@ theorem Block.WF_mono {k k' : Nat} {d : Bool} (hk : k ≤ k') :
   | .doLoop x r, h => ⟨Block.WF_mono hk x h.1, Block.WF_mono hk r h.2⟩
   | .plusLoop x r, h => ⟨Block.WF_mono hk x h.1, Block.WF_mono hk r h.2⟩
   | .leave r, h => Block.WF_mono hk r h
+  | .whileL c x r, h =>
+    ⟨Block.WF_mono hk c h.1, Block.WF_mono hk x h.2.1, Block.WF_mono hk r h.2.2⟩
 
 theorem Block.WF_append {k : Nat} {d : Bool} :
     ∀ a b : Block, a.WF k d → b.WF k d → (a.append b).WF k d
@@ -80,6 +82,7 @@ theorem Block.WF_append {k : Nat} {d : Bool} :
   | .doLoop _ r, b, ha, hb => ⟨ha.1, Block.WF_append r b ha.2 hb⟩
   | .plusLoop _ r, b, ha, hb => ⟨ha.1, Block.WF_append r b ha.2 hb⟩
   | .leave r, b, ha, hb => Block.WF_append r b ha hb
+  | .whileL _ _ r, b, ha, hb => ⟨ha.1, ha.2.1, Block.WF_append r b ha.2.2 hb⟩
 
 theorem Block.WF_dropLastLit {k : Nat} {d : Bool} :
     ∀ (b b' : Block) (z : Int), b.dropLastLit = some (b', z) → b.WF k d → b'.WF k d := by
@@ -142,6 +145,12 @@ theorem Block.WF_dropLastLit {k : Nat} {d : Bool} :
     obtain ⟨⟨p1, p2⟩, hp, he⟩ := h
     cases he
     exact ih p1 p2 hp hw
+  | whileL c x r _ _ ih =>
+    intro b' z h hw
+    simp only [Block.dropLastLit, Option.map_eq_some_iff] at h
+    obtain ⟨⟨p1, p2⟩, hp, he⟩ := h
+    cases he
+    exact ⟨hw.1, hw.2.1, ih _ _ hp hw.2.2⟩
 
 theorem Block.WF_loopOf {k : Nat} {d : Bool} (q : Bool) {mk : Block → Block → Block}
     (hmk : ∀ b r : Block, b.WF k d → r.WF k d → (mk b r).WF k d) {body rest : Block}
@@ -254,7 +263,17 @@ theorem parseSeq_wf {k : Nat} {inDef : Bool} :
         have w3 := parseSeq_wf fuel dict self _ b3 s3 r3 hd hs h5
         cases h6
         exact ⟨w1, w3⟩
-      · cases h2
+      · split at h2
+        · obtain ⟨⟨b2, s2, r2⟩, h3, h4⟩ := bind_ok h2
+          have w2 := parseSeq_wf fuel dict self _ b2 s2 r2 hd hs h3
+          simp only at h4
+          split at h4
+          · obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h4
+            have w3 := parseSeq_wf fuel dict self _ b3 s3 r3 hd hs h5
+            cases h6
+            exact ⟨w1, w2, w3⟩
+          · cases h4
+        · cases h2
     · rename_i q _
       obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
       have w1 := parseSeq_wf fuel dict self ts b1 s1 r1 hd hs h1
@@ -623,7 +642,18 @@ theorem parseSeq_congr {R : Tok → Tok → Prop} {dict : Dict} {self : Option N
         · rw [iteT hs1, iteT hs1]
           refine rsim_bind hS (ih r r' hr) ?_
           intro b3 s3 r3 r3' hr3; exact ⟨rfl, rfl, hr3⟩
-        · rw [iteF hs1, iteF hs1]; trivial
+        · rw [iteF hs1, iteF hs1]
+          by_cases hs2 : s = some kWHILE
+          · rw [iteT hs2, iteT hs2]
+            refine rsim_bind hS (ih r r' hr) ?_
+            intro b2 s2 r2 r2' hr2
+            simp only
+            by_cases hs3 : s2 = some kREPEAT
+            · rw [iteT hs3, iteT hs3]
+              refine rsim_bind hS (ih r2 r2' hr2) ?_
+              intro b3 s3 r3 r3' hr3; exact ⟨rfl, rfl, hr3⟩
+            · rw [iteF hs3, iteF hs3]; trivial
+          · rw [iteF hs2, iteF hs2]; trivial
       | doK q =>
         refine rsim_bind hS (ih ts ts' hts) ?_
         intro b s r r' hr
@@ -1027,6 +1057,7 @@ theorem Block.append_nil : ∀ b : Block, b.append .nil = b
   | .doLoop _ r => by simp [Block.append, Block.append_nil r]
   | .plusLoop _ r => by simp [Block.append, Block.append_nil r]
   | .leave r => by simp [Block.append, Block.append_nil r]
+  | .whileL _ _ r => by simp [Block.append, Block.append_nil r]
 
 end ParseProps
 

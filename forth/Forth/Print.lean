@@ -16,6 +16,7 @@ Printed form: `VARIABLE V` once per variable cell (all named `V`: a variable is 
 its address, a literal, so the names are never used), then each definition `k` as
 `: Wk … ;`, then the main block. Word names are `W` followed by the decimal index. Control
 structures print as `IF … ELSE … THEN` (with a possibly empty `ELSE` part), `BEGIN … UNTIL`,
+`BEGIN … WHILE … REPEAT`,
 `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `EXIT`; `CONSTANT`, `RECURSE` and `?DO` are never printed
 (a `?DO` loop prints as the `IF` it parses to) (a constant is a literal, `RECURSE` a
 call by name). Tokens are separated by one space.
@@ -38,6 +39,7 @@ def Block.WF (k : Nat) (inDef : Bool) : Block → Prop
   | .doLoop b r => b.WF k inDef ∧ r.WF k inDef
   | .plusLoop b r => b.WF k inDef ∧ r.WF k inDef
   | .leave r => r.WF k inDef
+  | .whileL c b r => c.WF k inDef ∧ b.WF k inDef ∧ r.WF k inDef
 
 /-- Well-formed programs: word `i` may call words `0 … i` (itself included); the main block
 may call every word; only definitions contain `EXIT`; every `LEAVE` is inside a loop. This is the
@@ -94,6 +96,7 @@ def printBlock : Block → List Tok
   | .doLoop b r => kDO :: (printBlock b ++ kLOOP :: printBlock r)
   | .plusLoop b r => kDO :: (printBlock b ++ kPLOOP :: printBlock r)
   | .leave r => kLEAVE :: printBlock r
+  | .whileL c b r => kBEGIN :: (printBlock c ++ kWHILE :: (printBlock b ++ kREPEAT :: printBlock r))
 
 def varToks : Nat → List Tok
   | 0 => []
@@ -299,7 +302,8 @@ theorem opTable_no_number : ∀ p ∈ opTable, number p.1 = none := by decide
 
 theorem keyword_no_number : ∀ kw ∈ keywords, number kw = none := by decide
 
-theorem keyword_head : ∀ kw ∈ keywords, kw.head? ≠ some 'W' := by decide
+/-- No keyword is spelled like a word name, `W` followed by a digit (`WHILE` starts with `W`). -/
+theorem keyword_not_word : ∀ kw ∈ keywords, ∀ c ∈ digitList, kw.take 2 ≠ ['W', c] := by decide
 
 /-! ## Classification of printed tokens -/
 
@@ -354,14 +358,17 @@ theorem classify_word {dict : Dict} {self : Option Nat} {i : Nat}
     (hl : dict.lookup (wordName i) = some (Block.call i)) :
     classify dict self (wordName i) = .prim (.call i) := by
   have hk : ∀ kw ∈ keywords, kw ≠ wordName i := by
-    intro kw hkw e; have := keyword_head kw hkw; rw [e] at this; simp [wordName] at this
+    intro kw hkw e
+    obtain ⟨c, cs, hcs, hc⟩ := natToks_cons i
+    have := keyword_not_word kw hkw c hc
+    rw [e] at this; simp [wordName, hcs] at this
   rw [classify_lookup (upper_wordName i) hk]
   simp only [lookupWord, hl]
 
 theorem classify_stop {dict : Dict} {self : Option Nat} {u : Tok} (hu : u ∈ stops) :
     classify dict self u = .stop u := by
   simp only [stops, List.mem_cons, List.mem_nil_iff, or_false] at hu
-  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
 
 theorem classify_if {dict : Dict} {self : Option Nat} : classify dict self kIF = .ifK := rfl
 
@@ -440,6 +447,20 @@ theorem parseSeq_print {dict : Dict} {self : Option Nat} {k : Nat} {inDef : Bool
         (parseSeq_stop (by decide) _) f hlen.1]
     simp only [bind, Except.bind, ite_true]
     rw [ihr hwf.2 tail stop rest ht f hlen.2]
+  | whileL c x r ihc ihx ihr =>
+    intro hwf tail stop rest ht fuel hf
+    obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [printBlock] at hf; omega⟩
+    have hlen : (printBlock c).length < f ∧ (printBlock x).length < f ∧
+        (printBlock r).length < f := by simp [printBlock] at hf; omega
+    simp only [printBlock, List.cons_append, List.append_assoc, parseSeq, classify_begin]
+    rw [ihc hwf.1 (kWHILE :: (printBlock x ++ kREPEAT :: (printBlock r ++ tail))) (some kWHILE)
+        (printBlock x ++ kREPEAT :: (printBlock r ++ tail)) (parseSeq_stop (by decide) _) f hlen.1]
+    simp only [bind, Except.bind, ite_true, show (some kWHILE = some kUNTIL) = False by decide,
+      ite_false]
+    rw [ihx hwf.2.1 (kREPEAT :: (printBlock r ++ tail)) (some kREPEAT) (printBlock r ++ tail)
+        (parseSeq_stop (by decide) _) f hlen.2.1]
+    simp only [ite_true]
+    rw [ihr hwf.2.2 tail stop rest ht f hlen.2.2]
   | doLoop x r ihx ihr =>
     intro hwf tail stop rest ht fuel hf
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [printBlock] at hf; omega⟩
@@ -728,6 +749,15 @@ theorem plain_printBlock : ∀ (b : Block), ∀ t ∈ printBlock b, Plain t := b
     rcases h with rfl | h
     · exact plain_concrete (by decide)
     · exact ih t h
+  | whileL c x r ihc ihx ihr =>
+    intro t h; simp only [printBlock, List.mem_cons, List.mem_append] at h
+    rcases h with rfl | h | rfl | h | rfl | h
+    · exact plain_concrete (by decide)
+    · exact ihc t h
+    · exact plain_concrete (by decide)
+    · exact ihx t h
+    · exact plain_concrete (by decide)
+    · exact ihr t h
 
 theorem plain_printTokens (P : Program) : ∀ t ∈ printTokens P, Plain t := by
   have hv : ∀ v, ∀ t ∈ varToks v, Plain t := by

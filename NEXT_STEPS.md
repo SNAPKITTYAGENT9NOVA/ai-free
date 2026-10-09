@@ -2,11 +2,11 @@
 
 Suggested development order. Each item names the gap it closes in the current code.
 
-## Done: Forth loops, parser fuel and grammar
+## Done: Forth control structures, parser fuel and grammar
 
 Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
-`CONSTANT`, `0=`, `MOD`, the return-data stack words `>R R> R@`, `DO … LOOP`
-and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
+`CONSTANT`, `0=`, `MOD`, the return-data stack words `>R R> R@`, `BEGIN … WHILE … REPEAT`,
+`DO … LOOP` and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
 `Forth.Program.compile_correct`. `+LOOP` uses ANS Forth's crossing rule,
 proved in `Forth/LoopProps.lean` (`loopCrossed_eq_saddOverflow`; with step one
 it is the `LOOP` rule, `loopCrossed_one`). The parser implements an inductive
@@ -25,14 +25,7 @@ Choices made there, which a later change may want to revisit:
   The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
   by its own grammar.
 
-## 1. Forth: `BEGIN … WHILE … REPEAT`
-
-The IR already has `Frag.whileLoop` with its rules (`while_enter_rule`,
-`while_exit_rule`, `while_back_rule`), used by BCPL. A Forth `Block.whileL`
-needs `Run` rules, a case in `compile_correct`, a parser production and the
-printer and grammar cases.
-
-## 2. Forth: more of the core word set
+## 1. Forth: more of the core word set
 
 Not implemented: `?DUP`, `2DUP`, `2DROP`, `2SWAP`, `*/`, `/MOD`, `NEGATE`,
 `ABS`, `MIN`, `MAX`, `CREATE`/`ALLOT`/`,`, and `CASE … OF … ENDOF … ENDCASE`.
@@ -40,7 +33,7 @@ Most are straight-line and need only `Op.sem`, `compileOp` and a parser
 entry (`compileOp_ok` / `compileOp_err` are proved by one tactic for every
 operation).
 
-## 3. Lexer specification
+## 2. Lexer specification
 
 Give `tokenize` an independent specification (a token is a maximal run of
 non-whitespace characters, outside comments) and prove `tokenize` meets it, so

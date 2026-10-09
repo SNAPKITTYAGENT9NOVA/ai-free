@@ -11,7 +11,7 @@ concrete parses are checked by `rfl`). This file shows that the fuel is irreleva
 * **Grammar.** `Seq dict self ts b stop rest` is an inductive grammar for blocks: token list
   `ts` consists of block `b`, then the stop word `stop` (`none` at the end of input), then
   `rest`. Its rules are the productions `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`,
-  `DO … LOOP`, `DO … +LOOP` (with `?DO` for `DO`) and single words, over the token
+  `BEGIN … WHILE … REPEAT`, `DO … LOOP`, `DO … +LOOP` (with `?DO` for `DO`) and single words, over the token
   classification `classify`. `Top` is the grammar of top-level code with `:` definitions,
   `VARIABLE` and `CONSTANT`, and `Prog` adds the `LEAVE` check. `parseSeq_iff`, `parseTop_iff`,
   `parseTokens_iff` and `parse_iff` prove that the parser accepts exactly these derivations, with
@@ -61,7 +61,13 @@ def seqStep (P : List Tok → SeqRes) (dict : Dict) (self : Option Nat) (t : Tok
     if stop1 = some kUNTIL then
       let (rest, stop2, ts2) ← P ts1
       .ok (.untilL body rest, stop2, ts2)
-    else .error "BEGIN without UNTIL"
+    else if stop1 = some kWHILE then
+      let (wb, stop2, ts2) ← P ts1
+      if stop2 = some kREPEAT then
+        let (rest, stop3, ts3) ← P ts2
+        .ok (.whileL body wb rest, stop3, ts3)
+      else .error "WHILE without REPEAT"
+    else .error "BEGIN without UNTIL or WHILE"
   | .doK q => do
     let (body, stop1, ts1) ← P ts
     if stop1 = some kLOOP then
@@ -71,6 +77,7 @@ def seqStep (P : List Tok → SeqRes) (dict : Dict) (self : Option Nat) (t : Tok
       let (rest, stop2, ts2) ← P ts1
       .ok (Block.loopOf q .plusLoop body rest, stop2, ts2)
     else .error "DO without LOOP or +LOOP"
+
 theorem parseSeq_succ (f : Nat) (dict : Dict) (self : Option Nat) (t : Tok) (ts : List Tok) :
     parseSeq (f + 1) dict self (t :: ts) = seqStep (parseSeq f dict self) dict self t ts := rfl
 
@@ -96,6 +103,10 @@ inductive Seq (dict : Dict) (self : Option Nat) : List Tok → Block → Option 
   | begin {t : Tok} {ts ts1 r : List Tok} {body rb : Block} {st : Option Tok} :
       classify dict self t = .beginK → Seq dict self ts body (some kUNTIL) ts1 →
       Seq dict self ts1 rb st r → Seq dict self (t :: ts) (.untilL body rb) st r
+  | whileL {t : Tok} {ts ts1 ts2 r : List Tok} {cond body rb : Block} {st : Option Tok} :
+      classify dict self t = .beginK → Seq dict self ts cond (some kWHILE) ts1 →
+      Seq dict self ts1 body (some kREPEAT) ts2 → Seq dict self ts2 rb st r →
+      Seq dict self (t :: ts) (.whileL cond body rb) st r
   | doLoop {q : Bool} {t : Tok} {ts ts1 r : List Tok} {body rb : Block} {st : Option Tok} :
       classify dict self t = .doK q → Seq dict self ts body (some kLOOP) ts1 →
       Seq dict self ts1 rb st r → Seq dict self (t :: ts) (Block.loopOf q .doLoop body rb) st r
@@ -121,6 +132,9 @@ theorem Seq.rest {dict : Dict} {self : Option Nat} {ts : List Tok} {b : Block} {
   | begin _ _ _ ih1 ih2 =>
     have := ih1.2 (by simp)
     simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih2.2 h; omega⟩
+  | whileL _ _ _ _ ih1 ih2 ih3 =>
+    have := ih1.2 (by simp); have := ih2.2 (by simp)
+    simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih3.2 h; omega⟩
   | doLoop _ _ _ ih1 ih2 =>
     have := ih1.2 (by simp)
     simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih2.2 h; omega⟩
@@ -185,7 +199,18 @@ theorem parseSeq_sound {dict : Dict} {self : Option Nat} :
         obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h2
         cases h6
         exact .begin hc d1 (parseSeq_sound f _ _ _ _ h5)
-      · cases h2
+      · split at h2
+        · rename_i _ e1; subst e1
+          obtain ⟨⟨b2, s2, r2⟩, h3, h4⟩ := bind_ok h2
+          have d2 := parseSeq_sound f _ b2 s2 r2 h3
+          simp only at h4
+          split at h4
+          · rename_i e2; subst e2
+            obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h4
+            cases h6
+            exact .whileL hc d1 d2 (parseSeq_sound f _ _ _ _ h5)
+          · cases h4
+        · cases h2
     · rename_i q hc
       obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
       have d1 := parseSeq_sound f ts b1 s1 r1 h1
@@ -244,6 +269,17 @@ theorem parseSeq_complete {dict : Dict} {self : Option Nat} {ts : List Tok} {b :
     rw [ih1 f (by omega)]
     simp only [bind, Except.bind, ite_true]
     rw [ih2 f (by omega)]
+  | whileL hc d1 d2 _ ih1 ih2 ih3 =>
+    intro f hf; obtain ⟨f, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    simp only [List.length_cons] at hf
+    have l1 := d1.rest_lt; have l2 := d2.rest_lt
+    rw [parseSeq_succ]; simp only [seqStep, hc]
+    rw [ih1 f (by omega)]
+    simp only [bind, Except.bind, show (some kWHILE = some kUNTIL) = False by decide, ite_false,
+      ite_true]
+    rw [ih2 f (by omega)]
+    simp only [ite_true]
+    rw [ih3 f (by omega)]
   | doLoop hc d1 _ ih1 ih2 =>
     intro f hf; obtain ⟨f, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
     simp only [List.length_cons] at hf
@@ -319,7 +355,15 @@ theorem seqStep_congr {P Q : List Tok → SeqRes} {dict : Dict} {self : Option N
     simp only
     split
     · exact bind_congr (hPQ ts1 l1) (fun _ _ => rfl)
-    · rfl
+    · split
+      · refine bind_congr (hPQ ts1 l1) ?_
+        rintro ⟨b2, s2, ts2⟩ h2
+        have l2 := hP _ _ _ _ h2
+        simp only
+        split
+        · exact bind_congr (hPQ ts2 (by omega)) (fun _ _ => rfl)
+        · rfl
+      · rfl
   | doK q =>
     refine bind_congr (hPQ ts (Nat.le_refl _)) ?_
     rintro ⟨b1, s1, ts1⟩ h1
@@ -416,14 +460,14 @@ theorem classify_bad_msg {dict : Dict} {self : Option Nat} {t : Tok} {m : String
   · cases h; exact not_fuelMsg_of_head (c := 'u') (head_append (by decide)) (by decide)
 
 /-- Where an error of `seqStep` comes from: a bad word, a recursive call on a suffix, or one of
-the four messages about unbalanced control words. -/
+the five messages about unbalanced control words. -/
 theorem seqStep_error {P : List Tok → SeqRes} {dict : Dict} {self : Option Nat} {t : Tok}
     {ts : List Tok} {e : String}
     (hP : ∀ X b s r, P X = .ok (b, s, r) → r.length ≤ X.length)
     (h : seqStep P dict self t ts = .error e) :
     classify dict self t = .bad e ∨ (∃ X, X.length ≤ ts.length ∧ P X = .error e) ∨
-      e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL",
-        "DO without LOOP or +LOOP"] := by
+      e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL or WHILE",
+        "WHILE without REPEAT", "DO without LOOP or +LOOP"] := by
   have bind_err : ∀ {α : Type} {x : Except String α} {k : α → SeqRes},
       x >>= k = .error e → x = .error e ∨ ∃ a, x = .ok a ∧ k a = .error e := by
     intro α x k hx
@@ -464,7 +508,17 @@ theorem seqStep_error {P : List Tok → SeqRes} {dict : Dict} {self : Option Nat
     · rcases bind_err h2 with h5 | ⟨_, _, h6⟩
       · exact .inr (.inl ⟨ts1, l1, h5⟩)
       · cases h6
-    · cases h2; simp
+    · split at h2
+      · rcases bind_err h2 with h3 | ⟨⟨b2, s2, ts2⟩, h3, h4⟩
+        · exact .inr (.inl ⟨ts1, l1, h3⟩)
+        have l2 := hP _ _ _ _ h3
+        simp only at h4
+        split at h4
+        · rcases bind_err h4 with h5 | ⟨_, _, h6⟩
+          · exact .inr (.inl ⟨ts2, by omega, h5⟩)
+          · cases h6
+        · cases h4; simp
+      · cases h2; simp
   · rcases bind_err h with h1 | ⟨⟨b1, s1, ts1⟩, h1, h2⟩
     · exact .inr (.inl ⟨ts, Nat.le_refl _, h1⟩)
     have l1 := hP _ _ _ _ h1
@@ -480,10 +534,10 @@ theorem seqStep_error {P : List Tok → SeqRes} {dict : Dict} {self : Option Nat
       · cases h2; simp
 
 theorem seqMsgs_not_fuel {e : String}
-    (h : e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL",
-      "DO without LOOP or +LOOP"]) : ¬FuelMsg e := by
+    (h : e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL or WHILE",
+      "WHILE without REPEAT", "DO without LOOP or +LOOP"]) : ¬FuelMsg e := by
   simp only [List.mem_cons, List.mem_nil_iff, or_false] at h
-  rcases h with rfl | rfl | rfl | rfl <;> (rintro (h | h) <;> exact absurd h (by decide))
+  rcases h with rfl | rfl | rfl | rfl | rfl <;> (rintro (h | h) <;> exact absurd h (by decide))
 
 /-- With fuel larger than the input, `parseSeq` never fails for lack of fuel, and for any fuel
 it never reports the `parseTop` fuel error. -/
