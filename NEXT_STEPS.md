@@ -5,7 +5,9 @@ Suggested development order. Each item names the gap it closes in the current co
 ## Done: Forth control structures, parser fuel and grammar
 
 Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
-`CONSTANT`, `0=`, `MOD`, the return-data stack words `>R R> R@`, `BEGIN … WHILE … REPEAT`,
+`CONSTANT`, `CREATE`, `ALLOT`, `,`, `0=`, `MOD`, `/MOD`, `NEGATE`, `ABS`, `MIN`, `MAX`,
+`?DUP`, `2DUP 2DROP 2SWAP`, `CASE … OF … ENDOF … ENDCASE`, the return-data stack words
+`>R R> R@`, `BEGIN … WHILE … REPEAT`,
 `DO … LOOP` and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
 `Forth.Program.compile_correct`. `+LOOP` uses ANS Forth's crossing rule,
 proved in `Forth/LoopProps.lean` (`loopCrossed_eq_saddOverflow`; with step one
@@ -16,6 +18,10 @@ are unreachable (`parse_ne_fuel`).
 
 Choices made there, which a later change may want to revisit:
 
+- `?DUP` and `CASE … ENDCASE` are parsed into `IF`s (an `OF` clause pushes a
+  placeholder that `ENDCASE` drops, so every path drops exactly one item).
+- `CREATE`, `ALLOT` and `,` work at top level, at parse time, like `VARIABLE`;
+  `ALLOT` and `,` take a literal just before them, as `CONSTANT` does.
 - `?DO` is not a separate construct: it parses to
   `OVER OVER = IF DROP DROP ELSE DO … LOOP THEN`, so `print` writes that form.
 - `LEAVE` is rejected by the parser outside a loop of its own block, but its
@@ -25,13 +31,12 @@ Choices made there, which a later change may want to revisit:
   The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
   by its own grammar.
 
-## 1. Forth: more of the core word set
+## 1. Forth: double-cell arithmetic
 
-Not implemented: `?DUP`, `2DUP`, `2DROP`, `2SWAP`, `*/`, `/MOD`, `NEGATE`,
-`ABS`, `MIN`, `MAX`, `CREATE`/`ALLOT`/`,`, and `CASE … OF … ENDOF … ENDCASE`.
-Most are straight-line and need only `Op.sem`, `compileOp` and a parser
-entry (`compileOp_ok` / `compileOp_err` are proved by one tactic for every
-operation).
+`*/` and `*/MOD` are not implemented: ANS Forth computes `n1 * n2` as a
+double-cell intermediate, which the single-word IR has no instruction for.
+They need double-cell words (`M*`, `UM/MOD`, …) in the IR and both backends,
+or a lowering to a multi-word long multiplication with its own proof.
 
 ## 2. Lexer specification
 

@@ -21,6 +21,10 @@ Parsing (`parse`), case-insensitive:
   `DO … +LOOP`, and `?DO` in place of `DO`. `?DO` is not a separate construct: `?DO body LOOP rest` parses as
   `OVER OVER = IF DROP DROP ELSE DO body LOOP THEN rest` (`Block.loopOf`), which skips the loop
   when limit and index are equal, as ANS `?DO` does;
+* `?DUP`, parsed as `DUP IF DUP THEN` (`Block.qdup`);
+* `CASE t₁ OF b₁ ENDOF … tₖ OF bₖ ENDOF default ENDCASE`, parsed into nested `IF`s
+  (`Block.ofClause`): an `OF` compares its test value with the selector, and the clauses after
+  an `ENDOF` must reach `ENDCASE`;
 * `LEAVE`, which must occur inside a `DO` loop of the same definition or of the main block
   (otherwise `LEAVE outside DO … LOOP`, checked on the parsed program, `Program.leaveOK`);
 * `: name … ;` colon definitions at top level. A name is visible from the start of its own
@@ -33,9 +37,13 @@ Parsing (`parse`), case-insensitive:
 * `<number> CONSTANT name` (top level): the number literal immediately before `CONSTANT` is
   removed from the top-level code and `name` pushes it. (Standard Forth takes the value from
   the stack at run time; here it must be a literal, resolved at parse time.)
+* Data space, at top level, handled at parse time like `VARIABLE`: `CREATE name` makes `name`
+  push the next free cell without allocating it; `n ALLOT` (`n` a literal just before it, like
+  `CONSTANT`'s) allocates `n` cells (none if `n` is negative); `x ,` (`x` a literal) allocates the
+  next cell and stores `x` in it when the main block reaches that point.
 * Top-level code outside definitions forms the main block, in source order.
 * Anything else is an error (`unknown word`), as are unbalanced control words, nested
-  definitions, `VARIABLE`/`CONSTANT` inside a definition and a missing `;`. A `DO` without
+  definitions, `VARIABLE`/`CONSTANT`/`CREATE`/`ALLOT`/`,` inside a definition and a missing `;`. A `DO` without
   its `LOOP` or `+LOOP` is an error, and so is a `LOOP` or `+LOOP` without a `DO`.
 
 Name lookup order: dictionary, then built-in words, then numbers.
@@ -86,6 +94,16 @@ def Block.loopOf (q : Bool) (mk : Block → Block → Block) (body rest : Block)
   match q with
   | false => mk body rest
   | true => Block.qdo (mk body .nil) rest
+
+/-- `?DUP`: `DUP IF DUP THEN`, duplicating the top only when it is nonzero. -/
+def Block.qdup (rest : Block) : Block := .op .dup (.ite (.op .dup .nil) .nil rest)
+
+/-- One `CASE` clause `test OF body ENDOF more`, after its test: if the test value equals the
+selector below it, drop the selector, run `body`, and push a placeholder (which `ENDCASE`
+drops, as it drops the selector on the path where no clause matched); otherwise go on with the
+remaining clauses `more`. -/
+def Block.ofClause (body more : Block) : Block :=
+  .op .over (.op .eq (.ite (.op .drop (body.append (.op (.lit 0) .nil))) more .nil))
 
 /-- Every `LEAVE` lies inside a loop body (`inLoop`: inside one already). -/
 def Block.leaveOK : Bool → Block → Bool
@@ -149,7 +167,11 @@ def opTable : List (Tok × Op) :=
     (['O', 'V', 'E', 'R'], .over), (['R', 'O', 'T'], .rot),
     (['@'], .fetch), (['!'], .store),
     (['>', 'R'], .tor), (['R', '>'], .fromr), (['R', '@'], .rfetch),
-    (['I'], .loopI), (['J'], .loopJ), (['U', 'N', 'L', 'O', 'O', 'P'], .unloop) ]
+    (['I'], .loopI), (['J'], .loopJ), (['U', 'N', 'L', 'O', 'O', 'P'], .unloop),
+    (['2', 'D', 'U', 'P'], .twoDup), (['2', 'D', 'R', 'O', 'P'], .twoDrop),
+    (['2', 'S', 'W', 'A', 'P'], .twoSwap), (['/', 'M', 'O', 'D'], .divMod),
+    (['N', 'E', 'G', 'A', 'T', 'E'], .negate), (['A', 'B', 'S'], .abs),
+    (['M', 'I', 'N'], .min), (['M', 'A', 'X'], .max) ]
 
 def digitsAux : Nat → List Char → Option Nat
   | acc, [] => some acc
@@ -182,10 +204,19 @@ def kQDO : Tok := ['?', 'D', 'O']
 def kLEAVE : Tok := ['L', 'E', 'A', 'V', 'E']
 def kWHILE : Tok := ['W', 'H', 'I', 'L', 'E']
 def kREPEAT : Tok := ['R', 'E', 'P', 'E', 'A', 'T']
+def kCREATE : Tok := ['C', 'R', 'E', 'A', 'T', 'E']
+def kALLOT : Tok := ['A', 'L', 'L', 'O', 'T']
+def kCOMMA : Tok := [',']
+def kQDUP : Tok := ['?', 'D', 'U', 'P']
+def kCASE : Tok := ['C', 'A', 'S', 'E']
+def kOF : Tok := ['O', 'F']
+def kENDOF : Tok := ['E', 'N', 'D', 'O', 'F']
+def kENDCASE : Tok := ['E', 'N', 'D', 'C', 'A', 'S', 'E']
 
 /-- Words that end the block being parsed. -/
 def stops : List Tok :=
-  [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP, kPLOOP, kWHILE, kREPEAT]
+  [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP, kPLOOP, kWHILE, kREPEAT,
+    kENDOF, kENDCASE, kCREATE, kALLOT, kCOMMA]
 
 /-- Dictionary: (upper-cased name, what the name compiles to), most recent first. A colon
 definition `k` compiles to `Block.call k`; a variable or constant to a literal. -/
@@ -199,6 +230,8 @@ inductive Item where
   | ifK
   | beginK
   | doK (q : Bool)
+  | caseK
+  | ofK
   | prim (w : Block → Block)
   | bad (msg : String)
 
@@ -231,6 +264,9 @@ def classify (dict : Dict) (self : Option Nat) (t : Tok) : Item :=
   else if u = kDO then .doK false
   else if u = kQDO then .doK true
   else if u = kLEAVE then .prim .leave
+  else if u = kQDUP then .prim Block.qdup
+  else if u = kCASE then .caseK
+  else if u = kOF then .ofK
   else lookupWord dict t u
 
 /-- The error for running out of fuel in `parseSeq`. Never produced for the fuel `parse` uses
@@ -286,6 +322,19 @@ def parseSeq : Nat → Dict → Option Nat → List Tok → Except String (Block
         let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
         .ok (Block.loopOf q .plusLoop body rest, stop2, ts2)
       else .error "DO without LOOP or +LOOP"
+    | .caseK => do
+      let (body, stop1, ts1) ← parseSeq fuel dict self ts
+      if stop1 = some kENDCASE then
+        let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
+        .ok (body.append (.op .drop rest), stop2, ts2)
+      else .error "CASE without ENDCASE"
+    | .ofK => do
+      let (body, stop1, ts1) ← parseSeq fuel dict self ts
+      if stop1 = some kENDOF then
+        let (more, stop2, ts2) ← parseSeq fuel dict self ts1
+        if stop2 = some kENDCASE then .ok (Block.ofClause body more, stop2, ts2)
+        else .error "OF … ENDOF without ENDCASE"
+      else .error "OF without ENDOF"
 
 /-- Parse top-level code, definitions, variables and constants. `vars` counts the variables
 so far; `main` accumulates the top-level code so far. -/
@@ -304,8 +353,9 @@ def parseTop : Nat → Dict → List Block → Nat → Block → List Tok → Ex
           let (bb, stop2, rest2) ← parseSeq (body.length + 1) dict' (some defs.length) body
           if stop2 = some kSEMI then parseTop fuel dict' (defs ++ [bb]) vars (main.append b) rest2
           else if stop2 = some kCOLON then .error s!"nested definition inside {showTok name}"
-          else if stop2 = some kVARIABLE ∨ stop2 = some kCONSTANT then
-            .error s!"VARIABLE or CONSTANT inside definition of {showTok name}"
+          else if stop2 = some kVARIABLE ∨ stop2 = some kCONSTANT ∨ stop2 = some kCREATE ∨
+              stop2 = some kALLOT ∨ stop2 = some kCOMMA then
+            .error s!"VARIABLE, CONSTANT, CREATE, ALLOT or , inside definition of {showTok name}"
           else .error s!"definition of {showTok name} has no ;"
       else if u = kVARIABLE then
         match rest with
@@ -319,6 +369,21 @@ def parseTop : Nat → Dict → List Block → Nat → Block → List Tok → Ex
         | some _, [] => .error "missing name after CONSTANT"
         | some (b', z), name :: rest' =>
           parseTop fuel ((upper name, Block.op (.lit z)) :: dict) defs vars (main.append b') rest'
+      else if u = kCREATE then
+        match rest with
+        | [] => .error "missing name after CREATE"
+        | name :: rest' =>
+          parseTop fuel ((upper name, Block.op (.lit vars)) :: dict) defs vars (main.append b) rest'
+      else if u = kALLOT then
+        match b.dropLastLit with
+        | none => .error "ALLOT needs a number literal immediately before it"
+        | some (b', z) => parseTop fuel dict defs (vars + z.toNat) (main.append b') rest
+      else if u = kCOMMA then
+        match b.dropLastLit with
+        | none => .error ", needs a number literal immediately before it"
+        | some (b', z) =>
+          parseTop fuel dict defs (vars + 1)
+            ((main.append b').append (.op (.lit z) (.op (.lit vars) (.op .store .nil)))) rest
       else .error s!"unexpected {showTok u}"
 
 def parseTokens (toks : List Tok) : Except String Program := do

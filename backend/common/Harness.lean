@@ -188,6 +188,17 @@ def samplesFrontends : List Sample :=
   , forthTextSample "forth_text_while_exit" ": F 0 BEGIN 1 + DUP 3 = IF EXIT THEN -1 WHILE REPEAT 99 ; F"
   , forthTextSample "forth_text_while_leave" "0 10 0 DO BEGIN -1 WHILE LEAVE REPEAT 1 + LOOP"
   , forthTextSample "forth_text_trap_while_underflow" "BEGIN WHILE REPEAT"
+  , forthTextSample "forth_text_pairs" "1 2 3 4 2SWAP 5 6 2DUP 2DROP"
+  , forthTextSample "forth_text_divmod" "-7 2 /MOD 7 -2 /MOD 7 2 /MOD"
+  , forthTextSample "forth_text_negate_abs" "5 NEGATE -9 ABS 9 ABS -9223372036854775808 ABS"
+  , forthTextSample "forth_text_min_max" "3 -4 MIN 3 -4 MAX -1 1 MIN -1 1 MAX"
+  , forthTextSample "forth_text_qdup" "0 ?DUP 6 ?DUP"
+  , forthTextSample "forth_text_case"
+      ": C CASE 1 OF 100 ENDOF 2 OF 200 ENDOF DUP 1000 + SWAP ENDCASE ; 1 C 2 C 7 C"
+  , forthTextSample "forth_text_create_comma" "CREATE T 10 , 20 , 30 , T 1 + @ T 2 + @"
+  , forthTextSample "forth_text_allot" "CREATE B 3 ALLOT VARIABLE X 9 X ! X @ X"
+  , forthTextSample "forth_text_trap_divmod0" "1 0 /MOD"
+  , forthTextSample "forth_text_trap_twoswap" "1 2 3 2SWAP"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

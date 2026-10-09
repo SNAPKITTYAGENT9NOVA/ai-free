@@ -17,8 +17,9 @@ its address, a literal, so the names are never used), then each definition `k` a
 `: Wk … ;`, then the main block. Word names are `W` followed by the decimal index. Control
 structures print as `IF … ELSE … THEN` (with a possibly empty `ELSE` part), `BEGIN … UNTIL`,
 `BEGIN … WHILE … REPEAT`,
-`DO … LOOP`, `DO … +LOOP`, `LEAVE` and `EXIT`; `CONSTANT`, `RECURSE` and `?DO` are never printed
-(a `?DO` loop prints as the `IF` it parses to) (a constant is a literal, `RECURSE` a
+`DO … LOOP`, `DO … +LOOP`, `LEAVE` and `EXIT`; `CONSTANT`, `RECURSE`, `?DO`, `?DUP`,
+`CASE`, `CREATE`, `ALLOT` and `,` are never printed (each prints as what it parses to: a literal,
+a call, an `IF`, or a store) (a constant is a literal, `RECURSE` a
 call by name). Tokens are separated by one space.
 
 The proof has two halves: `tokenize_join` (the lexer splits the printed text back into the
@@ -85,6 +86,10 @@ def opTok : Op → Tok
   | .fetch => ['@'] | .store => ['!']
   | .tor => ['>', 'R'] | .fromr => ['R', '>'] | .rfetch => ['R', '@']
   | .loopI => ['I'] | .loopJ => ['J'] | .unloop => ['U', 'N', 'L', 'O', 'O', 'P']
+  | .twoDup => ['2', 'D', 'U', 'P'] | .twoDrop => ['2', 'D', 'R', 'O', 'P']
+  | .twoSwap => ['2', 'S', 'W', 'A', 'P'] | .divMod => ['/', 'M', 'O', 'D']
+  | .negate => ['N', 'E', 'G', 'A', 'T', 'E'] | .abs => ['A', 'B', 'S']
+  | .min => ['M', 'I', 'N'] | .max => ['M', 'A', 'X']
 
 def printBlock : Block → List Tok
   | .nil => []
@@ -215,15 +220,18 @@ theorem number_intToks (z : Int) : number (intToks z) = some z := by
 
 /-! ## Token facts -/
 
-def keywords : List Tok := [kIF, kBEGIN, kRECURSE, kEXIT, kDO, kQDO, kLEAVE] ++ stops
+def keywords : List Tok :=
+  [kIF, kBEGIN, kRECURSE, kEXIT, kDO, kQDO, kLEAVE, kQDUP, kCASE, kOF] ++ stops
 
 theorem not_keyword {t : Tok} (h : ∀ kw ∈ keywords, kw ≠ t) :
     t ∉ stops ∧ t ≠ kIF ∧ t ≠ kBEGIN ∧ t ≠ kRECURSE ∧ t ≠ kEXIT ∧ t ≠ kDO ∧ t ≠ kQDO ∧
-      t ≠ kLEAVE := by
+      t ≠ kLEAVE ∧ t ≠ kQDUP ∧ t ≠ kCASE ∧ t ≠ kOF := by
   refine ⟨fun hm => h t (by simp [keywords, hm]) rfl, fun e => h kIF (by simp [keywords]) e.symm,
     fun e => h kBEGIN (by simp [keywords]) e.symm, fun e => h kRECURSE (by simp [keywords]) e.symm,
     fun e => h kEXIT (by simp [keywords]) e.symm, fun e => h kDO (by simp [keywords]) e.symm,
-    fun e => h kQDO (by simp [keywords]) e.symm, fun e => h kLEAVE (by simp [keywords]) e.symm⟩
+    fun e => h kQDO (by simp [keywords]) e.symm, fun e => h kLEAVE (by simp [keywords]) e.symm,
+    fun e => h kQDUP (by simp [keywords]) e.symm, fun e => h kCASE (by simp [keywords]) e.symm,
+    fun e => h kOF (by simp [keywords]) e.symm⟩
 
 theorem upper_of {t : Tok} (h : ∀ c ∈ t, c.toUpper = c) : upper t = t := by
   unfold upper
@@ -309,8 +317,8 @@ theorem keyword_not_word : ∀ kw ∈ keywords, ∀ c ∈ digitList, kw.take 2 �
 
 theorem classify_lookup {dict : Dict} {self : Option Nat} {t : Tok} (hu : upper t = t)
     (hk : ∀ kw ∈ keywords, kw ≠ t) : classify dict self t = lookupWord dict t t := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := not_keyword hk
-  simp only [classify, hu, h1, h2, h3, h4, h5, h6, h7, h8, ↓reduceIte]
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := not_keyword hk
+  simp only [classify, hu, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, ↓reduceIte]
 
 theorem lookupWord_names {dict dict' : Dict} {t : Tok} (hd : DictOK dict) (hd' : DictOK dict')
     (hv : t ≠ varName) (hw : ∀ j, t ≠ wordName j) : lookupWord dict t t = lookupWord dict' t t := by
@@ -368,7 +376,8 @@ theorem classify_word {dict : Dict} {self : Option Nat} {i : Nat}
 theorem classify_stop {dict : Dict} {self : Option Nat} {u : Tok} (hu : u ∈ stops) :
     classify dict self u = .stop u := by
   simp only [stops, List.mem_cons, List.mem_nil_iff, or_false] at hu
-  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+  rcases hu with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
 
 theorem classify_if {dict : Dict} {self : Option Nat} : classify dict self kIF = .ifK := rfl
 
