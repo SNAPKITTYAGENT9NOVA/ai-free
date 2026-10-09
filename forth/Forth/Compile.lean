@@ -115,7 +115,7 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .abs => [.dup, .word 0#n, .swap, .sub, .swap, .dup, .word 0#n, .cmp .slt, .select]
   | .min => [.over, .over, .cmp .slt, .select]
   | .max => [.over, .over, .cmp .sgt, .select]
-  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash => []
+  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash | .fmMod => []
 
 /-- Number of IR instructions an operation lowers to. -/
 def Op.len : Op → Nat
@@ -134,6 +134,7 @@ def Op.len : Op → Nat
   | .smRem => 118
   | .starSlashMod => 187
   | .starSlash => 189
+  | .fmMod => 141
   | _ => 1
 
 theorem compileOp_length {n : Nat} (o : Op) (h : o.loopy = false) :
@@ -148,12 +149,14 @@ def opFrag {n : Nat} : Op → Frag n
   | .smRem => smRemFrag
   | .starSlashMod => starSlashModFrag
   | .starSlash => starSlashFrag
+  | .fmMod => fmModFrag
   | o => Frag.ofCode (compileOp o)
 
 theorem opFrag_size {n : Nat} (o : Op) : (opFrag o : Frag n).size = o.len := by
   cases o <;> first
     | rfl | exact umStarFrag_size | exact umDivFrag_size | exact mStarFrag_size
     | exact smRemFrag_size | exact starSlashModFrag_size | exact starSlashFrag_size
+    | exact fmModFrag_size
 
 theorem opFrag_straight {n : Nat} (o : Op) (h : o.loopy = false) :
     (opFrag o : Frag n) = Frag.ofCode (compileOp o) := by

@@ -7,7 +7,7 @@ Suggested development order. Each item names the gap it closes in the current co
 Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
 `CONSTANT`, `CREATE`, `ALLOT`, `,`, `0=`, `MOD`, `/MOD`, `NEGATE`, `ABS`, `MIN`, `MAX`,
 `?DUP`, `2DUP 2DROP 2SWAP`, `CASE … OF … ENDOF … ENDCASE`, the double-cell words
-`UM* UM/MOD M* SM/REM */MOD */`, the return-data stack words
+`UM* UM/MOD M* SM/REM FM/MOD */MOD */`, the return-data stack words
 `>R R> R@`, `BEGIN … WHILE … REPEAT`,
 `DO … LOOP` and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
 `Forth.Program.compile_correct`. `+LOOP` uses ANS Forth's crossing rule,
@@ -36,12 +36,11 @@ Choices made there, which a later change may want to revisit:
   The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
   by its own grammar.
 
-## 1. Forth: floored division
+## 1. Forth: double-cell storage and arithmetic
 
-`FM/MOD` (floored division of a double-cell number) is not implemented. It can be
-built like `SM/REM`, adjusting quotient and remainder when the signs differ and
-the remainder is nonzero. The double-cell storage words (`2@ 2! 2VARIABLE`) and
-double-cell arithmetic (`D+ D- DNEGATE`) are not implemented either.
+The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
+(`D+ D- DNEGATE D<`) are not implemented. They can be built from the same
+single-word instructions as the double-cell words, with an explicit carry.
 
 ## 2. Lexer specification
 

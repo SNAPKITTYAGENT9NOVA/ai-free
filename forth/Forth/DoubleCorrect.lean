@@ -4,7 +4,7 @@ import Forth.DoubleMath
 /-!
 # Forth.DoubleCorrect
 
-The code of `Forth.Double` computes `Op.sem` for `UM*`, `UM/MOD`, `M*`, `SM/REM`, `*/MOD` and
+The code of `Forth.Double` computes `Op.sem` for `UM*`, `UM/MOD`, `M*`, `SM/REM`, `FM/MOD`, `*/MOD` and
 `*/`, and `opFrag_run`: every operation's code (straight-line or loop) realizes its semantics.
 The loop proofs use `countedLoop_run'` with an invariant on the registers, whose step is
 `DoubleMath.umstar_step` / `DoubleMath.umdiv_step`; at width `0` the loop runs no rounds
@@ -649,11 +649,13 @@ theorem smRemPre_run (s : State n) {v hi lo : Word n} {d : List (Word n)}
     ∃ s', execSeq smRemPre s = .next s' ∧ s'.pc = s.pc + 37 ∧
       s'.dstack = smAbs v :: smHi hi lo :: smLo hi lo :: d ∧
       s'.mem = s.mem ∧ s'.astack = s.astack ∧ s'.rstack = s.rstack ∧
-      s'.regs 5 = Word.ofBool (v.slt 0#n ^^ hi.slt 0#n) ∧ s'.regs 6 = Word.ofBool (hi.slt 0#n) := by
+      s'.regs 5 = Word.ofBool (v.slt 0#n ^^ hi.slt 0#n) ∧ s'.regs 6 = Word.ofBool (hi.slt 0#n) ∧
+      s'.regs 7 = smAbs v := by
   obtain ⟨pc, d', rs, as, regs, mem⟩ := s
   simp only at hd; subst hd
   simp only [smRemPre, execSeq, exec, State.fall, Cond.eval]
-  refine ⟨_, rfl, by simp [Nat.add_assoc], rfl, rfl, rfl, rfl, ?_, by simp [State.setReg]⟩
+  refine ⟨_, rfl, by simp [Nat.add_assoc], rfl, rfl, rfl, rfl, ?_, by simp [State.setReg],
+    by simp [State.setReg, smAbs]⟩
   simp [State.setReg, ofBool_xor]
 
 theorem smRemPre_under (s : State n) (h : s.dstack.length < 3) :
@@ -747,7 +749,7 @@ theorem smRem_ok {p : Prog n} {base : Nat} (hat : At p base ((smRemFrag : Frag n
   obtain ⟨hum, hpost⟩ := Frag.seq_at hrest
   rw [umDivFrag_size] at hpost
   simp only [Frag.ofCode, smRemPre, List.length_cons, List.length_nil] at hpre hum hpost
-  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, h6⟩ := smRemPre_run s hd
+  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, h6, -⟩ := smRemPre_run s hd
   obtain ⟨hst1, -⟩ := execSeq_steps smRemPre_straight (by rw [hpc]; exact hpre) hx1
   have hcond := (smrem_cond (sq := v.slt 0#n ^^ hi.slt 0#n) (by omega : 2 ^ n = 2 * 2 ^ (n - 1)) hH
     (smrem_sign v hi lo)).mp
@@ -793,7 +795,7 @@ theorem smRem_err {p : Prog n} {base : Nat} (hat : At p base ((smRemFrag : Frag 
   obtain ⟨hum, hpost⟩ := Frag.seq_at hrest
   rw [umDivFrag_size] at hpost
   simp only [Frag.ofCode, smRemPre, List.length_cons, List.length_nil] at hpre hum hpost
-  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, h6⟩ := smRemPre_run s hd
+  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, h6, -⟩ := smRemPre_run s hd
   obtain ⟨hst1, -⟩ := execSeq_steps smRemPre_straight (by rw [hpc]; exact hpre) hx1
   by_cases hhi : (smHi hi lo).toNat < (smAbs v).toNat
   · have hn : 0 < n := by
@@ -980,6 +982,215 @@ theorem starSlashFrag_mod {p : Prog n} {base : Nat}
 
 end StarSlash
 
+/-! ## `FM/MOD` -/
+
+section FmMod
+variable {n : Nat}
+open DoubleMath
+
+/-- The flag of `FM/MOD`'s floor adjustment: the signs differ and the remainder is nonzero. -/
+def fmE (r r5 : Word n) : Word n := Word.ofBool (r != 0#n) &&& r5
+/-- The floored remainder `FM/MOD` computes. -/
+def fmR (r r5 r6 r7 : Word n) : Word n :=
+  ((if Word.isTrue (fmE r r5) then r7 - r else r) ^^^ (0#n - (r5 ^^^ r6))) + (r5 ^^^ r6)
+/-- The floored quotient `FM/MOD` computes. -/
+def fmQ (q r r5 : Word n) : Word n := ((q + fmE r r5) ^^^ (0#n - r5)) + r5
+/-- The flag `FM/MOD` divides by: nonzero iff the floored quotient fits. -/
+def fmOk (q r r5 : Word n) : Word n :=
+  Word.ofBool (q.ult (BitVec.intMin n)) |||
+    ((Word.ofBool (q == BitVec.intMin n) &&& r5) &&& Word.ofBool (r == 0#n))
+
+theorem fmModPost_straight : ∀ i ∈ (fmModPost : List (Instr n)), i.isStraight = true := by
+  simp [fmModPost, Instr.isStraight]
+
+theorem fmModPost_run (s : State n) {q r : Word n} {d : List (Word n)}
+    (hd : s.dstack = q :: r :: d) (hok : fmOk q r (s.regs 5) ≠ 0#n) :
+    ∃ s', execSeq fmModPost s = .next s' ∧ s'.pc = s.pc + 50 ∧
+      s'.dstack = fmQ q r (s.regs 5) :: fmR r (s.regs 5) (s.regs 6) (s.regs 7) :: d ∧
+      s'.mem = s.mem ∧ s'.astack = s.astack ∧ s'.rstack = s.rstack := by
+  obtain ⟨pc, d', rs, as, regs, mem⟩ := s
+  simp only at hd hok; subst hd
+  simp only [fmOk] at hok
+  simp [fmModPost, execSeq, exec, State.fall, Cond.eval, State.setReg, hok, Nat.add_assoc, fmQ, fmR,
+    fmE]
+  split <;> simp_all
+
+theorem fmModPost_trap (s : State n) {q r : Word n} {d : List (Word n)}
+    (hd : s.dstack = q :: r :: d) (hok : fmOk q r (s.regs 5) = 0#n) :
+    execSeq fmModPost s = .trapped .divideByZero := by
+  obtain ⟨pc, d', rs, as, regs, mem⟩ := s
+  simp only at hd hok; subst hd
+  simp only [fmOk] at hok
+  simp [fmModPost, execSeq, exec, State.fall, Cond.eval, State.setReg, hok]
+
+theorem beq_toNat (x y : Word n) : (x == y) = decide (x.toNat = y.toNat) := by
+  by_cases h : x = y
+  · simp [h]
+  · have : x.toNat ≠ y.toNat := fun e => h (BitVec.eq_of_toNat_eq e)
+    simp [h, this]
+
+theorem toNat_ofNat_lt {Q : Nat} (hQ : Q < 2 ^ n) : (BitVec.ofNat n Q).toNat = Q := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hQ]
+
+theorem fmOk_eq_zero (hn : 0 < n) {Q R : Nat} (hQ : Q < 2 ^ n) (hR : R < 2 ^ n) (b : Bool) :
+    fmOk (BitVec.ofNat n Q) (BitVec.ofNat n R) (Word.ofBool b) = 0#n ↔
+      ¬(Q < 2 ^ (n - 1) ∨ (Q = 2 ^ (n - 1) ∧ b = true ∧ R = 0)) := by
+  have hM : (BitVec.intMin n).toNat = 2 ^ (n - 1) := by
+    rw [BitVec.toNat_intMin, Nat.mod_eq_of_lt (Nat.pow_lt_pow_right (by decide) (by omega))]
+  simp only [fmOk, ofBool_and, ofBool_or, ofBool_eq_zero hn, BitVec.ult, hM, beq_toNat,
+    toNat_ofNat_lt hQ, toNat_ofNat_lt hR, BitVec.toNat_ofNat, Nat.zero_mod]
+  cases b <;> simp
+
+theorem fmE_eq {R : Nat} (hR : R < 2 ^ n) (sq : Bool) :
+    fmE (BitVec.ofNat n R) (Word.ofBool sq) = Word.ofBool (sq && decide (R ≠ 0)) := by
+  have : (BitVec.ofNat n R != 0#n) = decide (R ≠ 0) := by
+    rw [bne, beq_toNat, toNat_ofNat_lt hR]; simp
+  rw [fmE, this, ofBool_and, Bool.and_comm]
+
+/-- The floored quotient from the unsigned one. -/
+theorem fmQ_eq {Q R : Nat} (hR : R < 2 ^ n) (sq : Bool) {P : Prop} [Decidable P]
+    (hb : sq = true ↔ ¬P) :
+    fmQ (BitVec.ofNat n Q) (BitVec.ofNat n R) (Word.ofBool sq) =
+      BitVec.ofInt n (if P then (Q : Int) else -((Q + if R = 0 then 0 else 1 : Nat) : Int)) := by
+  rw [fmQ, fmE_eq hR, cneg]
+  by_cases hP : P
+  · have : sq = false := by cases sq <;> simp_all
+    subst this
+    simp [hP, Word.ofBool, BitVec.ofInt_natCast]
+  · have : sq = true := hb.mpr hP
+    subst this
+    have e : BitVec.ofNat n Q + Word.ofBool (decide (R ≠ 0)) =
+        BitVec.ofNat n (Q + if R = 0 then 0 else 1) := by
+      by_cases hr : R = 0 <;> simp [hr, Word.ofBool, BitVec.ofNat_add]
+    simp only [Bool.true_and, ite_true, e, hP, ite_false, BitVec.ofInt_neg, BitVec.ofInt_natCast]
+
+/-- The floored remainder from the unsigned one: `|v| - r` when adjusted, signed like `v`. -/
+theorem fmR_eq (hn : 0 < n) {R : Nat} {w7 : Word n} (hR : R < w7.toNat) (sq sD : Bool)
+    {P2 : Prop} [Decidable P2] (h2 : sq = true ↔ P2) {PV : Prop} [Decidable PV]
+    (hv : (sq ^^ sD) = true ↔ PV) :
+    fmR (BitVec.ofNat n R) (Word.ofBool sq) (Word.ofBool sD) w7 =
+      BitVec.ofInt n (if PV then -((if P2 ∧ R ≠ 0 then w7.toNat - R else R : Nat) : Int)
+        else ((if P2 ∧ R ≠ 0 then w7.toNat - R else R : Nat) : Int)) := by
+  have hw := w7.isLt
+  have hRn : R < 2 ^ n := by omega
+  have hin : (if Word.isTrue (fmE (BitVec.ofNat n R) (Word.ofBool sq)) then w7 - BitVec.ofNat n R
+      else BitVec.ofNat n R) = BitVec.ofNat n (if P2 ∧ R ≠ 0 then w7.toNat - R else R) := by
+    rw [fmE_eq hRn, Word.isTrue_ofBool hn]
+    by_cases hc : P2 ∧ R ≠ 0
+    · have : (sq && decide (R ≠ 0)) = true := by simp [h2.mpr hc.1, hc.2]
+      rw [iteT hc, this, iteT rfl]
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_sub, toNat_ofNat_lt hRn, toNat_ofNat_lt (by omega),
+        show 2 ^ n - R + w7.toNat = (w7.toNat - R) + 2 ^ n by omega, Nat.add_mod_right,
+        Nat.mod_eq_of_lt (by omega)]
+    · have : (sq && decide (R ≠ 0)) = false := by
+        cases sq <;> simp_all
+      rw [iteF hc, this]; rfl
+  rw [fmR, hin, ofBool_xor, smrem_signed' _ hv]
+
+/-- **`FM/MOD` divides with floor rounding.** -/
+theorem fmMod_ok {p : Prog n} {base : Nat} (hat : At p base ((fmModFrag : Frag n).emit base))
+    (s : State n) (hpc : s.pc = base) {v hi lo : Word n} {d : List (Word n)}
+    (hd : s.dstack = v :: hi :: lo :: d)
+    (hc : v.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt ∧
+      (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt < 2 ^ (n - 1)) :
+    ∃ s', Steps p s s' ∧ s'.pc = base + 141 ∧ s'.rstack = s.rstack ∧
+      s'.dstack = BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt) ::
+        BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).fmod v.toInt) :: d ∧
+      s'.mem = s.mem ∧ s'.astack = s.astack := by
+  have hn := width_pos_of_toInt hc.1
+  have hN := DoubleMath.two_pow_succ' n hn
+  have hH : 0 < 2 ^ (n - 1) := Nat.two_pow_pos _
+  obtain ⟨hpre, hrest⟩ := Frag.seq_at (by simpa [fmModFrag] using hat)
+  obtain ⟨hum, hpost⟩ := Frag.seq_at hrest
+  rw [umDivFrag_size] at hpost
+  simp only [Frag.ofCode, smRemPre, List.length_cons, List.length_nil] at hpre hum hpost
+  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, h6, h7⟩ := smRemPre_run s hd
+  obtain ⟨hst1, -⟩ := execSeq_steps smRemPre_straight (by rw [hpc]; exact hpre) hx1
+  have hcond := (fmmod_cond (sq := v.slt 0#n ^^ hi.slt 0#n) (by omega : 2 ^ n = 2 * 2 ^ (n - 1)) hH
+    (smrem_sign v hi lo)).mp (by exact_mod_cast hc)
+  rw [← smHiLo_toNat, ← smAbs_toNat] at hcond
+  obtain ⟨hlt, hq⟩ := hcond
+  have hlo := (smLo hi lo).isLt
+  have hhi : (smHi hi lo).toNat < (smAbs v).toNat := by
+    apply Classical.byContradiction; intro h
+    have := Nat.mul_le_mul_right (2 ^ n) (Nat.not_lt.mp h); omega
+  obtain ⟨s2, hst2, hpc2, hr2, hd2, hm2, ha2, hK2⟩ :=
+    umDiv_ok hum s1 (by rw [hpc1, hpc]) hd1 hhi
+  have hb : 0 < (smAbs v).toNat := by omega
+  have hQ : ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) / (smAbs v).toNat < 2 ^ n :=
+    (Nat.div_lt_iff_lt_mul hb).mpr (by rw [Nat.mul_comm (2 ^ n) (smAbs v).toNat]; exact hlt)
+  have hRv := Nat.mod_lt ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) hb
+  have hR : ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) % (smAbs v).toNat < 2 ^ n := by
+    have := (smAbs v).isLt; omega
+  have e5 : s2.regs 5 = Word.ofBool (v.slt 0#n ^^ hi.slt 0#n) := (hK2 5 (by decide)).trans h5
+  have e6 : s2.regs 6 = Word.ofBool (hi.slt 0#n) := (hK2 6 (by decide)).trans h6
+  have e7 : s2.regs 7 = smAbs v := (hK2 7 (by decide)).trans h7
+  have hok : fmOk (BitVec.ofNat n (((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) /
+      (smAbs v).toNat)) (BitVec.ofNat n (((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) %
+      (smAbs v).toNat)) (s2.regs 5) ≠ 0#n := by
+    rw [e5]; intro h; exact (fmOk_eq_zero hn hQ hR _).mp h hq
+  obtain ⟨s3, hx3, hpc3, hd3, hm3, ha3, hr3⟩ := fmModPost_run s2 hd2 hok
+  obtain ⟨hst3, -⟩ := execSeq_steps fmModPost_straight (by rw [hpc2]; exact hpost) hx3
+  refine ⟨_, hst1.trans (hst2.trans hst3), by rw [hpc3, hpc2], by rw [hr3, hr2, hr1], ?_,
+    by rw [hm3, hm2, hm1], by rw [ha3, ha2, ha1]⟩
+  have hV : v.toInt ≠ 0 := hc.1
+  rw [hd3, e5, e6, e7, fmQ_eq hR _ (smrem_sign v hi lo),
+    fmR_eq hn hRv _ _ (smrem_sign v hi lo) (by rw [Bool.xor_assoc, Bool.xor_self, Bool.xor_false,
+      slt_zero, decide_eq_true_iff]),
+    (fdiv_fmod_natAbs _ _ hV).1, (fdiv_fmod_natAbs _ _ hV).2, smHiLo_toNat, smAbs_toNat]
+
+/-- **`FM/MOD` traps** when the divisor is zero or the floored quotient does not fit. -/
+theorem fmMod_err {p : Prog n} {base : Nat} (hat : At p base ((fmModFrag : Frag n).emit base))
+    (s : State n) (hpc : s.pc = base) {v hi lo : Word n} {d : List (Word n)}
+    (hd : s.dstack = v :: hi :: lo :: d)
+    (hc : ¬(v.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt ∧
+      (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt < 2 ^ (n - 1))) :
+    ∃ s1, Steps p s s1 ∧ step p s1 = .trapped .divideByZero := by
+  obtain ⟨hpre, hrest⟩ := Frag.seq_at (by simpa [fmModFrag] using hat)
+  obtain ⟨hum, hpost⟩ := Frag.seq_at hrest
+  rw [umDivFrag_size] at hpost
+  simp only [Frag.ofCode, smRemPre, List.length_cons, List.length_nil] at hpre hum hpost
+  obtain ⟨s1, hx1, hpc1, hd1, hm1, ha1, hr1, h5, -, -⟩ := smRemPre_run s hd
+  obtain ⟨hst1, -⟩ := execSeq_steps smRemPre_straight (by rw [hpc]; exact hpre) hx1
+  by_cases hhi : (smHi hi lo).toNat < (smAbs v).toNat
+  · have hn : 0 < n := by
+      rcases Nat.eq_zero_or_pos n with h | h
+      · subst h; have := (smAbs v).isLt; simp at this; omega
+      · exact h
+    have hN := DoubleMath.two_pow_succ' n hn
+    have hH : 0 < 2 ^ (n - 1) := Nat.two_pow_pos _
+    have hlo := (smLo hi lo).isLt
+    have hlt : (smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat < (smAbs v).toNat * 2 ^ n := by
+      have := Nat.mul_le_mul_right (2 ^ n) (Nat.succ_le_of_lt hhi)
+      rw [Nat.succ_mul] at this; omega
+    have hcond := mt (fmmod_cond (sq := v.slt 0#n ^^ hi.slt 0#n)
+      (by omega : 2 ^ n = 2 * 2 ^ (n - 1)) hH (smrem_sign v hi lo)).mpr
+      (by exact_mod_cast hc)
+    rw [← smHiLo_toNat, ← smAbs_toNat] at hcond
+    have hq := fun h => hcond ⟨hlt, h⟩
+    obtain ⟨s2, hst2, hpc2, -, hd2, -, -, hK2⟩ := umDiv_ok hum s1 (by rw [hpc1, hpc]) hd1 hhi
+    have hb : 0 < (smAbs v).toNat := by omega
+    have hQ : ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) / (smAbs v).toNat < 2 ^ n :=
+      (Nat.div_lt_iff_lt_mul hb).mpr (by rw [Nat.mul_comm (2 ^ n) (smAbs v).toNat]; exact hlt)
+    have hR : ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) % (smAbs v).toNat < 2 ^ n := by
+      have := Nat.mod_lt ((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) hb
+      have := (smAbs v).isLt; omega
+    have e5 : s2.regs 5 = Word.ofBool (v.slt 0#n ^^ hi.slt 0#n) := (hK2 5 (by decide)).trans h5
+    have hok : fmOk (BitVec.ofNat n (((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) /
+        (smAbs v).toNat)) (BitVec.ofNat n (((smHi hi lo).toNat * 2 ^ n + (smLo hi lo).toNat) %
+        (smAbs v).toNat)) (s2.regs 5) = 0#n := by
+      rw [e5]; exact (fmOk_eq_zero hn hQ hR _).mpr hq
+    obtain ⟨s3, hst3, ht3⟩ := execSeq_trap fmModPost_straight (by rw [hpc2]; exact hpost)
+      (fmModPost_trap s2 hd2 hok)
+    exact ⟨s3, hst1.trans (hst2.trans hst3), ht3⟩
+  · have hdpre := umDivFrag_pre hum
+    obtain ⟨s3, hst3, ht3⟩ := execSeq_trap umDivPre_straight (by rw [hpc1, hpc]; exact hdpre)
+      (umDivPre_trap s1 hd1 hhi)
+    exact ⟨s3, hst1.trans hst3, ht3⟩
+
+end FmMod
+
 /-! ## Every operation's code realizes its semantics -/
 
 /-- **The code of an operation realizes `Op.sem`**: on success it reaches the end of the code
@@ -1078,6 +1289,32 @@ theorem opFrag_run {n : Nat} {p : Prog n} (o : Op) {base : Nat} {s : State n}
         · rename_i hc
           cases h
           exact smRem_err hat ⟨pc, v :: hi :: lo :: d, rs, as, regs, mem⟩ hpc rfl hc
+    rotate_right
+    · -- FM/MOD
+      obtain ⟨hpre, -⟩ := Frag.seq_at (by simpa [opFrag, fmModFrag] using hat)
+      obtain ⟨pc, d, rs, as, regs, mem⟩ := s
+      simp only at hpc
+      refine ⟨fun st' h => ?_, fun t h => ?_⟩
+      · rcases d with _ | ⟨v, _ | ⟨hi, _ | ⟨lo, d⟩⟩⟩ <;> simp only [Op.sem] at h <;> try cases h
+        split at h
+        · rename_i hc
+          cases h
+          obtain ⟨s', hs, hpc', hrs, hd', hm', ha'⟩ :=
+            fmMod_ok hat ⟨pc, v :: hi :: lo :: d, rs, as, regs, mem⟩ hpc rfl hc
+          exact ⟨s', hs, hpc', hrs, hd', hm', ha'⟩
+        · cases h
+      · rcases d with _ | ⟨v, _ | ⟨hi, _ | ⟨lo, d⟩⟩⟩
+        all_goals first
+          | (simp only [Op.sem] at h; cases h
+             exact execSeq_trap smRemPre_straight (by show At p pc _; rw [hpc]; exact hpre)
+               (smRemPre_under _ (by simp)))
+          | skip
+        simp only [Op.sem] at h
+        split at h
+        · cases h
+        · rename_i hc
+          cases h
+          exact fmMod_err hat ⟨pc, v :: hi :: lo :: d, rs, as, regs, mem⟩ hpc rfl hc
     all_goals
       have hmod : At p base ((starSlashModFrag : Frag n).emit base) := by
         first

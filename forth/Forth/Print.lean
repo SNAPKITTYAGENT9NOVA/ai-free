@@ -93,6 +93,7 @@ def opTok : Op → Tok
   | .umStar => ['U', 'M', '*'] | .umDivMod => ['U', 'M', '/', 'M', 'O', 'D']
   | .mStar => ['M', '*'] | .smRem => ['S', 'M', '/', 'R', 'E', 'M']
   | .starSlashMod => ['*', '/', 'M', 'O', 'D'] | .starSlash => ['*', '/']
+  | .fmMod => ['F', 'M', '/', 'M', 'O', 'D']
 
 def printBlock : Block → List Tok
   | .nil => []

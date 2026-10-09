@@ -217,6 +217,10 @@ def samplesFrontends : List Sample :=
   , forthTextSample "forth_text_trap_star_slash0" "1 2 0 */"
   , forthTextSample "forth_text_trap_star_slash_overflow" "4611686018427387904 4 2 */"
   , forthTextSample "forth_text_trap_star_slash_underflow" "1 2 */MOD"
+  , forthTextSample "forth_text_fm_mod"
+      "7 0 2 FM/MOD -7 -1 2 FM/MOD 7 0 -2 FM/MOD -7 -1 -2 FM/MOD -8 -1 2 FM/MOD 1 -1 2 FM/MOD"
+  , forthTextSample "forth_text_trap_fm_mod_overflow" "-1 -2 2 FM/MOD"
+  , forthTextSample "forth_text_trap_fm_mod0" "5 0 0 FM/MOD"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

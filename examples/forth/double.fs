@@ -1,5 +1,5 @@
 \ Double-cell arithmetic. A double-cell number is two words, low word below the high word.
-\ Halts with 42 0 -21 -1 2 10 -10 2305843009213693952 3 on the stack (bottom to top).
+\ Halts with 42 0 -21 -1 2 10 -10 2305843009213693952 3 1 -4 on the stack (bottom to top).
 
 : SCALE ( n -- n*3/2 )  3 2 */ ;
 
@@ -11,3 +11,4 @@ DROP DROP
 -6 7 4 */                  \ -10
 4611686018427387904 4 8 */ \ 2^61, although 2^62 * 4 overflows a word
 2 SCALE                    \ 3
+-7 -1 2 FM/MOD             \ 1 -4: floored, the remainder takes the divisor's sign

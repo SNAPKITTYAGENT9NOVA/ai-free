@@ -35,7 +35,7 @@ theorem parse_begin_until :
   rfl
 
 /-- Words outside the supported subset (only the words listed in `Forth.Parse`) are errors. -/
-theorem parse_not_in_subset : parse "1 2 3 FM/MOD" = .error "unknown word: FM/MOD" := by rfl
+theorem parse_not_in_subset : parse "1 2 3 D+" = .error "unknown word: D+" := by rfl
 
 theorem parse_unknown : parse "1 FOO" = .error "unknown word: FOO" := by rfl
 
@@ -528,9 +528,9 @@ theorem parse_comma_needs_literal :
 /-! ## Double-cell arithmetic -/
 
 theorem parse_double :
-    parse "UM* UM/MOD M* SM/REM */MOD */" =
+    parse "UM* UM/MOD M* SM/REM */MOD */ FM/MOD" =
       .ok ⟨[], .op .umStar (.op .umDivMod (.op .mStar (.op .smRem (.op .starSlashMod
-        (.op .starSlash .nil))))), 0⟩ := by rfl
+        (.op .starSlash (.op .fmMod .nil)))))), 0⟩ := by rfl
 
 /-- `M*` gives the double-cell product (low word, then high word); `UM*` the unsigned one. -/
 theorem mstar_run (mem : Memory 64) :
@@ -551,6 +551,20 @@ theorem starSlash_run (mem : Memory 64) :
     Run [] (.op (.lit 6) (.op (.lit 7) (.op (.lit 4) (.op .starSlashMod (.op (.lit 4611686018427387904)
         (.op (.lit 4) (.op (.lit 8) (.op .starSlash .nil)))))))) ⟨[], mem, []⟩
       (.ok ⟨[2305843009213693952#64, 10#64, 2#64], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
+/-- `FM/MOD` rounds toward negative infinity: `-7 / 2` is `-4` remainder `1`, and `7 / -2` is
+`-4` remainder `-1` (the remainder takes the divisor's sign). -/
+theorem fmMod_run (mem : Memory 64) :
+    Run [] (.op (.lit (-7)) (.op (.lit (-1)) (.op (.lit 2) (.op .fmMod (.op (.lit 7) (.op (.lit 0)
+        (.op (.lit (-2)) (.op .fmMod .nil)))))))) ⟨[], mem, []⟩
+      (.ok ⟨[BitVec.ofInt 64 (-4), BitVec.ofInt 64 (-1), BitVec.ofInt 64 (-4), 1#64], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
+/-- The floored quotient `-2^63 - 1` does not fit, although the truncated one would. -/
+theorem fmMod_overflow (mem : Memory 64) :
+    Run [] (.op (.lit (-1)) (.op (.lit (-2)) (.op (.lit 2) (.op .fmMod .nil)))) ⟨[], mem, []⟩
+      (.error .divideByZero) :=
   eval_sound 10 _ _ _ (by rfl)
 
 /-- A quotient that does not fit a word traps, like division by zero. -/

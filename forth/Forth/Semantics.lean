@@ -28,6 +28,9 @@ Conventions (ANS Forth):
   signed double-cell number `hi * 2^n + lo` by `v` with truncation toward zero (`Int.tdiv` and
   `Int.tmod`, like `/` and `MOD`); it traps `divideByZero` when `v = 0` or the quotient does not
   fit in a signed word.
+* `FM/MOD ( lo hi v -- rem quot )` is floored division of the same double-cell number
+  (`Int.fdiv` and `Int.fmod`: the quotient rounds toward negative infinity and the remainder
+  takes the sign of `v`); it traps like `SM/REM`, when `v = 0` or the quotient does not fit.
 * `*/MOD ( n1 n2 n3 -- rem quot )` divides the full product `n1 * n2` (never wrapped) by `n3`, as
   `M*` then `SM/REM`, trapping in the same cases; `*/ ( n1 n2 n3 -- quot )` keeps the quotient.
 
@@ -97,7 +100,7 @@ inductive Op where
   | fetch | store
   | tor | fromr | rfetch | loopI | loopJ | unloop
   | twoDup | twoDrop | twoSwap | divMod | negate | abs | min | max
-  | umStar | umDivMod | mStar | smRem | starSlashMod | starSlash
+  | umStar | umDivMod | mStar | smRem | starSlashMod | starSlash | fmMod
   deriving DecidableEq, Repr
 
 /-- A Forth state: the data stack, memory, and the return-data stack (`>R`/`R>`/`R@` and the
@@ -170,6 +173,12 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
         .ok ⟨BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).tdiv v.toInt) ::
           BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).tmod v.toInt) :: d, m, r⟩
       else .error .divideByZero
+  | .fmMod, ⟨v :: hi :: lo :: d, m, r⟩ =>
+      if v.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt ∧
+          (hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt < 2 ^ (n - 1) then
+        .ok ⟨BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).fdiv v.toInt) ::
+          BitVec.ofInt n ((hi.toInt * 2 ^ n + lo.toNat).fmod v.toInt) :: d, m, r⟩
+      else .error .divideByZero
   | .starSlashMod, ⟨c :: b :: a :: d, m, r⟩ =>
       if c.toInt ≠ 0 ∧ -(2 ^ (n - 1) : Int) ≤ (a.toInt * b.toInt).tdiv c.toInt ∧
           (a.toInt * b.toInt).tdiv c.toInt < 2 ^ (n - 1) then
@@ -196,7 +205,7 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
 
 /-- The operations whose code is a loop rather than straight-line code. -/
 def loopy : Op → Bool
-  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash => true
+  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash | .fmMod => true
   | _ => false
 
 end Op
