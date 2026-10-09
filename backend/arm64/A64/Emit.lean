@@ -37,7 +37,14 @@ def trapCode : Trap → Nat
 def regName : Reg → String
   | .x9 => "x9" | .x10 => "x10" | .x11 => "x11" | .x12 => "x12" | .x19 => "x19"
   | .x20 => "x20" | .x21 => "x21" | .x22 => "x22" | .x23 => "x23" | .x24 => "x24"
-  | .x30 => "x30"
+  | .x30 => "x30" | .x0 => "x0" | .x1 => "x1" | .x2 => "x2" | .x3 => "x3" | .x4 => "x4"
+  | .x5 => "x5" | .x6 => "x6" | .x7 => "x7" | .x8 => "x8"
+
+def aluName : Alu → String
+  | .add => "add" | .sub => "sub" | .mul => "mul" | .and => "and" | .orr => "orr" | .eor => "eor"
+
+def shiftName : Shift → String
+  | .lsl => "lsl" | .lsr => "lsr" | .asr => "asr"
 
 /-- The AArch64 condition with the meaning of `c` after `cmp`. -/
 def ccName : Cc → String
@@ -102,6 +109,9 @@ def instr (k : Nat) : Instr Nat → String
   | .cmov c d s => s!"csel {regName d}, {regName s}, {regName d}, {ccName c}"
   | .udiv d a b => s!"udiv {regName d}, {regName a}, {regName b}"
   | .sdiv d a b => s!"sdiv {regName d}, {regName a}, {regName b}"
+  | .alu op d a b => s!"{aluName op} {regName d}, {regName a}, {regName b}"
+  | .shiftImm k d a n =>
+    if n < 64 then s!"{shiftName k} {regName d}, {regName a}, #{n}" else err s!"shift {n} out of range"
   | .jmp t => s!"b {lbl t}"
   | .jcc c t => s!"b.{ccName c} {lbl t}"
   | .call t => s!"adr x30, {lbl (k + 1)}\n\tstr x30, [x23, #-8]!\n\tb {lbl t}"

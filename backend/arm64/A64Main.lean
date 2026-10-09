@@ -127,6 +127,79 @@ def parseMem (rest : List String) : Option Nat :=
   | [m] => m.toNat?
   | _ => none
 
+/-! ## Hand-written AArch64 programs (`A64.DataOps`)
+
+A program over `x0 … x11` (three-register `alu`, `shiftImm`, `udiv`, `movImm`), printed by
+`A64.Emit` and run under `qemu-aarch64`; at `exitHalt` the runtime writes `x0 … x11` to stdout.
+The registers must equal the model's (`A64.haltRegs`). -/
+
+def isaRegs : List A64.Reg := [.x0, .x1, .x2, .x3, .x4, .x5, .x6, .x7, .x8, .x9, .x10, .x11]
+
+def isaAsm (code : List (A64.Instr Nat)) : String :=
+  "\t.text\n\t.globl _start\n\t.p2align 2\n_start:\n" ++ A64.Emit.body code ++
+  ".Lhalt:\n\tadrp x29, rbuf\n\tadd x29, x29, :lo12:rbuf\n" ++
+  String.join ((List.range 12).map fun k => s!"\tstr x{k}, [x29, #{8 * k}]\n") ++
+  "\tmov x0, #1\n\tmov x1, x29\n\tmov x2, #96\n\tmov x8, #64\n\tsvc #0\n" ++
+  "\tmov x0, #0\n\tmov x8, #93\n\tsvc #0\n\t.bss\n\t.balign 8\nrbuf:\n\t.skip 96\n"
+
+def runIsa (name : String) (code : List (A64.Instr Nat)) : IO (Except String (List Nat)) := do
+  IO.FS.createDirAll workDir
+  let base := s!"{workDir}/{name}"
+  IO.FS.writeFile (base ++ ".s") (isaAsm code)
+  let asArgs := #["--target=aarch64-linux-gnu", "-c", "-o", base ++ ".o", base ++ ".s"]
+  let a ← IO.Process.output { cmd := "clang", args := asArgs }
+  if a.exitCode != 0 then return .error s!"clang failed: {a.stderr}"
+  let l ← IO.Process.output { cmd := "ld.lld", args := #["-o", base, base ++ ".o"] }
+  if l.exitCode != 0 then return .error s!"ld.lld failed: {l.stderr}"
+  let child ← IO.Process.spawn
+    { cmd := "qemu-aarch64", args := #[base], stdout := .piped, stderr := .null, stdin := .null }
+  let bytes ← readAll child.stdout ByteArray.empty
+  let code ← child.wait
+  if code != 0 then return .error s!"exit {code}"
+  if bytes.size != 96 then return .error s!"dump of {bytes.size} bytes"
+  return .ok ((List.range 12).map fun k => u64 bytes (8 * k))
+
+def checkIsaProg (name : String) (code : List (A64.Instr Nat)) : IO Bool := do
+  let model := (A64.haltRegs code 1000 (fun _ => 0#64) (Memory.ofImage []) isaRegs).map
+    (·.map BitVec.toNat)
+  match model, ← runIsa name code with
+  | some exp, .ok got =>
+    if exp == got then IO.println s!"PASS  {name}  {got}"; return true
+    else IO.println s!"FAIL  {name}\n  lean:   {exp}\n  target: {got}"; return false
+  | none, _ => IO.println s!"ERROR {name}: the model did not halt"; return false
+  | _, .error e => IO.println s!"ERROR {name}: {e}"; return false
+
+/-- A pseudo-random program over `x0 … x11`: initialise all twelve, then `len` data-processing
+instructions. `seed` drives a linear congruential generator. -/
+def randomIsa (seed len : Nat) : List (A64.Instr Nat) := Id.run do
+  let regs := isaRegs.toArray
+  let mut st := seed
+  let next (st : Nat) : Nat := (st * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+  let mut code : Array (A64.Instr Nat) := #[]
+  for r in isaRegs do
+    st := next st
+    code := code.push (.movImm r (BitVec.ofNat 64 st))
+  for _ in List.range len do
+    st := next st
+    let pick (k : Nat) : A64.Reg := regs.getD ((st / 2 ^ (8 * k)) % 12) .x0
+    let d := pick 1; let a := pick 2; let b := pick 3
+    let n := (st / 2 ^ 40) % 64
+    let i : A64.Instr Nat := match (st / 2 ^ 56) % 10 with
+      | 0 => .alu .add d a b | 1 => .alu .sub d a b | 2 => .alu .mul d a b
+      | 3 => .alu .and d a b | 4 => .alu .orr d a b | 5 => .alu .eor d a b
+      | 6 => .shiftImm .lsl d a n | 7 => .shiftImm .lsr d a n | 8 => .shiftImm .asr d a n
+      | _ => .udiv d a b
+    code := code.push i
+  return (code.push .exitHalt).toList
+
+def checkIsa (count : Nat) : IO Bool := do
+  let mut ok ← checkIsaProg "isa_data_processing" A64.dataProcessing
+  let mut agree := 0
+  for k in List.range count do
+    if ← checkIsaProg s!"isa_random_{k}" (randomIsa (k + 1) 40) then agree := agree + 1 else ok := false
+  IO.println s!"isa: {agree}/{count} random data-processing programs agree"
+  return ok
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["emit", name] =>
@@ -152,5 +225,6 @@ def main (args : List String) : IO UInt32 := do
     let agree ← checkAll runNative count
     let aux ← checkAux
     let ovf ← checkOverflow
-    return (if agree && aux && ovf then 0 else 1)
+    let isa ← checkIsa 100
+    return (if agree && aux && ovf && isa then 0 else 1)
   | _ => IO.eprintln "usage: a64c check [fuzzCount] | a64c emit <sample> | a64c forth <file.fs> [memWords] | a64c emit-forth <file.fs> [memWords]"; return 2

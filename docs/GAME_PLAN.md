@@ -144,7 +144,9 @@ Porting:
 
 * **AArch64 (ARM64): done.** `backend/arm64` has the model, lowering, emitter, the full
   simulation proof (`A64.Emit.binary_correct`), and the `a64c` driver. CI runs `a64c` under
-  `qemu-aarch64`.
+  `qemu-aarch64`. The model also covers the general data-processing forms used by hand-written
+  AArch64 (three-register `add sub mul and orr eor`, `lsl`/`lsr`/`asr` by a constant), with
+  their meanings proved in `A64/DataOps.lean` and checked against qemu by `a64c check`.
 * **RISC-V (RV64IM): done.** `backend/riscv64` has the model, lowering, emitter, the full
   simulation proof (`RV.Emit.binary_correct`), and the `rv64c` driver. RISC-V has no condition
   flags, so its guards and comparisons are compare-and-branch sequences, proved directly against

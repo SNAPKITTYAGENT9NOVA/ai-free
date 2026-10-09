@@ -18,3 +18,4 @@ import A64.SimAux
 import A64.SimStep
 import A64.Correct
 import A64.Init
+import A64.DataOps
