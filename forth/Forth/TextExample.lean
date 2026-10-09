@@ -421,5 +421,48 @@ theorem find7_run (mem : Memory 64) :
 theorem parse_print_find7 : parse (print find7Prog) = .ok find7Prog :=
   parse_print_of_parse parse_find7
 
+/-! ## `BEGIN … WHILE … REPEAT` -/
+
+theorem parse_while :
+    parse "BEGIN DUP WHILE 1 - REPEAT 7" =
+      .ok ⟨[], .whileL (.op .dup .nil) (.op (.lit 1) (.op .sub .nil)) (.op (.lit 7) .nil), 0⟩ := by
+  rfl
+
+theorem parse_while_without_repeat :
+    parse "BEGIN 1 WHILE 2" = .error "WHILE without REPEAT" := by rfl
+theorem parse_begin_without_end :
+    parse "BEGIN 1" = .error "BEGIN without UNTIL or WHILE" := by rfl
+theorem parse_repeat_without_while : parse "1 REPEAT" = .error "unexpected REPEAT" := by rfl
+
+/-- Euclid's algorithm with `WHILE`: `1071 462 GCD` is `21`. -/
+def gcdProg : Program :=
+  ⟨[.whileL (.op .dup .nil) (.op .swap (.op .over (.op .mod .nil))) (.op .drop .nil)],
+    .op (.lit 1071) (.op (.lit 462) (.call 0 .nil)), 0⟩
+
+theorem parse_gcd :
+    parse ": GCD BEGIN DUP WHILE SWAP OVER MOD REPEAT DROP ; 1071 462 GCD" = .ok gcdProg := by rfl
+
+theorem gcd_run (mem : Memory 64) :
+    Run gcdProg.defs gcdProg.main ⟨[], mem, []⟩ (.ok ⟨[21#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem gcd_machine (mem : Memory 64) :
+    ∃ s', Exec (gcdProg.compile : Prog 64) (State.init mem) (.halted s') ∧
+      s'.dstack = [21#64] ∧ s'.mem = mem ∧ s'.astack = [] := by
+  have := Program.compile_correct (gcd_run mem)
+  simpa using this
+
+theorem print_gcd :
+    print gcdProg = ": W0 BEGIN DUP WHILE SWAP OVER MOD REPEAT DROP ; 1071 462 W0 " := by rfl
+
+theorem parse_print_gcd : parse (print gcdProg) = .ok gcdProg :=
+  parse_print_of_parse parse_gcd
+
+/-- A false first test skips the body. -/
+theorem while_zero_run (mem : Memory 64) :
+    Run [] (.op (.lit 7) (.whileL (.op (.lit 0) .nil) (.op (.lit 1) (.op .add .nil))
+      (.op (.lit 8) .nil))) ⟨[], mem, []⟩ (.ok ⟨[8#64, 7#64], mem, []⟩) :=
+  eval_sound 10 _ _ _ (by rfl)
+
 end Forth
 end WordDialect

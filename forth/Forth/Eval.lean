@@ -40,6 +40,22 @@ def eval {n : Nat} (defs : List Block) : Nat → Block → FState n → Option (
     | some (.ok ⟨c :: d, m, rs⟩) =>
       if Word.isTrue c then eval defs f rest ⟨d, m, rs⟩
       else eval defs f (.untilL body rest) ⟨d, m, rs⟩
+  | f + 1, .whileL cond body rest, st =>
+    match eval defs f cond st with
+    | none => none
+    | some (.error x) => some (.error x)
+    | some (.exit st1) => some (.exit st1)
+    | some (.leave st1) => some (.leave st1)
+    | some (.ok ⟨[], _, _⟩) => some (.error .stackUnderflow)
+    | some (.ok ⟨c :: d, m, rs⟩) =>
+      if Word.isTrue c then
+        match eval defs f body ⟨d, m, rs⟩ with
+        | none => none
+        | some (.error x) => some (.error x)
+        | some (.exit st2) => some (.exit st2)
+        | some (.leave st2) => some (.leave st2)
+        | some (.ok st2) => eval defs f (.whileL cond body rest) st2
+      else eval defs f rest ⟨d, m, rs⟩
   | f + 1, .call i rest, st =>
     match defs[i]? with
     | none => some (.error .badPc)
@@ -135,6 +151,25 @@ theorem eval_sound {n : Nat} {defs : List Block} :
         cases hc : Word.isTrue c
         · rw [hc] at h; exact .untilAgain (ih _ _ _ hx) hc (ih _ _ _ h)
         · rw [hc] at h; exact .untilDone (ih _ _ _ hx) hc (ih _ _ _ h)
+    | whileL cond body rest =>
+      simp only [eval] at h
+      split at h
+      · cases h
+      · rename_i x hx; cases h; exact .whileCondStop (ih _ _ _ hx) rfl
+      · rename_i x hx; cases h; exact .whileCondStop (ih _ _ _ hx) rfl
+      · rename_i x hx; cases h; exact .whileCondStop (ih _ _ _ hx) rfl
+      · rename_i m rs hx; cases h; exact .whileUnder (ih _ _ _ hx)
+      · rename_i c d m rs hx
+        split at h
+        · rename_i hc
+          split at h
+          · cases h
+          · rename_i x hb; cases h; exact .whileBodyStop (ih _ _ _ hx) hc (ih _ _ _ hb) rfl
+          · rename_i x hb; cases h; exact .whileBodyStop (ih _ _ _ hx) hc (ih _ _ _ hb) rfl
+          · rename_i x hb; cases h; exact .whileBodyStop (ih _ _ _ hx) hc (ih _ _ _ hb) rfl
+          · rename_i st2 hb; exact .whileAgain (ih _ _ _ hx) hc (ih _ _ _ hb) (ih _ _ _ h)
+        · rename_i hc
+          exact .whileExit (ih _ _ _ hx) (by simpa using hc) (ih _ _ _ h)
     | call i rest =>
       simp only [eval] at h
       split at h

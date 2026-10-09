@@ -130,7 +130,7 @@ Forth makes the common machine tangible. Its data-stack operations have direct I
 
 ### 18. [Semantics.lean](forth/Forth/Semantics.lean) — Forth's own account
 
-Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `UNLOOP`. The source return-data stack is separate from call frames.
+Defines operations, blocks, programs, source state, and the `Run` relation. It specifies signed division, remainder, truth flags, memory access, calls, early exit, `BEGIN … WHILE … REPEAT`, `DO … LOOP`, `DO … +LOOP`, `LEAVE` and `UNLOOP`. The source return-data stack is separate from call frames.
 
 ### 19. [Compile.lean](forth/Forth/Compile.lean) — words become instructions
 
@@ -431,7 +431,7 @@ Try a short source file containing `5 DUP +`, or use the repository's [Forth exa
 .lake/build/bin/wasmw emit-forth examples/forth/sum.fs > /tmp/sum.wat
 ```
 
-The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack. [`leave.fs`](examples/forth/leave.fs) exercises `+LOOP` counting up and down, `?DO`, `LEAVE` and `UNLOOP`.
+The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack. [`leave.fs`](examples/forth/leave.fs) exercises `+LOOP` counting up and down, `?DO`, `LEAVE` and `UNLOOP`, and [`while.fs`](examples/forth/while.fs) `BEGIN … WHILE … REPEAT`.
 
 For a broader trip, run the fixed samples and three hundred generated programs on each destination:
 

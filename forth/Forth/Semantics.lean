@@ -63,6 +63,10 @@ propagates out of `IF` and `BEGIN … UNTIL` like `EXIT`, and the loop continues
 after `LOOP`/`+LOOP` from `st`. The parser only accepts `LEAVE` inside a loop of its own block;
 elsewhere it is still defined: it ends a called word like `EXIT` (`Res.returned`), and the main
 block like falling off its end. `?DO` needs no rule: it is parsed to an `IF` around `DO`.
+
+`BEGIN cond WHILE body REPEAT` (`Block.whileL`) runs `cond`, which leaves a flag (`stackUnderflow`
+if the data stack is then empty). A false flag ends the loop; a true one runs `body` and starts
+again with `cond`. `EXIT`, `LEAVE` and traps in `cond` or `body` end it like any other block.
 -/
 
 namespace WordDialect
@@ -145,7 +149,7 @@ end Op
 dictionary, then `rest`; `exit rest` is `EXIT`, which leaves the current word (`rest` is dead
 code, kept so that a block records its source text); `doLoop body rest` is
 `DO body LOOP rest`; `plusLoop body rest` is `DO body +LOOP rest`; `leave rest` is `LEAVE`
-(`rest` is dead code too). -/
+(`rest` is dead code too); `whileL cond body rest` is `BEGIN cond WHILE body REPEAT rest`. -/
 inductive Block where
   | nil
   | op (o : Op) (rest : Block)
@@ -156,6 +160,7 @@ inductive Block where
   | doLoop (body rest : Block)
   | plusLoop (body rest : Block)
   | leave (rest : Block)
+  | whileL (cond body rest : Block)
   deriving DecidableEq, Repr
 
 /-- A Forth program: a dictionary of colon definitions (word `i` is `defs[i]`), the main
@@ -251,6 +256,21 @@ inductive Run {n : Nat} (defs : List Block) : Block → FState n → Res n → P
   | untilAgain {body rest st c d m rs r} :
       Run defs body st (.ok ⟨c :: d, m, rs⟩) → Word.isTrue c = false →
       Run defs (.untilL body rest) ⟨d, m, rs⟩ r → Run defs (.untilL body rest) st r
+  | whileCondStop {cond body rest st r} :
+      Run defs cond st r → r.isOk = false → Run defs (.whileL cond body rest) st r
+  | whileUnder {cond body rest st m rs} :
+      Run defs cond st (.ok ⟨[], m, rs⟩) →
+      Run defs (.whileL cond body rest) st (.error .stackUnderflow)
+  | whileExit {cond body rest st c d m rs r} :
+      Run defs cond st (.ok ⟨c :: d, m, rs⟩) → Word.isTrue c = false →
+      Run defs rest ⟨d, m, rs⟩ r → Run defs (.whileL cond body rest) st r
+  | whileBodyStop {cond body rest st c d m rs r} :
+      Run defs cond st (.ok ⟨c :: d, m, rs⟩) → Word.isTrue c = true →
+      Run defs body ⟨d, m, rs⟩ r → r.isOk = false → Run defs (.whileL cond body rest) st r
+  | whileAgain {cond body rest st c d m rs st2 r} :
+      Run defs cond st (.ok ⟨c :: d, m, rs⟩) → Word.isTrue c = true →
+      Run defs body ⟨d, m, rs⟩ (.ok st2) → Run defs (.whileL cond body rest) st2 r →
+      Run defs (.whileL cond body rest) st r
   | callOk {i rest st body r1 st1 r} :
       defs[i]? = some body → Run defs body st r1 → r1.returned = some st1 →
       Run defs rest st1 r → Run defs (.call i rest) st r
@@ -370,6 +390,41 @@ theorem Run.deterministic {n : Nat} {defs : List Block} {b : Block} {st : FState
     | untilUnder hb' => have := ihb hb'; cases this
     | untilDone hb' hc' _ => have := ihb hb'; cases this; rw [hc] at hc'; cases hc'
     | untilAgain hb' _ hl' => have := ihb hb'; cases this; exact ihl hl'
+  | whileCondStop hc hk ihc =>
+    cases h₂ with
+    | whileCondStop hc' => exact ihc hc'
+    | whileUnder hc' => have := ihc hc'; subst this; cases hk
+    | whileExit hc' => have := ihc hc'; subst this; cases hk
+    | whileBodyStop hc' => have := ihc hc'; subst this; cases hk
+    | whileAgain hc' => have := ihc hc'; subst this; cases hk
+  | whileUnder hc ihc =>
+    cases h₂ with
+    | whileCondStop hc' hk => have := ihc hc'; subst this; cases hk
+    | whileUnder => rfl
+    | whileExit hc' => have := ihc hc'; cases this
+    | whileBodyStop hc' => have := ihc hc'; cases this
+    | whileAgain hc' => have := ihc hc'; cases this
+  | whileExit hc hf hr ihc ihr =>
+    cases h₂ with
+    | whileCondStop hc' hk => have := ihc hc'; subst this; cases hk
+    | whileUnder hc' => have := ihc hc'; cases this
+    | whileExit hc' _ hr' => have := ihc hc'; cases this; exact ihr hr'
+    | whileBodyStop hc' ht => have := ihc hc'; cases this; rw [hf] at ht; cases ht
+    | whileAgain hc' ht => have := ihc hc'; cases this; rw [hf] at ht; cases ht
+  | whileBodyStop hc ht hb hk ihc ihb =>
+    cases h₂ with
+    | whileCondStop hc' hk' => have := ihc hc'; subst this; cases hk'
+    | whileUnder hc' => have := ihc hc'; cases this
+    | whileExit hc' hf => have := ihc hc'; cases this; rw [ht] at hf; cases hf
+    | whileBodyStop hc' _ hb' => have := ihc hc'; cases this; exact ihb hb'
+    | whileAgain hc' _ hb' => have := ihc hc'; cases this; have := ihb hb'; subst this; cases hk
+  | whileAgain hc ht hb hl ihc ihb ihl =>
+    cases h₂ with
+    | whileCondStop hc' hk' => have := ihc hc'; subst this; cases hk'
+    | whileUnder hc' => have := ihc hc'; cases this
+    | whileExit hc' hf => have := ihc hc'; cases this; rw [ht] at hf; cases hf
+    | whileBodyStop hc' _ hb' hk => have := ihc hc'; cases this; have := ihb hb'; subst this; cases hk
+    | whileAgain hc' _ hb' hl' => have := ihc hc'; cases this; have := ihb hb'; cases this; exact ihl hl'
   | callOk hd hb hret hr ihb ihr =>
     cases h₂ with
     | callOk hd' hb' hret' hr' =>

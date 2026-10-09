@@ -182,6 +182,12 @@ def samplesFrontends : List Sample :=
   , forthTextSample "forth_text_trap_plus_loop_rdrop" "3 0 DO R> DROP 1 +LOOP"
   , forthTextSample "forth_text_trap_leave_rdrop" "3 0 DO R> DROP LEAVE LOOP"
   , forthTextSample "forth_text_trap_unloop_empty" "1 UNLOOP"
+  , forthTextSample "forth_text_while_gcd" ": GCD BEGIN DUP WHILE SWAP OVER MOD REPEAT DROP ; 1071 462 GCD"
+  , forthTextSample "forth_text_while_zero_times" "7 BEGIN 0 WHILE 1 + REPEAT 8"
+  , forthTextSample "forth_text_while_count" "0 BEGIN DUP 5 < WHILE 1 + REPEAT"
+  , forthTextSample "forth_text_while_exit" ": F 0 BEGIN 1 + DUP 3 = IF EXIT THEN -1 WHILE REPEAT 99 ; F"
+  , forthTextSample "forth_text_while_leave" "0 10 0 DO BEGIN -1 WHILE LEAVE REPEAT 1 + LOOP"
+  , forthTextSample "forth_text_trap_while_underflow" "BEGIN WHILE REPEAT"
   , { name := "bcpl_sum_1_to_10", mem := List.replicate 4 0,
       prog := BCPL.compileProgram bcplAddr
         (.seq (.assign (.var 1) (.num 10)) (.seq (.assign (.var 0) (.num 0))

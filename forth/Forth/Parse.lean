@@ -17,8 +17,8 @@ Parsing (`parse`), case-insensitive:
 * `>R R> R@ I J UNLOOP` (return-data stack words; `I`, `J` and `UNLOOP` are ordinary words, also
   accepted outside a `DO … LOOP`, where they act on whatever the return-data stack holds, see
   `Forth.Semantics`);
-* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`, `DO … LOOP`, `DO … +LOOP`, and `?DO` in
-  place of `DO`. `?DO` is not a separate construct: `?DO body LOOP rest` parses as
+* `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`, `BEGIN … WHILE … REPEAT`, `DO … LOOP`,
+  `DO … +LOOP`, and `?DO` in place of `DO`. `?DO` is not a separate construct: `?DO body LOOP rest` parses as
   `OVER OVER = IF DROP DROP ELSE DO body LOOP THEN rest` (`Block.loopOf`), which skips the loop
   when limit and index are equal, as ANS `?DO` does;
 * `LEAVE`, which must occur inside a `DO` loop of the same definition or of the main block
@@ -60,6 +60,7 @@ def Block.append : Block → Block → Block
   | .doLoop x r, b => .doLoop x (r.append b)
   | .plusLoop x r, b => .plusLoop x (r.append b)
   | .leave r, b => .leave (r.append b)
+  | .whileL c x r, b => .whileL c x (r.append b)
 
 /-- Split off a trailing literal at the top level of a block (the token just before
 `CONSTANT`). -/
@@ -74,6 +75,7 @@ def Block.dropLastLit : Block → Option (Block × Int)
   | .doLoop x r => r.dropLastLit.map fun p => (.doLoop x p.1, p.2)
   | .plusLoop x r => r.dropLastLit.map fun p => (.plusLoop x p.1, p.2)
   | .leave r => r.dropLastLit.map fun p => (.leave p.1, p.2)
+  | .whileL c x r => r.dropLastLit.map fun p => (.whileL c x p.1, p.2)
 
 /-- `?DO`: run the loop `loop` unless limit and index are equal (then drop both); then `rest`. -/
 def Block.qdo (loop rest : Block) : Block :=
@@ -96,6 +98,7 @@ def Block.leaveOK : Bool → Block → Bool
   | l, .doLoop x r => x.leaveOK true && r.leaveOK l
   | l, .plusLoop x r => x.leaveOK true && r.leaveOK l
   | l, .leave r => l && r.leaveOK l
+  | l, .whileL c x r => c.leaveOK l && x.leaveOK l && r.leaveOK l
 
 /-- Every `LEAVE` of the program lies inside a loop of its own block. -/
 def Program.leaveOK (P : Program) : Bool :=
@@ -177,10 +180,12 @@ def kLOOP : Tok := ['L', 'O', 'O', 'P']
 def kPLOOP : Tok := ['+', 'L', 'O', 'O', 'P']
 def kQDO : Tok := ['?', 'D', 'O']
 def kLEAVE : Tok := ['L', 'E', 'A', 'V', 'E']
+def kWHILE : Tok := ['W', 'H', 'I', 'L', 'E']
+def kREPEAT : Tok := ['R', 'E', 'P', 'E', 'A', 'T']
 
 /-- Words that end the block being parsed. -/
 def stops : List Tok :=
-  [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP, kPLOOP]
+  [kELSE, kTHEN, kUNTIL, kCOLON, kSEMI, kVARIABLE, kCONSTANT, kLOOP, kPLOOP, kWHILE, kREPEAT]
 
 /-- Dictionary: (upper-cased name, what the name compiles to), most recent first. A colon
 definition `k` compiles to `Block.call k`; a variable or constant to a literal. -/
@@ -265,7 +270,13 @@ def parseSeq : Nat → Dict → Option Nat → List Tok → Except String (Block
       if stop1 = some kUNTIL then
         let (rest, stop2, ts2) ← parseSeq fuel dict self ts1
         .ok (.untilL body rest, stop2, ts2)
-      else .error "BEGIN without UNTIL"
+      else if stop1 = some kWHILE then
+        let (wb, stop2, ts2) ← parseSeq fuel dict self ts1
+        if stop2 = some kREPEAT then
+          let (rest, stop3, ts3) ← parseSeq fuel dict self ts2
+          .ok (.whileL body wb rest, stop3, ts3)
+        else .error "WHILE without REPEAT"
+      else .error "BEGIN without UNTIL or WHILE"
     | .doK q => do
       let (body, stop1, ts1) ← parseSeq fuel dict self ts
       if stop1 = some kLOOP then
