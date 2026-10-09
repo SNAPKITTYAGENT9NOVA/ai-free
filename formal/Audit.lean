@@ -5,6 +5,7 @@ import BCPL
 import Wolfram
 import X86
 import Wasm
+import A64
 import Lean
 open Lean Elab Command
 
