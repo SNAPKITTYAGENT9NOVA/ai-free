@@ -35,7 +35,7 @@ theorem parse_begin_until :
   rfl
 
 /-- Words outside the supported subset (only the words listed in `Forth.Parse`) are errors. -/
-theorem parse_not_in_subset : parse "1 2 2DUP" = .error "unknown word: 2DUP" := by rfl
+theorem parse_not_in_subset : parse "1 2 3 */" = .error "unknown word: */" := by rfl
 
 theorem parse_unknown : parse "1 FOO" = .error "unknown word: FOO" := by rfl
 
@@ -127,7 +127,7 @@ theorem parse_constant_needs_literal :
   rfl
 
 theorem parse_variable_in_definition :
-    parse ": F VARIABLE X ;" = .error "VARIABLE or CONSTANT inside definition of F" := by rfl
+    parse ": F VARIABLE X ;" = .error "VARIABLE, CONSTANT, CREATE, ALLOT or , inside definition of F" := by rfl
 
 /-- With its two variable cells available, `varProg` leaves `42`, and so does the machine. -/
 theorem varProg_machine :
@@ -237,7 +237,12 @@ theorem constant_step :
 
 /-- `RECURSE` and the word's own name parse the same inside its definition. -/
 theorem parse_recurse_name :
-    parse ": F DUP IF 1 - RECURSE THEN ; 3 F" = parse ": F DUP IF 1 - F THEN ; 3 F" := by rfl
+    parse ": F DUP IF 1 - RECURSE THEN ; 3 F" = parse ": F DUP IF 1 - F THEN ; 3 F" := by
+  have e : ∀ src, src = ": F DUP IF 1 - RECURSE THEN ; 3 F" ∨ src = ": F DUP IF 1 - F THEN ; 3 F" →
+      parse src = .ok ⟨[.op .dup (.ite (.op (.lit 1) (.op .sub (.call 0 .nil))) .nil .nil)],
+        .op (.lit 3) (.call 0 .nil), 0⟩ := by
+    rintro src (rfl | rfl) <;> rfl
+  rw [e _ (.inl rfl), e _ (.inr rfl)]
 
 /-! ## Return-data stack and `DO … LOOP` -/
 
@@ -463,6 +468,62 @@ theorem while_zero_run (mem : Memory 64) :
     Run [] (.op (.lit 7) (.whileL (.op (.lit 0) .nil) (.op (.lit 1) (.op .add .nil))
       (.op (.lit 8) .nil))) ⟨[], mem, []⟩ (.ok ⟨[8#64, 7#64], mem, []⟩) :=
   eval_sound 10 _ _ _ (by rfl)
+
+/-! ## More core words, `CASE`, and data space -/
+
+theorem parse_core_ops :
+    parse "2DUP 2DROP 2SWAP /MOD NEGATE ABS MIN MAX" =
+      .ok ⟨[], .op .twoDup (.op .twoDrop (.op .twoSwap (.op .divMod (.op .negate (.op .abs
+        (.op .min (.op .max .nil))))))), 0⟩ := by rfl
+
+/-- `?DUP` is `DUP IF DUP THEN`. -/
+theorem parse_qdup : parse "?DUP 1" = .ok ⟨[], Block.qdup (.op (.lit 1) .nil), 0⟩ := by rfl
+
+theorem core_ops_run (mem : Memory 64) :
+    Run [] (.op (.lit (-7)) (.op (.lit 2) (.op .divMod (.op (.lit 3) (.op (.lit (-4)) (.op .min
+      (.op (.lit (-9)) (.op .abs (.op (.lit 0) (Block.qdup (.op (.lit 6) (Block.qdup .nil))))))))))))
+      ⟨[], mem, []⟩
+      (.ok ⟨[6#64, 6#64, 0#64, 9#64, BitVec.ofInt 64 (-4), BitVec.ofInt 64 (-3),
+        BitVec.ofInt 64 (-1)], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+/-- `CASE`: each `OF` compares with the selector; the default sees the selector and `ENDCASE`
+drops it. -/
+def caseBlock : Block :=
+  (Block.ofClause (.op (.lit 100) .nil)
+    (.op (.lit 2) (Block.ofClause (.op (.lit 200) .nil) (.op .dup (.op (.lit 1000) (.op .add
+      (.op .swap .nil))))))).append (.op .drop .nil)
+
+theorem parse_case :
+    parse "CASE 1 OF 100 ENDOF 2 OF 200 ENDOF DUP 1000 + SWAP ENDCASE" =
+      .ok ⟨[], .op (.lit 1) caseBlock, 0⟩ := by rfl
+
+theorem case_run_7 (mem : Memory 64) :
+    Run [] (.op (.lit 7) (.op (.lit 1) caseBlock)) ⟨[], mem, []⟩ (.ok ⟨[1007#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem case_run_2 (mem : Memory 64) :
+    Run [] (.op (.lit 2) (.op (.lit 1) caseBlock)) ⟨[], mem, []⟩ (.ok ⟨[200#64], mem, []⟩) :=
+  eval_sound 30 _ _ _ (by rfl)
+
+theorem parse_of_outside_case :
+    parse "1 1 OF 2 ENDOF 3" = .error "OF … ENDOF without ENDCASE" := by rfl
+theorem parse_case_without_endcase :
+    parse "1 CASE 1 OF 2 ENDOF" = .error "OF … ENDOF without ENDCASE" := by rfl
+theorem parse_of_without_endof : parse "1 CASE 1 OF 2 ENDCASE" = .error "OF without ENDOF" := by rfl
+
+/-- `CREATE`, `,` and `ALLOT` lay out data at parse time: `T` is cell 0, the main block stores
+its two values in cells 0 and 1, `1 ALLOT` reserves cell 2, and `X` is cell 3. -/
+theorem parse_data_space :
+    parse "CREATE T 10 , 20 , 1 ALLOT VARIABLE X T X" =
+      .ok ⟨[], .op (.lit 10) (.op (.lit 0) (.op .store (.op (.lit 20) (.op (.lit 1) (.op .store
+        (.op (.lit 0) (.op (.lit 3) .nil))))))), 4⟩ := by rfl
+
+theorem parse_create_in_def :
+    parse ": F CREATE X ;" =
+      .error "VARIABLE, CONSTANT, CREATE, ALLOT or , inside definition of F" := by rfl
+theorem parse_comma_needs_literal :
+    parse "1 DUP ," = .error ", needs a number literal immediately before it" := by rfl
 
 end Forth
 end WordDialect

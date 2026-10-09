@@ -185,26 +185,45 @@ theorem classify_prim_wf {k : Nat} {inDef : Bool} {dict : Dict} {self : Option N
     (h : classify dict self t = .prim w) : ∀ r : Block, r.WF k inDef → (w r).WF k inDef := by
   intro r hr
   simp only [classify, lookupWord] at h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · split at h
-    · rename_i j; cases h; exact ⟨(hs j rfl).1, hr⟩
-    · cases h
-  split at h
-  · split at h
-    · rename_i j; cases h; exact ⟨(hs j rfl).2, hr⟩
-    · cases h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · cases h; exact hr
+  by_cases h1 : upper t ∈ stops
+  · rw [iteT h1] at h; cases h
+  rw [iteF h1] at h
+  by_cases h2 : upper t = kIF
+  · rw [iteT h2] at h; cases h
+  rw [iteF h2] at h
+  by_cases h3 : upper t = kBEGIN
+  · rw [iteT h3] at h; cases h
+  rw [iteF h3] at h
+  by_cases h4 : upper t = kRECURSE
+  · rw [iteT h4] at h
+    cases self with
+    | none => cases h
+    | some j => cases h; exact ⟨(hs j rfl).1, hr⟩
+  rw [iteF h4] at h
+  by_cases h5 : upper t = kEXIT
+  · rw [iteT h5] at h
+    cases self with
+    | none => cases h
+    | some j => cases h; exact ⟨(hs j rfl).2, hr⟩
+  rw [iteF h5] at h
+  by_cases h6 : upper t = kDO
+  · rw [iteT h6] at h; cases h
+  rw [iteF h6] at h
+  by_cases h7 : upper t = kQDO
+  · rw [iteT h7] at h; cases h
+  rw [iteF h7] at h
+  by_cases h8 : upper t = kLEAVE
+  · rw [iteT h8] at h; cases h; exact hr
+  rw [iteF h8] at h
+  by_cases h9 : upper t = kQDUP
+  · rw [iteT h9] at h; cases h; exact ⟨trivial, trivial, hr⟩
+  rw [iteF h9] at h
+  by_cases h10 : upper t = kCASE
+  · rw [iteT h10] at h; cases h
+  rw [iteF h10] at h
+  by_cases h11 : upper t = kOF
+  · rw [iteT h11] at h; cases h
+  rw [iteF h11] at h
   split at h
   · rename_i w' hl
     cases h
@@ -289,6 +308,27 @@ theorem parseSeq_wf {k : Nat} {inDef : Bool} :
           cases h6
           exact Block.WF_loopOf (mk := Block.plusLoop) q (fun _ _ h1 h2 => ⟨h1, h2⟩) w1 w3
         · cases h2
+    · obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
+      have w1 := parseSeq_wf fuel dict self ts b1 s1 r1 hd hs h1
+      simp only at h2
+      split at h2
+      · obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h2
+        have w3 := parseSeq_wf fuel dict self _ b3 s3 r3 hd hs h5
+        cases h6
+        exact Block.WF_append _ _ w1 w3
+      · cases h2
+    · obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
+      have w1 := parseSeq_wf fuel dict self ts b1 s1 r1 hd hs h1
+      simp only at h2
+      split at h2
+      · obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h2
+        have w3 := parseSeq_wf fuel dict self _ b3 s3 r3 hd hs h5
+        simp only at h6
+        split at h6
+        · cases h6
+          exact ⟨Block.WF_append _ _ w1 trivial, w3, trivial⟩
+        · cases h6
+      · cases h2
 
 /-- The block conditions of `Program.WF` (all but the `LEAVE` check, which `parseTokens` makes
 on the finished program). -/
@@ -355,7 +395,25 @@ theorem parseTop_wf :
             · rename_i b' z name rest' hdl
               exact parseTop_wf fuel _ defs vars _ _ P (hd.cons _ _ (.inr ⟨_, rfl⟩)) hdefs
                 (Block.WF_append _ _ hmain (Block.WF_dropLastLit _ _ _ hdl wb)) h2
-          · cases h2
+          · split at h2
+            · split at h2
+              · cases h2
+              · exact parseTop_wf fuel _ defs vars _ _ P
+                  (hd.cons _ _ (.inr ⟨_, rfl⟩)) hdefs (Block.WF_append _ _ hmain wb) h2
+            · split at h2
+              · split at h2
+                · cases h2
+                · rename_i b' z hdl
+                  exact parseTop_wf fuel _ defs _ _ _ P hd hdefs
+                    (Block.WF_append _ _ hmain (Block.WF_dropLastLit _ _ _ hdl wb)) h2
+              · split at h2
+                · split at h2
+                  · cases h2
+                  · rename_i b' z hdl
+                    exact parseTop_wf fuel _ defs _ _ _ P hd hdefs
+                      (Block.WF_append _ (.op (.lit z) (.op (.lit (vars : Int)) (.op .store .nil)))
+                        (Block.WF_append _ _ hmain (Block.WF_dropLastLit _ _ _ hdl wb)) trivial) h2
+                · cases h2
 
 end ParseProps
 
@@ -554,6 +612,15 @@ theorem classify_sim {dict : Dict} {self : Option Nat} {t t' : Tok} (h : upper t
   by_cases h8 : upper t' = kLEAVE
   · rw [iteT h8, iteT h8]; exact .inl rfl
   rw [iteF h8, iteF h8]
+  by_cases h9 : upper t' = kQDUP
+  · rw [iteT h9, iteT h9]; exact .inl rfl
+  rw [iteF h9, iteF h9]
+  by_cases h10 : upper t' = kCASE
+  · rw [iteT h10, iteT h10]; exact .inl rfl
+  rw [iteF h10, iteF h10]
+  by_cases h11 : upper t' = kOF
+  · rw [iteT h11, iteT h11]; exact .inl rfl
+  rw [iteF h11, iteF h11]
   cases dict.lookup (upper t') with
   | some w => exact .inl rfl
   | none =>
@@ -668,6 +735,28 @@ theorem parseSeq_congr {R : Tok → Tok → Prop} {dict : Dict} {self : Option N
             refine rsim_bind hS (ih r r' hr) ?_
             intro b3 s3 r3 r3' hr3; exact ⟨rfl, rfl, hr3⟩
           · rw [iteF hs2, iteF hs2]; trivial
+      | caseK =>
+        refine rsim_bind hS (ih ts ts' hts) ?_
+        intro b s r r' hr
+        simp only
+        by_cases hs1 : s = some kENDCASE
+        · rw [iteT hs1, iteT hs1]
+          refine rsim_bind hS (ih r r' hr) ?_
+          intro b3 s3 r3 r3' hr3; exact ⟨rfl, rfl, hr3⟩
+        · rw [iteF hs1, iteF hs1]; trivial
+      | ofK =>
+        refine rsim_bind hS (ih ts ts' hts) ?_
+        intro b s r r' hr
+        simp only
+        by_cases hs1 : s = some kENDOF
+        · rw [iteT hs1, iteT hs1]
+          refine rsim_bind hS (ih r r' hr) ?_
+          intro b3 s3 r3 r3' hr3
+          simp only
+          by_cases hs2 : s3 = some kENDCASE
+          · rw [iteT hs2, iteT hs2]; exact ⟨rfl, rfl, hr3⟩
+          · rw [iteF hs2, iteF hs2]; trivial
+        · rw [iteF hs1, iteF hs1]; trivial
     · rw [h1, h2]; trivial
 
 /-- Tokens equal up to case. -/
@@ -706,7 +795,8 @@ theorem parseTop_congr :
             by_cases e2 : s2 = some kCOLON
             · rw [iteT e2, iteT e2]; trivial
             · rw [iteF e2, iteF e2]
-              by_cases e3 : s2 = some kVARIABLE ∨ s2 = some kCONSTANT
+              by_cases e3 : s2 = some kVARIABLE ∨ s2 = some kCONSTANT ∨ s2 = some kCREATE ∨
+                  s2 = some kALLOT ∨ s2 = some kCOMMA
               · rw [iteT e3, iteT e3]; trivial
               · rw [iteF e3, iteF e3]; trivial
       · rw [iteF hc, iteF hc]
@@ -731,7 +821,28 @@ theorem parseTop_congr :
                 simp only
                 rw [show upper name = upper name' from hn]
                 exact parseTop_congr f _ _ _ _ _ _ hb
-          · rw [iteF hk, iteF hk]; trivial
+          · rw [iteF hk, iteF hk]
+            by_cases hcr : u = kCREATE
+            · rw [iteT hcr, iteT hcr]
+              cases hr with
+              | nil => trivial
+              | @cons name name' rest rest' hn hb =>
+                simp only
+                rw [show upper name = upper name' from hn]
+                exact parseTop_congr f _ _ _ _ _ _ hb
+            · rw [iteF hcr, iteF hcr]
+              by_cases hal : u = kALLOT
+              · rw [iteT hal, iteT hal]
+                cases b.dropLastLit with
+                | none => trivial
+                | some p => exact parseTop_congr f _ _ _ _ _ _ hr
+              · rw [iteF hal, iteF hal]
+                by_cases hcm : u = kCOMMA
+                · rw [iteT hcm, iteT hcm]
+                  cases b.dropLastLit with
+                  | none => trivial
+                  | some p => exact parseTop_congr f _ _ _ _ _ _ hr
+                · rw [iteF hcm, iteF hcm]; trivial
 
 theorem forall₂_upper : ∀ toks : List Tok, Rel2 UEq toks (toks.map upper)
   | [] => .nil
@@ -1068,10 +1179,11 @@ dictionary says (dictionary entries shadow built-in words and numbers). -/
 theorem classify_dict {dict : Dict} {self : Option Nat} {t : Tok} {w : Block → Block}
     (hk : upper t ∉ Print.keywords) (hl : dict.lookup (upper t) = some w) :
     classify dict self t = .prim w := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ :=
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ :=
     Print.not_keyword (t := upper t) (fun kw hkw e => hk (e ▸ hkw))
   simp only [classify]
-  rw [iteF h1, iteF h2, iteF h3, iteF h4, iteF h5, iteF h6, iteF h7, iteF h8]
+  rw [iteF h1, iteF h2, iteF h3, iteF h4, iteF h5, iteF h6, iteF h7, iteF h8, iteF h9,
+      iteF h10, iteF h11]
   simp only [lookupWord, hl]
 
 /-- `RECURSE` (any case) inside the definition of word `i` is a call of word `i`. -/
@@ -1109,7 +1221,7 @@ theorem parseTop_constant_lit {fuel : Nat} {dict : Dict} {defs : List Block} {va
       parseTop fuel ((upper name, Block.op (.lit z)) :: dict) defs vars main rest := by
   have hk : upper zt ∉ Print.keywords := fun hm => by
     have := Print.keyword_no_number _ hm; rw [hz] at this; cases this
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ :=
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ :=
     Print.not_keyword (t := upper zt) (fun kw hkw e => hk (e ▸ hkw))
   have hop : opTable.lookup (upper zt) = none := by
     cases h : opTable.lookup (upper zt) with
@@ -1119,7 +1231,8 @@ theorem parseTop_constant_lit {fuel : Nat} {dict : Dict} {defs : List Block} {va
       have := Print.opTable_no_number _ hm; simp only at this; rw [hz] at this; cases this
   have hcz : classify dict none zt = .prim (.op (.lit z)) := by
     simp only [classify]
-    rw [iteF h1, iteF h2, iteF h3, iteF h4, iteF h5, iteF h6, iteF h7, iteF h8]
+    rw [iteF h1, iteF h2, iteF h3, iteF h4, iteF h5, iteF h6, iteF h7, iteF h8, iteF h9,
+      iteF h10, iteF h11]
     simp only [lookupWord, hzd, hop, hz]
   have hcc : classify dict none c = .stop kCONSTANT := by
     rw [← hc]; simp only [classify, hc]; rfl
@@ -1185,7 +1298,19 @@ theorem parseTop_defs_prefix :
             · cases h2
             · cases h2
             · exact parseTop_defs_prefix fuel _ _ _ _ _ P h2
-          · cases h2
+          · split at h2
+            · split at h2
+              · cases h2
+              · exact parseTop_defs_prefix fuel _ _ _ _ _ P h2
+            · split at h2
+              · split at h2
+                · cases h2
+                · exact parseTop_defs_prefix fuel _ _ _ _ _ P h2
+              · split at h2
+                · split at h2
+                  · cases h2
+                  · exact parseTop_defs_prefix fuel _ _ _ _ _ P h2
+                · cases h2
 
 /-- Inside the definition of word `k` named `name`, `RECURSE` and `name` mean the same. -/
 theorem classify_recurse_eq_name {dict : Dict} {k : Nat} {name t : Tok}

@@ -309,7 +309,9 @@ state `execSeq` computes (`exec_straight_halt`) or traps with the trap it report
 
 Forth is the most developed frontend. It has source text, a parser with proofs in both
 directions and a grammar it provably implements, colon definitions with recursion, `EXIT`,
-variables, constants, `BEGIN … WHILE … REPEAT`, and the return-stack words `>R R> R@` with
+variables, constants, data space (`CREATE ALLOT ,`), `CASE … ENDCASE`, `BEGIN … WHILE … REPEAT`,
+the core stack and arithmetic words (`?DUP 2DUP 2SWAP /MOD NEGATE ABS MIN MAX`), and the
+return-stack words `>R R> R@` with
 `DO … LOOP`, `DO … +LOOP`,
 `?DO`, `LEAVE`, `UNLOOP`, `I` and `J`.
 
@@ -354,7 +356,8 @@ and, for step `1`, the `LOOP` rule (`loopCrossed_one`).
 ### `Forth/Compile.lean`
 
 The lowering. Forth's data stack *is* the IR data stack, so most words map one-to-one;
-comparisons go through `cmpFlagCode`, `MOD` lowers to `OVER OVER SDIV MUL SUB`, and the
+comparisons go through `cmpFlagCode`, `MOD` lowers to `OVER OVER SDIV MUL SUB`, `ABS`/`MIN`/`MAX`
+use `CMP` with `SELECT`, `2SWAP` borrows the auxiliary stack, and the
 return-stack words lower to `tor`/`fromr`/`rfetch`. Colon definitions become IR subroutines:
 
 ```mermaid
@@ -418,7 +421,8 @@ recursive words, be established by evaluation instead of by hand-built derivatio
 The text frontend. `tokenize` splits on whitespace and removes `\` line comments and `( … )`
 comments (an unterminated `(` is an error). `parse` is case-insensitive. It reads integer
 literals including negative ones, the primitive words, the return-stack words,
-`IF/ELSE/THEN`, `BEGIN/UNTIL`, `BEGIN/WHILE/REPEAT`, `DO/LOOP`, `DO/+LOOP`, `?DO` (parsed to an `IF` that skips the
+`IF/ELSE/THEN`, `BEGIN/UNTIL`, `BEGIN/WHILE/REPEAT`, `CASE/OF/ENDOF/ENDCASE` and `?DUP`
+(both parsed into `IF`s), `CREATE`/`ALLOT`/`,` (data space laid out at parse time), `DO/LOOP`, `DO/+LOOP`, `?DO` (parsed to an `IF` that skips the
 loop when limit and index are equal), `LEAVE` (only inside a loop: `Program.leaveOK`), colon
 definitions, `RECURSE`, `EXIT`, `VARIABLE` and `CONSTANT`. A name is visible from the start of its own body, which is how recursion by name
 works, and a later definition shadows an earlier one. Every failure returns a message, for

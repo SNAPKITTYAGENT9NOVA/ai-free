@@ -11,7 +11,8 @@ concrete parses are checked by `rfl`). This file shows that the fuel is irreleva
 * **Grammar.** `Seq dict self ts b stop rest` is an inductive grammar for blocks: token list
   `ts` consists of block `b`, then the stop word `stop` (`none` at the end of input), then
   `rest`. Its rules are the productions `IF … ELSE … THEN`, `IF … THEN`, `BEGIN … UNTIL`,
-  `BEGIN … WHILE … REPEAT`, `DO … LOOP`, `DO … +LOOP` (with `?DO` for `DO`) and single words, over the token
+  `BEGIN … WHILE … REPEAT`, `CASE … OF … ENDOF … ENDCASE`, `DO … LOOP`, `DO … +LOOP` (with
+  `?DO` for `DO`) and single words, over the token
   classification `classify`. `Top` is the grammar of top-level code with `:` definitions,
   `VARIABLE` and `CONSTANT`, and `Prog` adds the `LEAVE` check. `parseSeq_iff`, `parseTop_iff`,
   `parseTokens_iff` and `parse_iff` prove that the parser accepts exactly these derivations, with
@@ -77,6 +78,19 @@ def seqStep (P : List Tok → SeqRes) (dict : Dict) (self : Option Nat) (t : Tok
       let (rest, stop2, ts2) ← P ts1
       .ok (Block.loopOf q .plusLoop body rest, stop2, ts2)
     else .error "DO without LOOP or +LOOP"
+  | .caseK => do
+    let (body, stop1, ts1) ← P ts
+    if stop1 = some kENDCASE then
+      let (rest, stop2, ts2) ← P ts1
+      .ok (body.append (.op .drop rest), stop2, ts2)
+    else .error "CASE without ENDCASE"
+  | .ofK => do
+    let (body, stop1, ts1) ← P ts
+    if stop1 = some kENDOF then
+      let (more, stop2, ts2) ← P ts1
+      if stop2 = some kENDCASE then .ok (Block.ofClause body more, stop2, ts2)
+      else .error "OF … ENDOF without ENDCASE"
+    else .error "OF without ENDOF"
 
 theorem parseSeq_succ (f : Nat) (dict : Dict) (self : Option Nat) (t : Tok) (ts : List Tok) :
     parseSeq (f + 1) dict self (t :: ts) = seqStep (parseSeq f dict self) dict self t ts := rfl
@@ -107,6 +121,13 @@ inductive Seq (dict : Dict) (self : Option Nat) : List Tok → Block → Option 
       classify dict self t = .beginK → Seq dict self ts cond (some kWHILE) ts1 →
       Seq dict self ts1 body (some kREPEAT) ts2 → Seq dict self ts2 rb st r →
       Seq dict self (t :: ts) (.whileL cond body rb) st r
+  | caseB {t : Tok} {ts ts1 r : List Tok} {body rb : Block} {st : Option Tok} :
+      classify dict self t = .caseK → Seq dict self ts body (some kENDCASE) ts1 →
+      Seq dict self ts1 rb st r → Seq dict self (t :: ts) (body.append (.op .drop rb)) st r
+  | ofB {t : Tok} {ts ts1 r : List Tok} {body more : Block} :
+      classify dict self t = .ofK → Seq dict self ts body (some kENDOF) ts1 →
+      Seq dict self ts1 more (some kENDCASE) r →
+      Seq dict self (t :: ts) (Block.ofClause body more) (some kENDCASE) r
   | doLoop {q : Bool} {t : Tok} {ts ts1 r : List Tok} {body rb : Block} {st : Option Tok} :
       classify dict self t = .doK q → Seq dict self ts body (some kLOOP) ts1 →
       Seq dict self ts1 rb st r → Seq dict self (t :: ts) (Block.loopOf q .doLoop body rb) st r
@@ -135,6 +156,12 @@ theorem Seq.rest {dict : Dict} {self : Option Nat} {ts : List Tok} {b : Block} {
   | whileL _ _ _ _ ih1 ih2 ih3 =>
     have := ih1.2 (by simp); have := ih2.2 (by simp)
     simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih3.2 h; omega⟩
+  | caseB _ _ _ ih1 ih2 =>
+    have := ih1.2 (by simp)
+    simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih2.2 h; omega⟩
+  | ofB _ _ _ ih1 ih2 =>
+    have := ih1.2 (by simp); have := ih2.2 (by simp)
+    simp only [List.length_cons]; exact ⟨by omega, fun _ => by omega⟩
   | doLoop _ _ _ ih1 ih2 =>
     have := ih1.2 (by simp)
     simp only [List.length_cons]; exact ⟨by omega, fun h => by have := ih2.2 h; omega⟩
@@ -226,6 +253,31 @@ theorem parseSeq_sound {dict : Dict} {self : Option Nat} :
           cases h6
           exact .plusLoop hc d1 (parseSeq_sound f _ _ _ _ h5)
         · cases h2
+    · rename_i hc
+      obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
+      have d1 := parseSeq_sound f ts b1 s1 r1 h1
+      simp only at h2
+      split at h2
+      · rename_i e1; subst e1
+        obtain ⟨⟨b3, s3, r3⟩, h5, h6⟩ := bind_ok h2
+        cases h6
+        exact .caseB hc d1 (parseSeq_sound f _ _ _ _ h5)
+      · cases h2
+    · rename_i hc
+      obtain ⟨⟨b1, s1, r1⟩, h1, h2⟩ := bind_ok h
+      have d1 := parseSeq_sound f ts b1 s1 r1 h1
+      simp only at h2
+      split at h2
+      · rename_i e1; subst e1
+        obtain ⟨⟨b2, s2, r2⟩, h3, h4⟩ := bind_ok h2
+        have d2 := parseSeq_sound f _ b2 s2 r2 h3
+        simp only at h4
+        split at h4
+        · rename_i e2; subst e2
+          cases h4
+          exact .ofB hc d1 d2
+        · cases h4
+      · cases h2
 
 /-- **Completeness**: every derivation is found by `parseSeq` with any fuel larger than the
 number of tokens. -/
@@ -297,6 +349,23 @@ theorem parseSeq_complete {dict : Dict} {self : Option Nat} {ts : List Tok} {b :
     simp only [bind, Except.bind, show (some kPLOOP = some kLOOP) = False by decide, ite_false,
       ite_true]
     rw [ih2 f (by omega)]
+  | caseB hc d1 _ ih1 ih2 =>
+    intro f hf; obtain ⟨f, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    simp only [List.length_cons] at hf
+    have l1 := d1.rest_lt
+    rw [parseSeq_succ]; simp only [seqStep, hc]
+    rw [ih1 f (by omega)]
+    simp only [bind, Except.bind, ite_true]
+    rw [ih2 f (by omega)]
+  | ofB hc d1 _ ih1 ih2 =>
+    intro f hf; obtain ⟨f, rfl⟩ : ∃ g, f = g + 1 := ⟨f - 1, by omega⟩
+    simp only [List.length_cons] at hf
+    have l1 := d1.rest_lt
+    rw [parseSeq_succ]; simp only [seqStep, hc]
+    rw [ih1 f (by omega)]
+    simp only [bind, Except.bind, ite_true]
+    rw [ih2 f (by omega)]
+    simp only [ite_true]
 
 /-- **`parseSeq` implements the grammar** for every fuel larger than the input. -/
 theorem parseSeq_iff {dict : Dict} {self : Option Nat} {f : Nat} {ts : List Tok} {b : Block}
@@ -374,6 +443,22 @@ theorem seqStep_congr {P Q : List Tok → SeqRes} {dict : Dict} {self : Option N
     · split
       · exact bind_congr (hPQ ts1 l1) (fun _ _ => rfl)
       · rfl
+  | caseK =>
+    refine bind_congr (hPQ ts (Nat.le_refl _)) ?_
+    rintro ⟨b1, s1, ts1⟩ h1
+    have l1 := hP _ _ _ _ h1
+    simp only
+    split
+    · exact bind_congr (hPQ ts1 l1) (fun _ _ => rfl)
+    · rfl
+  | ofK =>
+    refine bind_congr (hPQ ts (Nat.le_refl _)) ?_
+    rintro ⟨b1, s1, ts1⟩ h1
+    have l1 := hP _ _ _ _ h1
+    simp only
+    split
+    · exact bind_congr (hPQ ts1 l1) (fun _ _ => rfl)
+    · rfl
 
 theorem parseSeq_rest_le {dict : Dict} {self : Option Nat} {f : Nat} {X : List Tok} {b : Block}
     {s : Option Tok} {r : List Tok} (h : parseSeq f dict self X = .ok (b, s, r)) :
@@ -431,26 +516,45 @@ theorem not_fuelMsg_of_head {e : String} {c : Char} (h : e.toList.head? = some c
 theorem classify_bad_msg {dict : Dict} {self : Option Nat} {t : Tok} {m : String}
     (h : classify dict self t = .bad m) : ¬FuelMsg m := by
   simp only [classify, lookupWord] at h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · split at h
-    · cases h
-    · cases h; exact not_fuelMsg_of_head (c := 'R') (by decide) (by decide)
-  split at h
-  · split at h
-    · cases h
-    · cases h; exact not_fuelMsg_of_head (c := 'E') (by decide) (by decide)
-  split at h
-  · cases h
-  split at h
-  · cases h
-  split at h
-  · cases h
+  by_cases h1 : upper t ∈ stops
+  · rw [ParseProps.iteT h1] at h; cases h
+  rw [ParseProps.iteF h1] at h
+  by_cases h2 : upper t = kIF
+  · rw [ParseProps.iteT h2] at h; cases h
+  rw [ParseProps.iteF h2] at h
+  by_cases h3 : upper t = kBEGIN
+  · rw [ParseProps.iteT h3] at h; cases h
+  rw [ParseProps.iteF h3] at h
+  by_cases h4 : upper t = kRECURSE
+  · rw [ParseProps.iteT h4] at h
+    cases self with
+    | some j => cases h
+    | none => cases h; exact not_fuelMsg_of_head (c := 'R') (by decide) (by decide)
+  rw [ParseProps.iteF h4] at h
+  by_cases h5 : upper t = kEXIT
+  · rw [ParseProps.iteT h5] at h
+    cases self with
+    | some j => cases h
+    | none => cases h; exact not_fuelMsg_of_head (c := 'E') (by decide) (by decide)
+  rw [ParseProps.iteF h5] at h
+  by_cases h6 : upper t = kDO
+  · rw [ParseProps.iteT h6] at h; cases h
+  rw [ParseProps.iteF h6] at h
+  by_cases h7 : upper t = kQDO
+  · rw [ParseProps.iteT h7] at h; cases h
+  rw [ParseProps.iteF h7] at h
+  by_cases h8 : upper t = kLEAVE
+  · rw [ParseProps.iteT h8] at h; cases h
+  rw [ParseProps.iteF h8] at h
+  by_cases h9 : upper t = kQDUP
+  · rw [ParseProps.iteT h9] at h; cases h
+  rw [ParseProps.iteF h9] at h
+  by_cases h10 : upper t = kCASE
+  · rw [ParseProps.iteT h10] at h; cases h
+  rw [ParseProps.iteF h10] at h
+  by_cases h11 : upper t = kOF
+  · rw [ParseProps.iteT h11] at h; cases h
+  rw [ParseProps.iteF h11] at h
   split at h
   · cases h
   split at h
@@ -460,14 +564,15 @@ theorem classify_bad_msg {dict : Dict} {self : Option Nat} {t : Tok} {m : String
   · cases h; exact not_fuelMsg_of_head (c := 'u') (head_append (by decide)) (by decide)
 
 /-- Where an error of `seqStep` comes from: a bad word, a recursive call on a suffix, or one of
-the five messages about unbalanced control words. -/
+the messages about unbalanced control words. -/
 theorem seqStep_error {P : List Tok → SeqRes} {dict : Dict} {self : Option Nat} {t : Tok}
     {ts : List Tok} {e : String}
     (hP : ∀ X b s r, P X = .ok (b, s, r) → r.length ≤ X.length)
     (h : seqStep P dict self t ts = .error e) :
     classify dict self t = .bad e ∨ (∃ X, X.length ≤ ts.length ∧ P X = .error e) ∨
       e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL or WHILE",
-        "WHILE without REPEAT", "DO without LOOP or +LOOP"] := by
+        "WHILE without REPEAT", "DO without LOOP or +LOOP", "CASE without ENDCASE",
+        "OF … ENDOF without ENDCASE", "OF without ENDOF"] := by
   have bind_err : ∀ {α : Type} {x : Except String α} {k : α → SeqRes},
       x >>= k = .error e → x = .error e ∨ ∃ a, x = .ok a ∧ k a = .error e := by
     intro α x k hx
@@ -532,12 +637,35 @@ theorem seqStep_error {P : List Tok → SeqRes} {dict : Dict} {self : Option Nat
         · exact .inr (.inl ⟨ts1, l1, h5⟩)
         · cases h6
       · cases h2; simp
+  · rcases bind_err h with h1 | ⟨⟨b1, s1, ts1⟩, h1, h2⟩
+    · exact .inr (.inl ⟨ts, Nat.le_refl _, h1⟩)
+    have l1 := hP _ _ _ _ h1
+    simp only at h2
+    split at h2
+    · rcases bind_err h2 with h5 | ⟨_, _, h6⟩
+      · exact .inr (.inl ⟨ts1, l1, h5⟩)
+      · cases h6
+    · cases h2; simp
+  · rcases bind_err h with h1 | ⟨⟨b1, s1, ts1⟩, h1, h2⟩
+    · exact .inr (.inl ⟨ts, Nat.le_refl _, h1⟩)
+    have l1 := hP _ _ _ _ h1
+    simp only at h2
+    split at h2
+    · rcases bind_err h2 with h5 | ⟨⟨b2, s2, ts2⟩, h5, h6⟩
+      · exact .inr (.inl ⟨ts1, l1, h5⟩)
+      · simp only at h6
+        split at h6
+        · cases h6
+        · cases h6; simp
+    · cases h2; simp
 
 theorem seqMsgs_not_fuel {e : String}
     (h : e ∈ ["IF … ELSE without THEN", "IF without THEN", "BEGIN without UNTIL or WHILE",
-      "WHILE without REPEAT", "DO without LOOP or +LOOP"]) : ¬FuelMsg e := by
+      "WHILE without REPEAT", "DO without LOOP or +LOOP", "CASE without ENDCASE",
+      "OF … ENDOF without ENDCASE", "OF without ENDOF"]) : ¬FuelMsg e := by
   simp only [List.mem_cons, List.mem_nil_iff, or_false] at h
-  rcases h with rfl | rfl | rfl | rfl | rfl <;> (rintro (h | h) <;> exact absurd h (by decide))
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    (rintro (h | h) <;> exact absurd h (by decide))
 
 /-- With fuel larger than the input, `parseSeq` never fails for lack of fuel, and for any fuel
 it never reports the `parseTop` fuel error. -/
@@ -569,8 +697,8 @@ theorem parseSeq_ne_deep {dict : Dict} {self : Option Nat} {f : Nat} {ts : List 
 /-- `Top dict defs vars main toks P`: parsing the top-level tokens `toks`, with dictionary
 `dict`, definitions `defs`, `vars` variables and top-level code `main` so far, gives program `P`.
 Each round parses a block of top-level code, which ends at the end of the input, at `:` (a
-definition `: name body ;`), at `VARIABLE name`, or at `CONSTANT name` (taking the literal just
-before it). -/
+definition `: name body ;`), at `VARIABLE name`, at `CONSTANT name` (taking the literal just
+before it), at `CREATE name`, or at `ALLOT` or `,` (both taking the literal just before them). -/
 inductive Top : Dict → List Block → Nat → Block → List Tok → Program → Prop
   | done {dict : Dict} {defs : List Block} {vars : Nat} {main b : Block} {toks r : List Tok} :
       Seq dict none toks b none r → Top dict defs vars main toks ⟨defs, main.append b, vars⟩
@@ -590,6 +718,21 @@ inductive Top : Dict → List Block → Nat → Block → List Tok → Program �
       {toks rest : List Tok} {name : Tok} {P : Program} :
       Seq dict none toks b (some kCONSTANT) (name :: rest) → b.dropLastLit = some (b', z) →
       Top ((upper name, Block.op (.lit z)) :: dict) defs vars (main.append b') rest P →
+      Top dict defs vars main toks P
+  | create {dict : Dict} {defs : List Block} {vars : Nat} {main b : Block}
+      {toks rest : List Tok} {name : Tok} {P : Program} :
+      Seq dict none toks b (some kCREATE) (name :: rest) →
+      Top ((upper name, Block.op (.lit vars)) :: dict) defs vars (main.append b) rest P →
+      Top dict defs vars main toks P
+  | allot {dict : Dict} {defs : List Block} {vars : Nat} {main b b' : Block} {z : Int}
+      {toks rest : List Tok} {P : Program} :
+      Seq dict none toks b (some kALLOT) rest → b.dropLastLit = some (b', z) →
+      Top dict defs (vars + z.toNat) (main.append b') rest P → Top dict defs vars main toks P
+  | comma {dict : Dict} {defs : List Block} {vars : Nat} {main b b' : Block} {z : Int}
+      {toks rest : List Tok} {P : Program} :
+      Seq dict none toks b (some kCOMMA) rest → b.dropLastLit = some (b', z) →
+      Top dict defs (vars + 1)
+        ((main.append b').append (.op (.lit z) (.op (.lit vars) (.op .store .nil)))) rest P →
       Top dict defs vars main toks P
 
 /-- The grammar of whole programs: top-level code from the empty state, every `LEAVE` inside a
@@ -635,7 +778,24 @@ theorem parseTop_sound :
             · cases h2
             · rename_i hdl
               exact .const d1 hdl (parseTop_sound fuel _ _ _ _ _ _ h2)
-          · cases h2
+          · split at h2
+            · rename_i hc; subst hc
+              split at h2
+              · cases h2
+              · exact .create d1 (parseTop_sound fuel _ _ _ _ _ _ h2)
+            · split at h2
+              · rename_i ha; subst ha
+                split at h2
+                · cases h2
+                · rename_i hdl
+                  exact .allot d1 hdl (parseTop_sound fuel _ _ _ _ _ _ h2)
+              · split at h2
+                · rename_i hm; subst hm
+                  split at h2
+                  · cases h2
+                  · rename_i hdl
+                    exact .comma d1 hdl (parseTop_sound fuel _ _ _ _ _ _ h2)
+                · cases h2
 
 theorem parseTop_complete {dict : Dict} {defs : List Block} {vars : Nat} {main : Block}
     {toks : List Tok} {P : Program} (h : Top dict defs vars main toks P) :
@@ -673,6 +833,35 @@ theorem parseTop_complete {dict : Dict} {defs : List Block} {vars : Nat} {main :
     rw [parseSeq_complete d1 _ (Nat.lt_succ_self _)]
     simp only [bind, Except.bind, show (kCONSTANT = kCOLON) = False by decide,
       show (kCONSTANT = kVARIABLE) = False by decide, ite_false, ite_true, hdl]
+    exact ih f (by omega)
+  | create d1 _ ih =>
+    intro fuel hf; obtain ⟨f, rfl⟩ : ∃ g, fuel = g + 1 := ⟨fuel - 1, by omega⟩
+    have l1 := d1.rest_lt
+    simp only [List.length_cons] at l1
+    simp only [parseTop]
+    rw [parseSeq_complete d1 _ (Nat.lt_succ_self _)]
+    simp only [bind, Except.bind, show (kCREATE = kCOLON) = False by decide,
+      show (kCREATE = kVARIABLE) = False by decide, show (kCREATE = kCONSTANT) = False by decide,
+      ite_false, ite_true]
+    exact ih f (by omega)
+  | allot d1 hdl _ ih =>
+    intro fuel hf; obtain ⟨f, rfl⟩ : ∃ g, fuel = g + 1 := ⟨fuel - 1, by omega⟩
+    have l1 := d1.rest_lt
+    simp only [parseTop]
+    rw [parseSeq_complete d1 _ (Nat.lt_succ_self _)]
+    simp only [bind, Except.bind, show (kALLOT = kCOLON) = False by decide,
+      show (kALLOT = kVARIABLE) = False by decide, show (kALLOT = kCONSTANT) = False by decide,
+      show (kALLOT = kCREATE) = False by decide, ite_false, ite_true, hdl]
+    exact ih f (by omega)
+  | comma d1 hdl _ ih =>
+    intro fuel hf; obtain ⟨f, rfl⟩ : ∃ g, fuel = g + 1 := ⟨fuel - 1, by omega⟩
+    have l1 := d1.rest_lt
+    simp only [parseTop]
+    rw [parseSeq_complete d1 _ (Nat.lt_succ_self _)]
+    simp only [bind, Except.bind, show (kCOMMA = kCOLON) = False by decide,
+      show (kCOMMA = kVARIABLE) = False by decide, show (kCOMMA = kCONSTANT) = False by decide,
+      show (kCOMMA = kCREATE) = False by decide, show (kCOMMA = kALLOT) = False by decide,
+      ite_false, ite_true, hdl]
     exact ih f (by omega)
 
 /-- **`parseTop` implements the grammar** for every fuel larger than the input. -/
@@ -771,7 +960,20 @@ theorem parseTop_not_fuel :
             · cases h2; not_fuel_msg 'm'
             · simp only [List.length_cons] at l1
               exact parseTop_not_fuel fuel _ _ _ _ _ _ (by omega) h2
-          · cases h2; not_fuel_msg 'u'
+          · split at h2
+            · split at h2
+              · cases h2; not_fuel_msg 'm'
+              · simp only [List.length_cons] at l1
+                exact parseTop_not_fuel fuel _ _ _ _ _ _ (by omega) h2
+            · split at h2
+              · split at h2
+                · cases h2; not_fuel_msg 'A'
+                · exact parseTop_not_fuel fuel _ _ _ _ _ _ (by omega) h2
+              · split at h2
+                · split at h2
+                  · cases h2; not_fuel_msg ','
+                  · exact parseTop_not_fuel fuel _ _ _ _ _ _ (by omega) h2
+                · cases h2; not_fuel_msg 'u'
 
 theorem stripParens_error : ∀ (inside : Bool) (ts : List Tok) (e : String),
     stripParens inside ts = .error e → e = "unterminated ( comment"

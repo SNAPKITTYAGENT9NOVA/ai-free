@@ -26,7 +26,9 @@ targets or on the leave target (`compile_size`), so the addresses are prefix sum
 
 The return-data stack is the IR's auxiliary stack: `>R`, `R>`, `R@` and `I` lower to `TOR`,
 `FROMR`, `RFETCH`, `RFETCH`, `J` to `FROMR FROMR RFETCH SWAP TOR SWAP TOR`, and `UNLOOP` to
-`FROMR FROMR DROP DROP`. `DO body LOOP` lowers to
+`FROMR FROMR DROP DROP`. `2SWAP` is `ROT TOR ROT FROMR` (the auxiliary stack holds one item
+briefly and is restored), `/MOD` is `OVER OVER SDIV DUP ROT MUL ROT SWAP SUB SWAP`, and
+`ABS`, `MIN`, `MAX` use `CMP` and `SELECT`. `DO body LOOP` lowers to
 
 ```
 L:  SWAP TOR TOR                              ( limit index -- )   R: ( -- limit index )
@@ -104,6 +106,14 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .loopI => [.rfetch]
   | .loopJ => [.fromr, .fromr, .rfetch, .swap, .tor, .swap, .tor]
   | .unloop => [.fromr, .fromr, .drop, .drop]
+  | .twoDup => [.over, .over]
+  | .twoDrop => [.drop, .drop]
+  | .twoSwap => [.rot, .tor, .rot, .fromr]
+  | .divMod => [.over, .over, .sdiv, .dup, .rot, .mul, .rot, .swap, .sub, .swap]
+  | .negate => [.word 0#n, .swap, .sub]
+  | .abs => [.dup, .word 0#n, .swap, .sub, .swap, .dup, .word 0#n, .cmp .slt, .select]
+  | .min => [.over, .over, .cmp .slt, .select]
+  | .max => [.over, .over, .cmp .sgt, .select]
 
 /-- Number of IR instructions an operation lowers to. -/
 def Op.len : Op → Nat
@@ -111,6 +121,11 @@ def Op.len : Op → Nat
   | .mod | .zeq => 5
   | .loopJ => 7
   | .unloop => 4
+  | .twoDup | .twoDrop => 2
+  | .twoSwap | .min | .max => 4
+  | .divMod => 10
+  | .negate => 3
+  | .abs => 9
   | _ => 1
 
 theorem compileOp_length {n : Nat} (o : Op) : (compileOp o : List (Instr n)).length = o.len := by

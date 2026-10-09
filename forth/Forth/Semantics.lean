@@ -16,6 +16,9 @@ Conventions (ANS Forth):
   anything else into `0`.
 * `@ ( addr -- x )`, `! ( x addr -- )`; memory is word-addressed.
 * `lshift`/`rshift` are logical shifts.
+* `/MOD ( a b -- rem quot )` is `MOD` and `/` together; `NEGATE` is `0 - a`; `ABS`, `MIN` and
+  `MAX` compare as signed numbers (`ABS` of the most negative number is itself, as it wraps).
+  `2DUP 2DROP 2SWAP` act on pairs.
 
 Memory: `FState.mem` is the whole IR memory; `@`/`!` trap `badAddress` outside its valid
 cells. The `VARIABLE`s of a program are the cells `0 … vars - 1` (`Program.vars`); a program
@@ -82,6 +85,7 @@ inductive Op where
   | eq | ne | lt | gt | ult | ugt | zeq
   | fetch | store
   | tor | fromr | rfetch | loopI | loopJ | unloop
+  | twoDup | twoDrop | twoSwap | divMod | negate | abs | min | max
   deriving DecidableEq, Repr
 
 /-- A Forth state: the data stack, memory, and the return-data stack (`>R`/`R>`/`R@` and the
@@ -129,6 +133,15 @@ def sem {n : Nat} : Op → FState n → Except Trap (FState n)
       match m.write? a v with
       | some m' => .ok ⟨d, m', r⟩
       | none => .error .badAddress
+  | .twoDup, ⟨b :: a :: d, m, r⟩ => .ok ⟨b :: a :: b :: a :: d, m, r⟩
+  | .twoDrop, ⟨_ :: _ :: d, m, r⟩ => .ok ⟨d, m, r⟩
+  | .twoSwap, ⟨x4 :: x3 :: x2 :: x1 :: d, m, r⟩ => .ok ⟨x2 :: x1 :: x4 :: x3 :: d, m, r⟩
+  | .divMod, ⟨b :: a :: d, m, r⟩ =>
+      if b = 0#n then .error .divideByZero else .ok ⟨a.sdiv b :: (a - a.sdiv b * b) :: d, m, r⟩
+  | .negate, ⟨a :: d, m, r⟩ => .ok ⟨(0#n - a) :: d, m, r⟩
+  | .abs, ⟨a :: d, m, r⟩ => .ok ⟨(if Cond.eval .slt a 0#n then 0#n - a else a) :: d, m, r⟩
+  | .min, ⟨b :: a :: d, m, r⟩ => .ok ⟨(if Cond.eval .slt a b then a else b) :: d, m, r⟩
+  | .max, ⟨b :: a :: d, m, r⟩ => .ok ⟨(if Cond.eval .sgt a b then a else b) :: d, m, r⟩
   | .tor, ⟨a :: d, m, r⟩ => .ok ⟨d, m, a :: r⟩
   | .fromr, ⟨d, m, a :: r⟩ => .ok ⟨a :: d, m, r⟩
   | .fromr, ⟨_, _, []⟩ => .error .returnUnderflow
