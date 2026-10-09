@@ -37,6 +37,15 @@ def trapCode : Trap → Nat
 def regName : Reg → String
   | .t0 => "t0" | .t1 => "t1" | .t2 => "t2" | .t3 => "t3" | .s1 => "s1" | .s2 => "s2"
   | .s3 => "s3" | .s4 => "s4" | .s5 => "s5" | .s6 => "s6" | .ra => "ra"
+  | .a0 => "a0" | .a1 => "a1" | .a2 => "a2" | .a3 => "a3" | .a4 => "a4" | .a5 => "a5"
+  | .a6 => "a6" | .a7 => "a7" | .s7 => "s7" | .s8 => "s8" | .s9 => "s9" | .s10 => "s10"
+
+def aluName : Alu → String
+  | .add => "add" | .sub => "sub" | .mul => "mul" | .and => "and" | .or => "or"
+  | .xor => "xor" | .sll => "sll" | .srl => "srl" | .sra => "sra"
+
+def shiftName : Shift → String
+  | .sll => "slli" | .srl => "srli" | .sra => "srai"
 
 def hex (n : Nat) : String := "0x" ++ String.ofList (Nat.toDigits 16 n)
 
@@ -96,6 +105,9 @@ def instr (k : Nat) : Instr Nat → String
   | .srl d s => bin "srl" d s
   | .divu d a b => s!"divu {regName d}, {regName a}, {regName b}"
   | .div d a b => s!"div {regName d}, {regName a}, {regName b}"
+  | .alu op d a b => s!"{aluName op} {regName d}, {regName a}, {regName b}"
+  | .shiftImm sh d a n =>
+    if n < 64 then s!"{shiftName sh} {regName d}, {regName a}, {n}" else err s!"shift {n}"
   | .bcc c a b t => farBranch k c (regName a) (regName b) t
   | .beqz a t => s!"bnez {regName a}, .Ls{k}\n\tj {lbl t}\n.Ls{k}:"
   | .bnez a t => s!"beqz {regName a}, .Ls{k}\n\tj {lbl t}\n.Ls{k}:"
