@@ -1,4 +1,4 @@
-import Forth.OpCorrect
+import Forth.DoubleCorrect
 
 /-!
 # Forth.Correct
@@ -122,7 +122,7 @@ variable {n : Nat} (addr : Nat → Nat) (lv : Nat)
 
 theorem size_op (o : Op) (rest : Block) :
     (compile addr lv (.op o rest) : Frag n).size =
-      (compileOp o : List (Instr n)).length + (compile addr lv rest : Frag n).size := rfl
+      (opFrag o : Frag n).size + (compile addr lv rest : Frag n).size := rfl
 
 theorem size_ite (t e rest : Block) :
     (compile addr lv (.ite t e rest) : Frag n).size =
@@ -364,36 +364,24 @@ theorem compile_correct {n : Nat} {defs : List Block} {addr : Nat → Nat} {p : 
       rw [ha]
       rcases rs with _ | ⟨x, _ | ⟨y, rs⟩⟩ <;> simp_all [Op.sem] <;> omega
     exact execSeq_trap (compileOp_straight .unloop) (by rw [hpc]; exact hcode.1)
-      (compileOp_err .unloop s _ hsem)
+      (compileOp_err .unloop rfl s _ hsem)
   | @opOk o rest st st' r hs _ ih =>
     intro lv base s hat hpc hd hm ha
     rw [compile_op] at hat
-    have hat' := Frag.seq_at hat
-    have hcode : At p base (compileOp o : List (Instr n)) := by
-      simpa [Frag.ofCode] using hat'.1
-    have hrest : At p (base + (compileOp o : List (Instr n)).length)
-        ((compile addr lv rest : Frag n).emit (base + (compileOp o : List (Instr n)).length)) := by
-      simpa [Frag.ofCode] using hat'.2
+    obtain ⟨hcode, hrest⟩ := Frag.seq_at hat
+    rw [opFrag_size] at hrest
     have hsem : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .ok st' := by
       rw [hd, hm, ha, fstate_eta]; exact hs
-    have hx := compileOp_ok o s st' hsem
-    obtain ⟨hst, hpc'⟩ := execSeq_steps (compileOp_straight o) (by rw [hpc]; exact hcode) hx
-    have := ih lv (base + (compileOp o : List (Instr n)).length)
-      { s with pc := s.pc + (compileOp o : List (Instr n)).length, dstack := st'.stack,
-               mem := st'.mem, astack := st'.rstack } hrest
-      (by simp [hpc]) rfl rfl rfl
-    refine reaches_cast ?_ rfl (reaches_trans hst this)
-    rw [size_op]; omega
+    obtain ⟨s', hst, hpc', hrs', hd', hm', ha'⟩ := (opFrag_run o hcode hpc).1 st' hsem
+    have := ih lv (base + o.len) s' hrest hpc' hd' hm' ha'
+    refine reaches_cast ?_ hrs' (reaches_trans hst this)
+    rw [size_op, opFrag_size]; omega
   | @opErr o rest st t hs =>
     intro lv base s hat hpc hd hm ha
     rw [compile_op] at hat
-    have hat' := Frag.seq_at hat
-    have hcode : At p base (compileOp o : List (Instr n)) := by
-      simpa [Frag.ofCode] using hat'.1
     have hsem : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .error t := by
       rw [hd, hm, ha, fstate_eta]; exact hs
-    have hx := compileOp_err o s t hsem
-    exact execSeq_trap (compileOp_straight o) (by rw [hpc]; exact hcode) hx
+    exact (opFrag_run o (Frag.seq_at hat).1 hpc).2 t hsem
   | @iteUnder t e rest m rs =>
     intro lv base s hat hpc hd hm ha
     rw [compile_ite] at hat

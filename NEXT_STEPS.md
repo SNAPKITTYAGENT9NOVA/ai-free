@@ -6,7 +6,8 @@ Suggested development order. Each item names the gap it closes in the current co
 
 Colon definitions (lowered to IR `call`/`ret`), `RECURSE`, `EXIT`, `VARIABLE`,
 `CONSTANT`, `CREATE`, `ALLOT`, `,`, `0=`, `MOD`, `/MOD`, `NEGATE`, `ABS`, `MIN`, `MAX`,
-`?DUP`, `2DUP 2DROP 2SWAP`, `CASE … OF … ENDOF … ENDCASE`, the return-data stack words
+`?DUP`, `2DUP 2DROP 2SWAP`, `CASE … OF … ENDOF … ENDCASE`, the double-cell words
+`UM* UM/MOD M* SM/REM */MOD */`, the return-data stack words
 `>R R> R@`, `BEGIN … WHILE … REPEAT`,
 `DO … LOOP` and `DO … +LOOP` with `I`, `J`, `LEAVE` and `UNLOOP`, and `?DO` are covered by
 `Forth.Program.compile_correct`. `+LOOP` uses ANS Forth's crossing rule,
@@ -27,16 +28,20 @@ Choices made there, which a later change may want to revisit:
 - `LEAVE` is rejected by the parser outside a loop of its own block, but its
   semantics is still total: outside a loop it removes two return-data items and
   ends the word (or the main block).
+- The double-cell words are loops of single-word instructions in the IR
+  (`Forth/Double.lean`), not new IR instructions, so neither backend changed; they
+  use virtual registers 0–7. `*/` and `*/MOD` use symmetric division (`SM/REM`),
+  like `/` and `MOD`, and trap `divideByZero` when the quotient does not fit.
 - The grammar is stated over tokens and the token classification `classify`.
   The lexer (`tokenize`) is characterised by lemmas (comments, case) rather than
   by its own grammar.
 
-## 1. Forth: double-cell arithmetic
+## 1. Forth: floored division
 
-`*/` and `*/MOD` are not implemented: ANS Forth computes `n1 * n2` as a
-double-cell intermediate, which the single-word IR has no instruction for.
-They need double-cell words (`M*`, `UM/MOD`, …) in the IR and both backends,
-or a lowering to a multi-word long multiplication with its own proof.
+`FM/MOD` (floored division of a double-cell number) is not implemented. It can be
+built like `SM/REM`, adjusting quotient and remainder when the signs differ and
+the remainder is nonzero. The double-cell storage words (`2@ 2! 2VARIABLE`) and
+double-cell arithmetic (`D+ D- DNEGATE`) are not implemented either.
 
 ## 2. Lexer specification
 

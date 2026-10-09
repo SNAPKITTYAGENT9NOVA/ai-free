@@ -27,14 +27,14 @@ theorem compileOp_straight {n : Nat} (o : Op) :
     ∀ i ∈ (compileOp o : List (Instr n)), i.isStraight = true := by
   cases o <;> simp [compileOp, cmpFlagCode, Instr.isStraight]
 
-theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
+theorem compileOp_ok {n : Nat} (o : Op) (hl : o.loopy = false) (s : State n) (st' : FState n)
     (h : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .ok st') :
     execSeq (compileOp o) s =
       .next { s with pc := s.pc + (compileOp o : List (Instr n)).length,
                      dstack := st'.stack, mem := st'.mem,
                      astack := st'.rstack } := by
   obtain ⟨pc, d, rs, as, regs, mem⟩ := s
-  cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨q, d⟩⟩⟩⟩ <;>
+  cases o <;> (try (simp [Op.loopy] at hl; done)) <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨q, d⟩⟩⟩⟩ <;>
     rcases as with _ | ⟨u, _ | ⟨v, _ | ⟨w, as⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>
@@ -44,11 +44,11 @@ theorem compileOp_ok {n : Nat} (o : Op) (s : State n) (st' : FState n)
          simp [compileOp, cmpFlagCode, execSeq, exec, State.fall, flag, BitVec.mul_comm,
            ite_isTrue_ofBool, *])
 
-theorem compileOp_err {n : Nat} (o : Op) (s : State n) (t : Trap)
+theorem compileOp_err {n : Nat} (o : Op) (hl : o.loopy = false) (s : State n) (t : Trap)
     (h : o.sem ⟨s.dstack, s.mem, s.astack⟩ = .error t) :
     execSeq (compileOp o) s = .trapped t := by
   obtain ⟨pc, d, rs, as, regs, mem⟩ := s
-  cases o <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨q, d⟩⟩⟩⟩ <;>
+  cases o <;> (try (simp [Op.loopy] at hl; done)) <;> rcases d with _ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨q, d⟩⟩⟩⟩ <;>
     rcases as with _ | ⟨u, _ | ⟨v, _ | ⟨w, as⟩⟩⟩ <;>
     simp only [Op.sem] at h <;>
     (try split at h) <;> (try split at h) <;>

@@ -310,8 +310,8 @@ state `execSeq` computes (`exec_straight_halt`) or traps with the trap it report
 Forth is the most developed frontend. It has source text, a parser with proofs in both
 directions and a grammar it provably implements, colon definitions with recursion, `EXIT`,
 variables, constants, data space (`CREATE ALLOT ,`), `CASE … ENDCASE`, `BEGIN … WHILE … REPEAT`,
-the core stack and arithmetic words (`?DUP 2DUP 2SWAP /MOD NEGATE ABS MIN MAX`), and the
-return-stack words `>R R> R@` with
+the core stack and arithmetic words (`?DUP 2DUP 2SWAP /MOD NEGATE ABS MIN MAX`), double-cell
+arithmetic (`UM* UM/MOD M* SM/REM */MOD */`), and the return-stack words `>R R> R@` with
 `DO … LOOP`, `DO … +LOOP`,
 `?DO`, `LEAVE`, `UNLOOP`, `I` and `J`.
 
@@ -384,6 +384,32 @@ and a loop compiles its body with its own end address as the target.
 Each primitive operation, lowered to straight-line IR, behaves exactly as `Op.sem` says:
 success reaches the corresponding state (`compileOp_ok`), failure traps with the same trap
 (`compileOp_err`), both through `execSeq`.
+
+### `Forth/Double.lean`, `Forth/DoubleMath.lean` and `Forth/DoubleCorrect.lean`
+
+The double-cell words have no IR instruction of their own, and the backends are unchanged. Each
+word is a fragment built from single-word instructions and the virtual registers (Forth programs
+get eight):
+
+* `UM*` shifts and adds, one bit of `b` per round, from the top bit down. A round doubles the
+  pair `(lo, hi)` and adds `a` times the bit, with the carry `lo <u x` into `hi`.
+* `UM/MOD` is restoring division. It first traps unless `hi <u u`, by dividing `1` by that flag.
+  A round shifts `(r, lo)` left and subtracts `u` when the shifted remainder reaches `u` or
+  overflowed.
+* `M*` runs `UM*` on the bit patterns, then subtracts `b` from `hi` when `a < 0` and `a` when
+  `b < 0`.
+* `SM/REM` takes absolute values, negating the dividend as two words with a borrow. It runs
+  `UM/MOD`, traps when the unsigned quotient does not fit the signed result, and puts the signs
+  back. The quotient's sign is the xor of the operands' signs; the remainder takes the dividend's.
+* `*/MOD` is `>R M* R> SM/REM`. `*/` adds `SWAP DROP`.
+
+Both loops are `countedLoop`s of `n` rounds. `countedLoop_run'` carries a register invariant,
+whose step is a natural-number lemma in `DoubleMath` (`umstar_step`, `umdiv_step`). At width `0`
+the loop runs no rounds. `DoubleCorrect` proves every word against `Op.sem`, success and traps,
+for all widths. `mstar_split` shows that `M*`'s two words are exactly the double-cell `a * b`,
+so `*/MOD`'s correctness is `SM/REM`'s. `Op.loopy` marks these operations, and `opFrag o` is any
+operation's code. `opFrag_run`, one lemma for straight-line and loop code alike, is what
+`Correct.lean` uses for the `op` case.
 
 ### `Forth/Correct.lean`
 

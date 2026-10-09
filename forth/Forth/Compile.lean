@@ -1,4 +1,5 @@
 import Forth.Semantics
+import Forth.Double
 import WordIR
 
 /-!
@@ -114,6 +115,7 @@ def compileOp {n : Nat} : Op → List (Instr n)
   | .abs => [.dup, .word 0#n, .swap, .sub, .swap, .dup, .word 0#n, .cmp .slt, .select]
   | .min => [.over, .over, .cmp .slt, .select]
   | .max => [.over, .over, .cmp .sgt, .select]
+  | .umStar | .umDivMod | .mStar | .smRem | .starSlashMod | .starSlash => []
 
 /-- Number of IR instructions an operation lowers to. -/
 def Op.len : Op → Nat
@@ -126,10 +128,36 @@ def Op.len : Op → Nat
   | .divMod => 10
   | .negate => 3
   | .abs => 9
+  | .umStar => 51
+  | .umDivMod => 54
+  | .mStar => 67
+  | .smRem => 118
+  | .starSlashMod => 187
+  | .starSlash => 189
   | _ => 1
 
-theorem compileOp_length {n : Nat} (o : Op) : (compileOp o : List (Instr n)).length = o.len := by
-  cases o <;> rfl
+theorem compileOp_length {n : Nat} (o : Op) (h : o.loopy = false) :
+    (compileOp o : List (Instr n)).length = o.len := by
+  cases o <;> first | rfl | simp [Op.loopy] at h
+
+/-- The code of an operation: straight-line `compileOp`, or the loop of a double-cell word. -/
+def opFrag {n : Nat} : Op → Frag n
+  | .umStar => umStarFrag
+  | .umDivMod => umDivFrag
+  | .mStar => mStarFrag
+  | .smRem => smRemFrag
+  | .starSlashMod => starSlashModFrag
+  | .starSlash => starSlashFrag
+  | o => Frag.ofCode (compileOp o)
+
+theorem opFrag_size {n : Nat} (o : Op) : (opFrag o : Frag n).size = o.len := by
+  cases o <;> first
+    | rfl | exact umStarFrag_size | exact umDivFrag_size | exact mStarFrag_size
+    | exact smRemFrag_size | exact starSlashModFrag_size | exact starSlashFrag_size
+
+theorem opFrag_straight {n : Nat} (o : Op) (h : o.loopy = false) :
+    (opFrag o : Frag n) = Frag.ofCode (compileOp o) := by
+  cases o <;> first | rfl | simp [Op.loopy] at h
 
 /-- `DO`: move `limit start` from the data stack to the auxiliary stack (index on top). -/
 def loopEnter {n : Nat} : List (Instr n) := [.swap, .tor, .tor]
@@ -181,9 +209,8 @@ target. -/
 def compileS {n : Nat} (addr : Nat → Nat) : Nat → (b : Block) → { f : Frag n // f.size = b.size }
   | _, .nil => ⟨Frag.empty, rfl⟩
   | lv, .op o rest =>
-    ⟨(Frag.ofCode (compileOp o)).seq (compileS addr lv rest).1, by
-      simp [Frag.seq_size, Frag.ofCode_size, compileOp_length, (compileS addr lv rest).2,
-        Block.size]⟩
+    ⟨(opFrag o).seq (compileS addr lv rest).1, by
+      simp [Frag.seq_size, opFrag_size, (compileS addr lv rest).2, Block.size]⟩
   | lv, .ite t e rest =>
     ⟨(Frag.ite (compileS addr lv t).1 (compileS addr lv e).1).seq (compileS addr lv rest).1, by
       simp [Frag.seq_size, Frag.ite_size, (compileS addr lv t).2, (compileS addr lv e).2,
@@ -227,7 +254,7 @@ variable {n : Nat} (addr : Nat → Nat) (lv : Nat)
 theorem compile_nil : (compile addr lv .nil : Frag n) = Frag.empty := rfl
 theorem compile_op (o : Op) (rest : Block) :
     (compile addr lv (.op o rest) : Frag n) =
-      (Frag.ofCode (compileOp o)).seq (compile addr lv rest) := rfl
+      (opFrag o).seq (compile addr lv rest) := rfl
 theorem compile_ite (t e rest : Block) :
     (compile addr lv (.ite t e rest) : Frag n) =
       (Frag.ite (compile addr lv t) (compile addr lv e)).seq (compile addr lv rest) := rfl
