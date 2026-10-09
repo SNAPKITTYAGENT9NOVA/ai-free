@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is the project's single guide. [Part I](#part-i-the-atlas) is a guided journey through that atlas: every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **129 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 22 files of the AArch64 backend (`backend/arm64`) and the 21 files of the RISC-V backend (`backend/riscv64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **130 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) and the 21 files of the RISC-V backend (`backend/riscv64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Contents
 
@@ -593,13 +593,13 @@ Exports the target model, lowering, emitter, memory facts, relations, framing, g
 
 Implements `wasmw`: emit WAT, run it through Wasmtime, and compare target output with Lean. It supports sample checks, generated programs, source Forth execution, and source emission.
 
-## Station IX: the AArch64 line — files 87–108
+## Station IX: the AArch64 line — files 87–109
 
 The ARM64 route keeps the x86-64 backend's register roles, lowering shape and proof structure, so most of its files are the x86-64 files with AArch64 registers. The differences are where the two machines differ: AArch64 division never faults, there is no rotate-left instruction, calls and returns use a dedicated return-stack register, and 64-bit constants are built from 16-bit pieces. `a64c` runs the emitted binaries under `qemu-aarch64`.
 
 ### 87. [Isa.lean](backend/arm64/A64/Isa.lean) — the ARM vehicle
 
-Models the emitted AArch64 subset: `x` registers, `NZCV` flags (with the carry stored as the borrow, `NOT C`, so conditions read like their x86-64 counterparts), loads and stores, `csel`, `udiv`/`sdiv` as `BitVec.udiv`/`BitVec.sdiv`, and the three fixed sequences `movImm` (`movz` + `movk`), `call` and `ret`. Arithmetic is modelled as making the flags unknown, which is more conservative than the hardware.
+Models the emitted AArch64 subset: `x` registers, `NZCV` flags (with the carry stored as the borrow, `NOT C`, so conditions read like their x86-64 counterparts), loads and stores, `csel`, `udiv`/`sdiv` as `BitVec.udiv`/`BitVec.sdiv`, and the three fixed sequences `movImm` (`movz` + `movk`), `call` and `ret`. Arithmetic is modelled as making the flags unknown, which is more conservative than the hardware. For hand-written programs it also models `x0`–`x8`, the three-register forms (`add x2, x0, x1`, `sub mul and orr eor`) and shifts by a constant (`lsl`, `lsr`, `asr`), which the lowering does not use.
 
 ### 88. [Lower.lean](backend/arm64/A64/Lower.lean) — the same track on new rails
 
@@ -677,99 +677,103 @@ Whole-program preservation: `lowerProg_correct_or_overflow` and `lowerProg_corre
 
 The six-instruction prologue model and its proved effect, `entry_rel`, and the end-to-end `binary_correct`. Because the return stack is a linked section rather than the operating system's stack, `Loader.Holds` has no entry-register fact, only memory, placement and image facts.
 
-### 107. [A64.lean](backend/arm64/A64.lean) — the AArch64 library entrance
+### 107. [DataOps.lean](backend/arm64/A64/DataOps.lean) — hand-written ARM programs
+
+The general AArch64 data-processing forms that hand-written programs use: three registers (`add x2, x0, x1`, and likewise `sub mul and orr eor`) and shifts by a constant (`lsl`, `lsr`, and the arithmetic `asr`). It proves what each computes (`alu_toNat`, `lsl_toNat`, `lsr_toNat`, `asr_toInt`, `udiv_toNat`, `sub_toInt`, `mul_toInt`) and that a short program using all of them halts with the values its comments state (`dataProcessing_run`). `a64c check` runs that program and 100 random ones under qemu and compares the registers with the model.
+
+### 108. [A64.lean](backend/arm64/A64.lean) — the AArch64 library entrance
 
 Exports the AArch64 model, lowering, emitter, simulation modules, whole-program proofs and initialization result.
 
-### 108. [A64Main.lean](backend/arm64/A64Main.lean) — ride the line under qemu
+### 109. [A64Main.lean](backend/arm64/A64Main.lean) — ride the line under qemu
 
-Implements `a64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-aarch64` (or directly on an AArch64 Linux host), and compare against Lean. It runs the same fixed, generated, auxiliary-stack, overflow and Forth-file checks as `wordc`.
+Implements `a64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-aarch64` (or directly on an AArch64 Linux host), and compare against Lean. It runs the same fixed, generated, auxiliary-stack, overflow and Forth-file checks as `wordc`, plus a check of hand-written programs: the data-processing program of `DataOps.lean` and 100 random programs over the three-register and constant-shift forms, compared register by register (`x0`–`x11`) with the model.
 
-## Station X: the RISC-V line — files 109–129
+## Station X: the RISC-V line — files 110–130
 
 The RV64 route keeps the register roles and proof structure of the x86-64 and AArch64 backends, but RISC-V has no condition flags. Every check is a compare-and-branch on two registers, a comparison result comes from a branch around a constant, and `select` branches around a move. There is no indexed addressing and no rotate instruction in the base ISA. `rv64c` runs the emitted binaries under `qemu-riscv64`.
 
-### 109. [Isa.lean](backend/riscv64/RV/Isa.lean) — a machine without flags
+### 110. [Isa.lean](backend/riscv64/RV/Isa.lean) — a machine without flags
 
 Models the emitted RV64IM subset: integer registers, `ld`/`sd`, register-register arithmetic, `sltiu`, `sll`/`srl` with the amount modulo 64, and `divu`/`div` exactly as RISC-V defines them (all ones on a zero divisor; `div` wraps on overflow). The conditional branch `bcc c a b t` takes the IR's own comparison `Cond`, so its meaning needs no flag encoding. `movImm` (the assembler's `li`), far branches, `call` and `ret` are fixed sequences.
 
-### 110. [Lower.lean](backend/riscv64/RV/Lower.lean) — the same track without signals
+### 111. [Lower.lean](backend/riscv64/RV/Lower.lean) — the same track without signals
 
 The data stack uses `s1`, virtual registers use `s2`, IR memory uses `s3`, the empty return stack is `s4`, the return-stack pointer is `s5`, and auxiliary data uses `s6`. Each guard is three instructions (load a limit, `bcc`, trap or overflow stub). Memory access computes the address with `slli` and `add`. `shl`/`shr` mask the result to zero for amounts of 64 or more, and the rotations are two shifts and an `or`.
 
-### 111. [Emit.lean](backend/riscv64/RV/Emit.lean) — print the RISC-V assembly
+### 112. [Emit.lean](backend/riscv64/RV/Emit.lean) — print the RISC-V assembly
 
 Prints the model instructions for `clang --target=riscv64-linux-gnu -march=rv64im`. Each conditional branch is printed as the opposite branch over a `j`, so it reaches as far as `j` does. An out-of-range immediate becomes an `.error` directive. The runtime uses `li`/`lla`, places the three stacks in their own sections, and dumps state on halt through Linux system calls.
 
-### 112. [Rel.lean](backend/riscv64/RV/Rel.lean) — match the two timetables
+### 113. [Rel.lean](backend/riscv64/RV/Rel.lean) — match the two timetables
 
 The relation between IR and RISC-V states. The regions and their disjointness are the same as on the other native targets.
 
-### 113. [Run.lean](backend/riscv64/RV/Run.lean) — locate and follow the code
+### 114. [Run.lean](backend/riscv64/RV/Run.lean) — locate and follow the code
 
 `RSteps`, `RExec` and `RAt`, and the placement of each lowered IR instruction and the trailing bad-pc stub.
 
-### 114. [Seq.lean](backend/riscv64/RV/Seq.lean) — compose short stretches
+### 115. [Seq.lean](backend/riscv64/RV/Seq.lean) — compose short stretches
 
 Straight-line execution (`rseq`), and the branch-and-stub guard lemmas `guard_pass`/`guard_trap` and `ovf_pass`/`ovf_trap`, all stated directly on `Cond.eval` of two registers.
 
-### 115. [Micro.lean](backend/riscv64/RV/Micro.lean) — the smallest useful moves
+### 116. [Micro.lean](backend/riscv64/RV/Micro.lean) — the smallest useful moves
 
 Local effects of loads, stores, scratch-register writes, stack-pointer adjustment and the two-instruction push.
 
-### 116. [Guard.lean](backend/riscv64/RV/Guard.lean) — check room and operands
+### 117. [Guard.lean](backend/riscv64/RV/Guard.lean) — check room and operands
 
 The operand-count guard (`bcc .ule`) and the data- and return-stack capacity guards (`bcc .uge`), each with its passing and failing case.
 
-### 117. [SimBin.lean](backend/riscv64/RV/SimBin.lean) — one pattern, many operators
+### 118. [SimBin.lean](backend/riscv64/RV/SimBin.lean) — one pattern, many operators
 
 `MidSpec` and the generic binary-operation simulation, as on the other native targets.
 
-### 118. [SimOps.lean](backend/riscv64/RV/SimOps.lean) — arithmetic without rotate
+### 119. [SimOps.lean](backend/riscv64/RV/SimOps.lean) — arithmetic without rotate
 
 Arithmetic, bitwise operations, shifts and rotations. `mask_lt` justifies the shift mask, and `rotl_shifts`/`rotr_shifts` prove that two shifts and an `or` are the rotations.
 
-### 119. [SimStack.lean](backend/riscv64/RV/SimStack.lean) — rearrange the carried words
+### 120. [SimStack.lean](backend/riscv64/RV/SimStack.lean) — rearrange the carried words
 
 Literals, pointers, complement, `dup`, `drop`, `swap`, `over` and `rot`.
 
-### 120. [SimMem.lean](backend/riscv64/RV/SimMem.lean) — compute the address, keep the neighbours
+### 121. [SimMem.lean](backend/riscv64/RV/SimMem.lean) — compute the address, keep the neighbours
 
 Frame lemmas for the register file and IR memory, and the address computation `idx_addr`/`idx_steps` that replaces indexed addressing.
 
-### 121. [SimMemOps.lean](backend/riscv64/RV/SimMemOps.lean) — perform the checked access
+### 122. [SimMemOps.lean](backend/riscv64/RV/SimMemOps.lean) — perform the checked access
 
 The `bltu` bounds guard and the `push`/`pop` and `load`/`store` simulations, for success and bad-address traps.
 
-### 122. [SimDiv.lean](backend/riscv64/RV/SimDiv.lean) — branches inside an instruction
+### 123. [SimDiv.lean](backend/riscv64/RV/SimDiv.lean) — branches inside an instruction
 
 The divisions after a `bnez` zero guard, and the two instructions whose lowering branches internally: `select` (`beqz` over a `mv`) and `cmp` (`bcc` over setting `0`), each proved for both paths.
 
-### 123. [SimCtl.lean](backend/riscv64/RV/SimCtl.lean) — branch, call, and return
+### 124. [SimCtl.lean](backend/riscv64/RV/SimCtl.lean) — branch, call, and return
 
 `jmp`, `branch` (`bnez`), `call` and `ret` on the `s5` return stack, and halt.
 
-### 124. [SimAux.lean](backend/riscv64/RV/SimAux.lean) — a separate place for saved data
+### 125. [SimAux.lean](backend/riscv64/RV/SimAux.lean) — a separate place for saved data
 
 The auxiliary stack on `s6`: its `bcc` guards and the `tor`, `fromr` and `rfetch` simulations.
 
-### 125. [SimStep.lean](backend/riscv64/RV/SimStep.lean) — every instruction gets a connection
+### 126. [SimStep.lean](backend/riscv64/RV/SimStep.lean) — every instruction gets a connection
 
 `sim_exec`: every IR instruction, for every outcome, including overflow when a stack is full.
 
-### 126. [Correct.lean](backend/riscv64/RV/Correct.lean) — preserve the complete journey
+### 127. [Correct.lean](backend/riscv64/RV/Correct.lean) — preserve the complete journey
 
 `lowerProg_correct_or_overflow` and `lowerProg_correct`, with the same hypotheses as the other native targets.
 
-### 127. [Init.lean](backend/riscv64/RV/Init.lean) — begin at the binary entrance
+### 128. [Init.lean](backend/riscv64/RV/Init.lean) — begin at the binary entrance
 
 The six-instruction prologue model and its effect, `entry_rel`, and the end-to-end `binary_correct`.
 
-### 128. [RV.lean](backend/riscv64/RV.lean) — the RISC-V library entrance
+### 129. [RV.lean](backend/riscv64/RV.lean) — the RISC-V library entrance
 
 Exports the RISC-V model, lowering, emitter, simulation modules, whole-program proofs and initialization result.
 
-### 129. [RVMain.lean](backend/riscv64/RVMain.lean) — ride the line under qemu
+### 130. [RVMain.lean](backend/riscv64/RVMain.lean) — ride the line under qemu
 
 Implements `rv64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-riscv64` (or directly on a RISC-V Linux host), and compare against Lean, with the same checks as `wordc` and `a64c`.
 
@@ -1567,6 +1571,20 @@ They correspond one to one to `backend/x86_64/X86/*` (the x86-64 section above),
 * **`A64/Init.lean`**: a six-instruction prologue. The return stack is a linked section, so
   `Loader.Holds` has no fact about an entry register, only memory, placement and image facts.
   `binary_correct` is the end-to-end statement.
+
+### `A64/DataOps.lean`: hand-written AArch64 programs
+
+The model also covers the data-processing instructions as hand-written AArch64 programs use them:
+three registers (`add/sub/mul/and/orr/eor d, a, b`, the `alu` instruction) and shifts by a
+constant (`lsl/lsr/asr d, a, #n`, the `shiftImm` instruction), on `x0 … x8` as well as the
+lowering's registers. `DataOps.lean` proves what each computes: `alu_toNat` (arithmetic modulo
+`2^64`, bitwise operations), `sub_toInt`/`mul_toInt` (the signed reading), `lsl_toNat`
+(multiplication by `2^n` modulo `2^64`), `lsr_toNat` (unsigned division by `2^n`), `asr_toInt`
+(signed division by `2^n`, rounded toward negative infinity) and `udiv_toNat`.
+`dataProcessing_run` runs a ten-instruction program (`mov x0, #10; mov x1, #3`, then one of each)
+in the model and proves the result, `x2 … x11 = 13 7 30 3 2 11 9 40 5 5`, from any initial
+registers and memory. `a64c check` runs the same program, and 100 random ones, printed by
+`A64.Emit`, under `qemu-aarch64` and compares `x0 … x11` with the model.
 
 ### `A64Main.lean` (the `a64c` executable)
 

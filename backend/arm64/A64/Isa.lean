@@ -42,12 +42,39 @@ namespace A64
 
 abbrev W := BitVec 64
 
-/-- Registers. Roles (see `A64.Lower`): `x9 x10 x11 x12` scratch, `x19` data-stack pointer,
-`x20` register file, `x21` IR memory, `x22` empty return stack, `x23` return-stack pointer,
-`x24` auxiliary-stack pointer, `x30` link register (written by `call` and `ret`). -/
+/-- Registers. Roles in the lowering (see `A64.Lower`): `x9 x10 x11 x12` scratch, `x19`
+data-stack pointer, `x20` register file, `x21` IR memory, `x22` empty return stack, `x23`
+return-stack pointer, `x24` auxiliary-stack pointer, `x30` link register (written by `call` and
+`ret`). `x0 … x8` are not used by the lowering; they are modelled for hand-written AArch64
+programs (`A64.DataOps`). -/
 inductive Reg where
   | x9 | x10 | x11 | x12 | x23 | x24 | x22 | x21 | x20 | x19 | x30
+  | x0 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8
   deriving DecidableEq, Repr
+
+/-- The three-register data-processing operations: `op d, a, b` sets `d := a op b`. -/
+inductive Alu where
+  | add | sub | mul | and | orr | eor
+  deriving DecidableEq, Repr
+
+def Alu.eval : Alu → W → W → W
+  | .add, a, b => a + b
+  | .sub, a, b => a - b
+  | .mul, a, b => a * b
+  | .and, a, b => a &&& b
+  | .orr, a, b => a ||| b
+  | .eor, a, b => a ^^^ b
+
+/-- Shifts by a constant: `lsl`, `lsr` (logical) and `asr` (arithmetic, copies the sign bit). -/
+inductive Shift where
+  | lsl | lsr | asr
+  deriving DecidableEq, Repr
+
+/-- The shift of `a` by `n` (`n < 64`; `Emit` rejects larger amounts, as the assembler does). -/
+def Shift.eval : Shift → W → Nat → W
+  | .lsl, a, n => a <<< n
+  | .lsr, a, n => a >>> n
+  | .asr, a, n => a.sshiftRight n
 
 /-- Condition codes (the subset used), named after their meaning on `subFlags`. -/
 inductive Cc where
@@ -113,6 +140,10 @@ inductive Instr (L : Type) where
   | cmov (c : Cc) (d s : Reg)
   | udiv (d a b : Reg)
   | sdiv (d a b : Reg)
+  /-- `add/sub/mul/and/orr/eor d, a, b`: three registers. -/
+  | alu (op : Alu) (d a b : Reg)
+  /-- `lsl/lsr/asr d, a, #n`: shift by a constant. -/
+  | shiftImm (k : Shift) (d a : Reg) (n : Nat)
   | jmp (t : L)
   | jcc (c : Cc) (t : L)
   | call (t : L)
@@ -192,6 +223,8 @@ def exec (i : Instr Nat) (m : M) : Out :=
       | some f => .next (if c.holds f then m.mov d (m.regs s) else m.adv)
   | .udiv d a b => .next (m.arith d ((m.regs a).udiv (m.regs b)))
   | .sdiv d a b => .next (m.arith d ((m.regs a).sdiv (m.regs b)))
+  | .alu op d a b => .next (m.arith d (op.eval (m.regs a) (m.regs b)))
+  | .shiftImm k d a n => .next (m.arith d (k.eval (m.regs a) n))
   | .jmp t => .next { m with pc := t }
   | .jcc c t =>
       match m.flags with
