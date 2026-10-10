@@ -32,8 +32,8 @@ jobs:
         run: .lake/build/bin/wasmw check 300
       - name: Forth source files (WebAssembly)
         run: for f in examples/forth/*.fs; do .lake/build/bin/wasmw forth "$f" || exit 1; done
-      - name: Install AArch64/RISC-V toolchain and emulators
-        run: sudo apt-get update && sudo apt-get install -y clang lld qemu-user
+      - name: Install AArch64/RISC-V toolchain and emulators (user mode and the bare RV32 board)
+        run: sudo apt-get update && sudo apt-get install -y clang lld qemu-user qemu-system-misc
       - name: AArch64 execution check (qemu)
         run: .lake/build/bin/a64c check 300
       - name: Forth source files (AArch64)
@@ -42,3 +42,7 @@ jobs:
         run: .lake/build/bin/rv64c check 300
       - name: Forth source files (RISC-V)
         run: for f in examples/forth/*.fs; do .lake/build/bin/rv64c forth "$f" || exit 1; done
+      - name: RV32 microcontroller profile check (bare-metal qemu virt board)
+        run: .lake/build/bin/rv32c check 300
+      - name: Forth source files (RV32, 32-bit words)
+        run: for f in examples/forth/*.fs; do .lake/build/bin/rv32c forth "$f" || exit 1; done

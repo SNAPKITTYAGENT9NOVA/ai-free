@@ -7,6 +7,7 @@ import X86
 import Wasm
 import A64
 import RV
+import RV32
 import Lean
 open Lean Elab Command
 
