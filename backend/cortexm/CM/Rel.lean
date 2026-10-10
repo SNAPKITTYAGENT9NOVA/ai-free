@@ -1,9 +1,9 @@
-import RV32.Run
+import CM.Run
 
 /-!
-# RV32.Rel
+# CM.Rel
 
-The state relation between the IR machine and the RISC-V model, and the memory-frame lemmas used
+The state relation between the IR machine and the Thumb-2 model, and the memory-frame lemmas used
 by the per-instruction simulation proofs.
 
 Memory regions (byte intervals, all below `2^32`, pairwise disjoint):
@@ -11,14 +11,14 @@ Memory regions (byte intervals, all below `2^32`, pairwise disjoint):
 * register file `[rf, rf + 4 nregs)`;
 * IR memory `[mb, mb + 4 M)`;
 * return stack: the return stack (`.rstack`) below `sp0`;
-* auxiliary stack `[aBase, aEnd)`, top at `aEnd - 4k` when `k` words are on it (pointer `s6`).
+* auxiliary stack `[aBase, aEnd)`, top at `aEnd - 4k` when `k` words are on it (pointer `r9`).
 
 Everything is stated with `BitVec.ofNat 32` of natural-number addresses, so address arithmetic
 is ordinary `omega` reasoning.
 -/
 
 namespace WordDialect
-namespace RV32
+namespace CM
 
 open Reg
 
@@ -97,7 +97,7 @@ def MemRel (c : Cfg) (mem : Memory 32) (m : Memory 32) : Prop :=
 def RsRel (c : Cfg) (p : Prog 32) (mem : Memory 32) (rs : List Nat) : Prop :=
   ∀ i a, rs[i]? = some a → mem.read? (ofN (c.sp0 - 4 * rs.length + 4 * i)) = some (ofN (offs p a))
 
-/-- The RISC-V memory's addressable set covers every region. -/
+/-- The Thumb-2 memory's addressable set covers every region. -/
 def RegionsValid (c : Cfg) (v : W → Bool) : Prop :=
   (∀ a, c.dBase ≤ a → a < c.dEnd → v (ofN a) = true) ∧
   (∀ a, c.rf ≤ a → a < c.rf + 4 * c.nregs → v (ofN a) = true) ∧
@@ -106,12 +106,12 @@ def RegionsValid (c : Cfg) (v : W → Bool) : Prop :=
   (∀ a, c.aBase ≤ a → a < c.aEnd → v (ofN a) = true)
 
 structure Rel0 (c : Cfg) (p : Prog 32) (s : State 32) (x : M) : Prop where
-  s1 : x.regs s1 = ofN (c.dEnd - 4 * s.dstack.length)
-  s2 : x.regs s2 = ofN c.rf
-  s3 : x.regs s3 = ofN c.mb
-  s4 : x.regs s4 = ofN c.sp0
-  s5 : x.regs s5 = ofN (c.sp0 - 4 * s.rstack.length)
-  s6 : x.regs s6 = ofN (c.aEnd - 4 * s.astack.length)
+  r4 : x.regs r4 = ofN (c.dEnd - 4 * s.dstack.length)
+  r5 : x.regs r5 = ofN c.rf
+  r6 : x.regs r6 = ofN c.mb
+  r7 : x.regs r7 = ofN c.sp0
+  r8 : x.regs r8 = ofN (c.sp0 - 4 * s.rstack.length)
+  r9 : x.regs r9 = ofN (c.aEnd - 4 * s.astack.length)
   stack : StackRel c x.mem s.dstack
   regs : RegRel c x.mem s.regs
   mem : MemRel c x.mem s.mem
@@ -123,22 +123,22 @@ structure Rel0 (c : Cfg) (p : Prog 32) (s : State 32) (x : M) : Prop where
   capR : s.rstack.length + 1 ≤ c.rcap
   capA : c.aBase + 4 * s.astack.length ≤ c.aEnd
 
-/-- Full relation: everything in `Rel0`, and the RISC-V pc is the start of the IR pc's code. -/
+/-- Full relation: everything in `Rel0`, and the Thumb-2 pc is the start of the IR pc's code. -/
 def Rel (c : Cfg) (p : Prog 32) (s : State 32) (x : M) : Prop :=
   Rel0 c p s x ∧ x.pc = offs p s.pc
 
 /-- `Rel0` does not look at scratch registers or the pc. -/
 theorem Rel0.congr {c : Cfg} {p : Prog 32} {s : State 32} {x x' : M} (h : Rel0 c p s x)
-    (hm : x'.mem = x.mem) (h15 : x'.regs Reg.s1 = x.regs Reg.s1) (h14 : x'.regs Reg.s2 = x.regs Reg.s2)
-    (h13 : x'.regs Reg.s3 = x.regs Reg.s3) (h12 : x'.regs Reg.s4 = x.regs Reg.s4)
-    (hsp : x'.regs Reg.s5 = x.regs Reg.s5) (hbp : x'.regs Reg.s6 = x.regs Reg.s6) :
+    (hm : x'.mem = x.mem) (h15 : x'.regs Reg.r4 = x.regs Reg.r4) (h14 : x'.regs Reg.r5 = x.regs Reg.r5)
+    (h13 : x'.regs Reg.r6 = x.regs Reg.r6) (h12 : x'.regs Reg.r7 = x.regs Reg.r7)
+    (hsp : x'.regs Reg.r8 = x.regs Reg.r8) (hbp : x'.regs Reg.r9 = x.regs Reg.r9) :
     Rel0 c p s x' where
-  s1 := by rw [h15]; exact h.s1
-  s2 := by rw [h14]; exact h.s2
-  s3 := by rw [h13]; exact h.s3
-  s4 := by rw [h12]; exact h.s4
-  s5 := by rw [hsp]; exact h.s5
-  s6 := by rw [hbp]; exact h.s6
+  r4 := by rw [h15]; exact h.r4
+  r5 := by rw [h14]; exact h.r5
+  r6 := by rw [h13]; exact h.r6
+  r7 := by rw [h12]; exact h.r7
+  r8 := by rw [hsp]; exact h.r8
+  r9 := by rw [hbp]; exact h.r9
   stack := by rw [hm]; exact h.stack
   regs := by rw [hm]; exact h.regs
   mem := by rw [hm]; exact h.mem
@@ -166,5 +166,5 @@ theorem aux_write_other {c : Cfg} {mem mem' : Memory 32} {as : List W} (haE : c.
   simp only [hne, ite_false]
   exact h i w hi
 
-end RV32
+end CM
 end WordDialect
