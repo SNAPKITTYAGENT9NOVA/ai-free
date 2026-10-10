@@ -1,14 +1,14 @@
 # UniversalWord: follow the word
 
-**Three source-language perspectives. One word machine. Six target machines, two of them bare-metal microcontrollers. A Lean file for every stage of the journey.**
+**Three source-language perspectives. One word machine. Seven target machines, three of them bare-metal microcontrollers. A Lean file for every stage of the journey.**
 
 UniversalWord, hosted here as `ai-free`, brings Forth, a BCPL subset, and Wolfram-style scalar and matrix computations into a shared intermediate language. Its central character is the machine word: a fixed-width value that can carry an integer, a truth flag, or a memory address. Around that value, the project builds reference semantics, translations, reusable proofs, target machine models, emitters, and executable comparison harnesses.
 
-Think of this repository as a railway atlas. The source frontends are departure stations. Universal Word IR is the interchange where their different expressions become a common instruction stream. The x86-64, AArch64, RISC-V and WebAssembly backends are four routes onward, and two microcontroller profiles, RV32 and ARM Cortex-M, run the same IR at 32 bits on boards with no operating system. The Lean modules describe the track, establish how each connection behaves, and carry the argument from a source computation to a target outcome.
+Think of this repository as a railway atlas. The source frontends are departure stations. Universal Word IR is the interchange where their different expressions become a common instruction stream. The x86-64, AArch64, RISC-V and WebAssembly backends are four routes onward, and three microcontroller profiles, RV32, ARM Cortex-M3 and ARM Cortex-M0, run the same IR at 32 bits on boards with no operating system. The Lean modules describe the track, establish how each connection behaves, and carry the argument from a source computation to a target outcome.
 
 This README is the project's single guide. [Part I](#part-i-the-atlas) is a guided journey through that atlas: every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **177 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 23 files of the Cortex-M profile (`backend/cortexm`) and the 32-bit harness `backend/common/Harness32.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **200 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 23 files of the Cortex-M profile (`backend/cortexm`), the 23 files of the Cortex-M0 profile (`backend/cortexm0`) and the 32-bit harness `backend/common/Harness32.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Contents
 
@@ -37,13 +37,14 @@ This README is the project's single guide. [Part I](#part-i-the-atlas) is a guid
 | RISC-V execution | [RV.Isa](backend/riscv64/RV/Isa.lean) | A target without condition flags: compare-and-branch everywhere |
 | Microcontroller execution | [RV32.Emit](backend/rv32/RV32/Emit.lean) | 32-bit words and a bare-metal runtime: a UART and a test device, no operating system |
 | ARM Cortex-M execution | [CM.Isa](backend/cortexm/CM/Isa.lean) | Thumb-2 with flags confined to fixed sequences, and a vector table to start from |
+| Division without a divide instruction | [CM0.Divide](backend/cortexm0/CM0/Divide.lean) | A restoring-division loop for the Cortex-M0, proved to compute `udiv` and `sdiv` |
 | Proof dependency inspection | [Audit](formal/Audit.lean) | The project's namespace-wide axiom audit |
 
 The numbered entries are arranged by the computation's journey rather than alphabetical order. Within each region, the order moves from vocabulary and execution toward translation, correctness, examples, and public imports. This makes the map useful both as a reference and as a reading course.
 
 ## The big picture
 
-The repository is one Lake package (`UniversalWord`) with eleven Lean libraries and six
+The repository is one Lake package (`UniversalWord`) with twelve Lean libraries and seven
 executables:
 
 | Library / executable | Directory | Role |
@@ -59,6 +60,7 @@ executables:
 | `A64` + `a64c` | `backend/arm64/` | AArch64 model, lowering, assembly emitter, proofs; qemu test driver |
 | `RV` + `rv64c` | `backend/riscv64/` | RISC-V (RV64IM) model, lowering, assembly emitter, proofs; qemu test driver |
 | `RV32` + `rv32c` | `backend/rv32/` | Microcontroller profile: RV32IM, 32-bit words, bare-metal runtime, proofs; test driver on the QEMU `virt` board |
+| `CM0` + `cm0c` | `backend/cortexm0/` | Cortex-M0 profile: ARMv6-M, 32-bit words, division by a proved loop, bare-metal runtime, proofs; test driver on an emulated micro:bit |
 | `CM` + `cmc` | `backend/cortexm/` | Cortex-M profile: Thumb-2 (ARMv7-M), 32-bit words, bare-metal runtime, proofs; test driver on an emulated Cortex-M3 board |
 
 Everything is organised around one intermediate language, the **Universal Word IR**, defined in
@@ -86,6 +88,7 @@ flowchart LR
     RVN["RISC-V model + assembly text<br/>RV.lowerProg<br/>✔ binary_correct"]
     MCU["RV32 microcontroller model<br/>+ bare-metal assembly<br/>RV32.lowerProg<br/>✔ binary_correct"]
     CMX["Cortex-M model<br/>+ bare-metal Thumb-2<br/>CM.lowerProg<br/>✔ binary_correct"]
+    CM0X["Cortex-M0 model<br/>+ bare-metal ARMv6-M<br/>CM0.lowerProg<br/>✔ binary_correct"]
   end
   F -->|"Forth.parse"| FB
   FB --> P
@@ -98,12 +101,14 @@ flowchart LR
   P --> RVN
   P --> MCU
   P --> CMX
+  P --> CM0X
   X -.->|"wordc: run natively,<br/>compare with Lean"| H["Harness<br/>(differential testing)"]
   WA -.->|"wasmw: run under wasmtime,<br/>compare with Lean"| H
   AR -.->|"a64c: run under qemu-aarch64,<br/>compare with Lean"| H
   RVN -.->|"rv64c: run under qemu-riscv64,<br/>compare with Lean"| H
   MCU -.->|"rv32c: run on the bare QEMU virt board,<br/>compare with Lean"| H
   CMX -.->|"cmc: run on an emulated Cortex-M3,<br/>compare with Lean"| H
+  CM0X -.->|"cm0c: run on an emulated Cortex-M0,<br/>compare with Lean"| H
 ```
 
 Solid arrows are translations with machine-checked correctness theorems (named with ✔ in the
@@ -982,6 +987,102 @@ Exports the Cortex-M model, lowering, emitter, simulation modules, whole-program
 ### 177. [CMMain.lean](backend/cortexm/CMMain.lean) — ride the line on a Cortex-M3
 
 Implements `cmc`: emit assembly, assemble with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3`, link with `ld.lld` and a linker script (vector table, code and the load image of `.data` in flash; `.data` and the stacks in SRAM), run on the emulated Stellaris LM3S6965 board, and compare with the Lean semantics at width 32 through `Harness32`, plus the hand-written data-processing check.
+
+## Station XIII: the Cortex-M0 profile — files 178–200
+
+The same 32-bit IR on the smallest ARM cores (ARMv6-M: Cortex-M0, M0+, M1), with no operating system and **no divide instruction**. The lowering divides with a loop of ordinary instructions, and `Divide.lean` proves that the loop computes `udiv` and `sdiv`. `cm0c` runs the image from flash on an emulated BBC micro:bit (nRF51822, `qemu-system-arm -M microbit`).
+
+### 178. [Isa.lean](backend/cortexm0/CM0/Isa.lean) — the smallest ARM core
+
+The ARMv6-M model: registers `r0 … r10` and `sp`, which holds the return stack. There is no divide instruction, data processing takes low registers, and every branch is a `bl` (so the link register is written but, like the flags, read by no model instruction). Shifts follow the bottom-byte rule and `rors` rotates modulo 32, as on the Cortex-M3.
+
+### 179. [Lower.lean](backend/cortexm0/CM0/Lower.lean) — the Cortex-M3 track on a narrower gauge
+
+Lowers `Prog 32` with the structure of the Cortex-M3 lowering. The return stack is `sp`, so a return is `pop {pc}`; IR memory sits in the high register `r8`, which is added but never used as a load base; and `div`/`sdiv` become the division sequences `udivSeq`/`sdivSeq`.
+
+### 180. [Divide.lean](backend/cortexm0/CM0/Divide.lean) — division without a divider, proved
+
+Restoring division, one quotient bit per round, for `i = 31 … 0`: `udiv_round` and the invariant `udiv_loop` (`a = q·b + r` and `r < b·2^(i+1)`), `udiv_code`/`udiv_seq` (the quotient is `a.udiv b`), and `sdiv_seq` (divide the absolute values, negate when the signs differ: `BitVec.sdiv`, including `INT_MIN / -1`).
+
+### 181. [Emit.lean](backend/cortexm0/CM0/Emit.lean) — bytes, `bl` and a literal pool
+
+Prints ARMv6-M Thumb for `clang --target=thumbv6m-none-eabi`: constants built from bytes with `movs`/`lsls`/`adds`, every branch a `bl`, calls as `push {lr}` inside a `bl` pair, returns as `pop {pc}`. Operands an ARMv6-M encoding cannot take become `.error` directives. The runtime boots from flash and prints through the nRF51 UART of the micro:bit.
+
+### 182. [Rel.lean](backend/cortexm0/CM0/Rel.lean) — match the two timetables
+
+The state relation, with the return-stack pointer in `sp`.
+
+### 183. [Run.lean](backend/cortexm0/CM0/Run.lean) — locate and follow the code
+
+`RSteps`, `RExec`, `RAt` and code placement.
+
+### 184. [Seq.lean](backend/cortexm0/CM0/Seq.lean) — compose short stretches
+
+Straight-line execution and the guard lemmas.
+
+### 185. [Micro.lean](backend/cortexm0/CM0/Micro.lean) — the smallest useful moves
+
+Loads, stores, scratch writes and stack-pointer adjustment.
+
+### 186. [Guard.lean](backend/cortexm0/CM0/Guard.lean) — check room and operands
+
+The operand-count and stack-capacity guards; the return-stack guard compares with `sp`.
+
+### 187. [SimBin.lean](backend/cortexm0/CM0/SimBin.lean) — one pattern, many operators
+
+The generic binary-operation simulation.
+
+### 188. [SimOps.lean](backend/cortexm0/CM0/SimOps.lean) — shifts and rotations
+
+Arithmetic, bitwise operations, shifts and rotations, with the bottom-byte shift mask and `ror`.
+
+### 189. [SimStack.lean](backend/cortexm0/CM0/SimStack.lean) — rearrange the carried words
+
+Literals, pointers, complement and the stack words.
+
+### 190. [SimMem.lean](backend/cortexm0/CM0/SimMem.lean) — compute the address, keep the neighbours
+
+Frame lemmas and the address computation (`lsls #2`, `add r0, r8`).
+
+### 191. [SimMemOps.lean](backend/cortexm0/CM0/SimMemOps.lean) — perform the checked access
+
+The bounds guard and the `push`/`pop`/`load`/`store` simulations.
+
+### 192. [SimDiv.lean](backend/cortexm0/CM0/SimDiv.lean) — branches and loops inside an instruction
+
+`select`, `cmp`, and the divisions: `sim_divop_ok` takes any division sequence with a proved result, and the zero divisor still traps first.
+
+### 193. [SimCtl.lean](backend/cortexm0/CM0/SimCtl.lean) — branch, call, and return
+
+`jmp`, `branch`, `call` (`push {lr}`) and `ret` (`pop {pc}`) on the `sp` return stack.
+
+### 194. [SimAux.lean](backend/cortexm0/CM0/SimAux.lean) — a separate place for saved data
+
+The auxiliary stack on `r6`.
+
+### 195. [SimStep.lean](backend/cortexm0/CM0/SimStep.lean) — every instruction gets a connection
+
+`sim_exec` for every IR instruction and outcome.
+
+### 196. [Correct.lean](backend/cortexm0/CM0/Correct.lean) — preserve the complete journey
+
+`lowerProg_correct_or_overflow` and `lowerProg_correct`.
+
+### 197. [Init.lean](backend/cortexm0/CM0/Init.lean) — begin at the reset vector
+
+The eight-instruction prologue (the high registers are set through `r0`), `entry_rel` and `binary_correct`.
+
+### 198. [Boot.lean](backend/cortexm0/CM0/Boot.lean) — boot from flash, proved
+
+The flash-to-RAM copy of `.data` (`copy_loop`, `copy_holds`) and `boot_correct`, as on the Cortex-M3.
+
+### 199. [CM0.lean](backend/cortexm0/CM0.lean) — the Cortex-M0 library entrance
+
+Exports the Cortex-M0 model, lowering, division proofs, emitter, simulation modules, whole-program proofs, initialization and flash-boot results.
+
+### 200. [CM0Main.lean](backend/cortexm0/CM0Main.lean) — ride the line on a micro:bit
+
+Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`.
 
 # Part II: how each part works
 
@@ -1936,6 +2037,44 @@ width 32 through `Harness32` (the same programs as `rv32c`). The hand-written ch
 data-processing program of `CM/DataOps.lean` and 100 random programs whose registers often hold
 small values, so register shifts by 32 to 255 and by 256 or more, and zero divisors, occur.
 
+## `backend/cortexm0/`: the Cortex-M0 profile
+
+### The design
+
+ARMv6-M, the architecture of the Cortex-M0, M0+ and M1, is a subset of the Cortex-M3's: mostly
+16-bit instructions, data processing on the low registers `r0 … r7`, 8-bit immediates, short
+branches, no IT blocks, and no divide instruction. The profile keeps the proof structure of the
+Cortex-M3 profile and changes what that forces:
+
+| | Cortex-M3 (`cmc`) | Cortex-M0 (`cm0c`) |
+| --- | --- | --- |
+| registers (data stack, register file, IR memory, empty return stack, pointer, auxiliary stack) | `r4 r5 r6 r7 r8 r9` | `r4 r5 r8 r9 sp r6` |
+| constants | `movw` + `movt` | `movs` + `lsls #8`/`adds` pairs |
+| branches | `b<cond>` over `b.w` | `b<cond>` over `bl` (the link register is not modelled) |
+| call / return | `str lr, [r8, #-4]!` / `ldr lr, [r8], #4; bx lr` | `push {lr}` / `pop {pc}`, return stack on `sp` |
+| shift mask (`sltiu`) | `cmp` + `ite` | `movs`, `cmp`, `bhs`, `movs` |
+| `div`, `sdiv` | `udiv`, `sdiv` | the proved loop `udivSeq`, `sdivSeq` (21 and 33 model instructions after the operand-count guard) |
+| board | Stellaris LM3S6965 (Cortex-M3) | BBC micro:bit, nRF51822 (Cortex-M0), 16 KiB of SRAM |
+
+### `CM0/Divide.lean`: division without a divide instruction
+
+`udivCode` is restoring division: with `r0 = a` and `r1 = b ≠ 0`, for `i = 31 … 0`, if
+`(r0 >>> i) ≥ b` then `r0 := r0 - (b <<< i)` and `r2 := r2 + (1 <<< i)`. The invariant
+(`udiv_loop`) is `a = r2 · b + r0` and `r0 < b · 2^(i+1)`; the test is `r0 ≥ b · 2^i`, so
+neither `b <<< i` nor `r2 + 2^i` wraps when the bit is set, and after bit 0 `r0 < b`, so
+`r2 = a / b` (`udiv_code`). `sdivSeq` keeps `a ^^^ b` in `r10`, divides `|a|` by `|b|`, and
+negates the quotient when that sign bit is set; `sdiv_seq` shows this is `BitVec.sdiv` in all
+four sign cases, including `INT_MIN / -1 = INT_MIN`. `SimDiv.lean` plugs either sequence into
+the division lowering. `Harness32`'s `w32_div_extremes` runs unsigned and signed divisions
+across signs and extremes on every 32-bit target.
+
+### `CM0Main.lean` (the `cm0c` executable)
+
+It emits assembly, assembles it with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, links
+with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M microbit -kernel`
+and semihosting enabled, and compares the exit status and UART dump with the Lean semantics at
+width 32 through `Harness32` (the same programs as `rv32c` and `cmc`).
+
 ## Trust boundaries in one place
 
 Every theorem in this repository is a statement about Lean definitions. What connects them to
@@ -1955,6 +2094,7 @@ flowchart TD
     RM["RISC-V model = hardware<br/>(tested under qemu)"]
     MM["RV32 model = hardware,<br/>UART and test device<br/>(tested on the qemu virt board)"]
     CMM["Cortex-M model = hardware,<br/>UART and semihosting<br/>(tested on an emulated Cortex-M3)"]
+    CM0M["Cortex-M0 model = hardware<br/>(tested on an emulated Cortex-M0)"]
     INST["wasm instantiation rule"]
     LDR["ELF loader facts (Loader.Holds;<br/>for Cortex-M only flash facts, FlashHolds)"]
   end
@@ -1973,20 +2113,22 @@ flowchart TD
   LDR --> T5
   CMM --> T6["cmc check"]
   LDR --> T6
+  CM0M --> T7["cm0c check"]
+  LDR --> T7
 ```
 
 Things to keep in mind when reading the theorems:
 
-* **Stacks are bounded on the targets and unbounded in the IR.** All six backends check before
+* **Stacks are bounded on the targets and unbounded in the IR.** All seven backends check before
   every push and every call, and exit 6 when a stack is full. The `_or_overflow` theorems say
   "IR outcome or exit 6"; the theorems without that suffix assume `Fits` and give the exact
   outcome.
 * **Program-level hypotheses are small and checkable.** They are: registers named by
   `push`/`pop` exist (`RegsOk`), the program has fewer than `2^32` instructions (WebAssembly) or
-  `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), and the register file and memory image fit the runtime layout
+  `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), or `36 · length < 2^32` (Cortex-M0, whose division sequences are longer), and the register file and memory image fit the runtime layout
   (WebAssembly).
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
-  `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit` and `CM.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
+  `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap
   stubs), and each module documents them.
 
@@ -2002,7 +2144,7 @@ cd ai-free
 lake build
 ```
 
-The default build includes the semantic and frontend libraries, shared harness, the six backend libraries, and the `wordc`, `wasmw`, `a64c`, `rv64c`, `rv32c` and `cmc` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 and RISC-V execution use `clang` and `ld.lld` to build the binary and `qemu-aarch64` / `qemu-riscv64` (Debian/Ubuntu package `qemu-user`) to run it; on a matching Linux machine the binaries run directly. The RV32 microcontroller profile uses the same `clang` and `ld.lld` and runs on the emulated `virt` board, `qemu-system-riscv32` (package `qemu-system-misc`); the Cortex-M profile runs on an emulated Cortex-M3 board, `qemu-system-arm` (package `qemu-system-arm`).
+The default build includes the semantic and frontend libraries, shared harness, the seven backend libraries, and the `wordc`, `wasmw`, `a64c`, `rv64c`, `rv32c`, `cmc` and `cm0c` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 and RISC-V execution use `clang` and `ld.lld` to build the binary and `qemu-aarch64` / `qemu-riscv64` (Debian/Ubuntu package `qemu-user`) to run it; on a matching Linux machine the binaries run directly. The RV32 microcontroller profile uses the same `clang` and `ld.lld` and runs on the emulated `virt` board, `qemu-system-riscv32` (package `qemu-system-misc`); the Cortex-M profiles run on emulated Cortex-M3 and Cortex-M0 boards, `qemu-system-arm` (package `qemu-system-arm`).
 
 Try a short source file containing `5 DUP +`, or use the repository's [Forth examples](examples/forth). The commands below exercise real source parsing and compilation before comparing target behavior with Lean:
 
@@ -2013,12 +2155,14 @@ Try a short source file containing `5 DUP +`, or use the repository's [Forth exa
 .lake/build/bin/rv64c forth examples/forth/loops.fs
 .lake/build/bin/rv32c forth examples/forth/fib.fs
 .lake/build/bin/cmc forth examples/forth/while.fs
+.lake/build/bin/cm0c forth examples/forth/core.fs
 .lake/build/bin/wordc emit-forth examples/forth/sum.fs > /tmp/sum.s
 .lake/build/bin/wasmw emit-forth examples/forth/sum.fs > /tmp/sum.wat
 .lake/build/bin/a64c emit-forth examples/forth/sum.fs > /tmp/sum-a64.s
 .lake/build/bin/rv64c emit-forth examples/forth/sum.fs > /tmp/sum-rv.s
 .lake/build/bin/rv32c emit-forth examples/forth/sum.fs > /tmp/sum-rv32.s
 .lake/build/bin/cmc emit-forth examples/forth/sum.fs > /tmp/sum-cm.s
+.lake/build/bin/cm0c emit-forth examples/forth/sum.fs > /tmp/sum-cm0.s
 ```
 
 The optional memory-word count defaults to sixteen. Variables occupy cells starting at zero; the executable frontend arranges memory for the parsed program. Forth definitions can call themselves, and `RECURSE` names the current definition. `DO … LOOP`, `I`, `J`, and return-data words provide especially interesting examples because their data survives calls through the auxiliary stack. [`leave.fs`](examples/forth/leave.fs) exercises `+LOOP` counting up and down, `?DO`, `LEAVE` and `UNLOOP`, [`while.fs`](examples/forth/while.fs) `BEGIN … WHILE … REPEAT`, [`core.fs`](examples/forth/core.fs) `CASE`, `CREATE`/`ALLOT`/`,` and the core stack and arithmetic words, and [`double.fs`](examples/forth/double.fs) the double-cell words and `*/`.
@@ -2032,6 +2176,7 @@ For a broader trip, run the fixed samples and three hundred generated programs o
 .lake/build/bin/rv64c check 300
 .lake/build/bin/rv32c check 300
 .lake/build/bin/cmc check 300
+.lake/build/bin/cm0c check 300
 ```
 
 With no count, the generated-program count defaults to two hundred. `check 0` runs the fixed checks without generated programs. The shared reference interpreter uses bounded fuel; programs that exhaust it are reported as skipped. Generation uses a fixed seed, helping make comparisons reproducible. Backend checks additionally exercise auxiliary-stack behavior and intentional overflow.
@@ -2043,12 +2188,12 @@ You can also inspect a built-in sample's output without running the target:
 .lake/build/bin/wasmw emit forth_five_dup_plus > /tmp/five.wat
 ```
 
-Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call_ret`. The shared harness contains the complete sample lists. Native execution artifacts are written under `/tmp/wordc`; WebAssembly artifacts use `/tmp/wasmw`, AArch64 artifacts `/tmp/a64c`, RISC-V artifacts `/tmp/rv64c`, RV32 artifacts `/tmp/rv32c`, and Cortex-M artifacts `/tmp/cmc`. Successful target output is a binary state dump decoded by the harness, so these commands are most informative when used with the comparison tools or emitter output.
+Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call_ret`. The shared harness contains the complete sample lists. Native execution artifacts are written under `/tmp/wordc`; WebAssembly artifacts use `/tmp/wasmw`, AArch64 artifacts `/tmp/a64c`, RISC-V artifacts `/tmp/rv64c`, RV32 artifacts `/tmp/rv32c`, Cortex-M artifacts `/tmp/cmc`, and Cortex-M0 artifacts `/tmp/cm0c`. Successful target output is a binary state dump decoded by the harness, so these commands are most informative when used with the comparison tools or emitter output.
 
 ## Checking everything at once
 
 ```sh
-lake build                                   # every library and all six executables
+lake build                                   # every library and all seven executables
 lake env lean formal/Audit.lean              # fails if any theorem uses a non-standard axiom
 .lake/build/bin/wordc check 300              # x86-64: samples + 300 random programs, natively
 .lake/build/bin/wasmw check 300              # WebAssembly: the same under wasmtime
@@ -2056,6 +2201,7 @@ lake env lean formal/Audit.lean              # fails if any theorem uses a non-s
 .lake/build/bin/rv64c check 300              # RISC-V: the same under qemu-riscv64
 .lake/build/bin/rv32c check 300              # RV32 at 32 bits on the bare qemu virt board
 .lake/build/bin/cmc check 300                # Cortex-M at 32 bits on an emulated Cortex-M3
+.lake/build/bin/cm0c check 300               # Cortex-M0 at 32 bits on an emulated micro:bit
 .lake/build/bin/wordc forth examples/forth/loops.fs
 ```
 
@@ -2075,6 +2221,7 @@ flowchart LR
   F --> RR["backend/riscv64/RV/Isa.lean<br/>(no condition flags)"]
   RR --> MC["backend/rv32/RV32/Emit.lean<br/>(32 bits, no operating system)"]
   MC --> CMR["backend/cortexm/CM/Isa.lean<br/>(Thumb-2, flags inside sequences)"]
+  CMR --> CM0R["backend/cortexm0/CM0/Divide.lean<br/>(division as a proved loop)"]
   D --> G["forth/Forth/TextExample.lean<br/>source to machine, concretely"]
 ```
 
@@ -2085,7 +2232,7 @@ flowchart LR
   example `sim_add` in `Wasm/SimAlu.lean`. Then read `sim_step`, and finally the top of
   `Init.lean` for the end-to-end statement.
 * For concrete runs, read `forth/Forth/TextExample.lean` and `examples/forth/*.fs`, and run
-  `wordc forth` / `wasmw forth` / `a64c forth` / `rv64c forth` / `rv32c forth` / `cmc forth` on them.
+  `wordc forth` / `wasmw forth` / `a64c forth` / `rv64c forth` / `rv32c forth` / `cmc forth` / `cm0c forth` on them.
 
 ## Read the proofs as a connected story
 
@@ -2095,13 +2242,13 @@ When exploring a theorem, start with its conclusion and then inspect its hypothe
 
 For a small complete reading route, follow Forth's example into its compiler and correctness file, then open the shared harness and one executable entry point. For a deeper route, begin with the machine, read straight-line and fragment composition, and follow BCPL statement correctness. For nested-loop reasoning, take the counted-loop module into matrix layout, matrix multiplication, and its concrete example.
 
-The backend routes offer an illuminating comparison. The native lowerings (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M) compute target offsets and keep return addresses on a stack in memory. WebAssembly lowering returns IR instruction indices through a table-driven dispatch loop. All of them preserve the same source of meaning, use separate storage for call addresses and auxiliary words, and connect local instruction simulations to complete execution results. Their different implementations make the common semantic layer especially valuable to readers.
+The backend routes offer an illuminating comparison. The native lowerings (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M3, Cortex-M0) compute target offsets and keep return addresses on a stack in memory. WebAssembly lowering returns IR instruction indices through a table-driven dispatch loop. All of them preserve the same source of meaning, use separate storage for call addresses and auxiliary words, and connect local instruction simulations to complete execution results. Their different implementations make the common semantic layer especially valuable to readers.
 
 A useful exercise is to trace one value across the map. In `5 DUP +`, parsing produces a literal and two operations; reference evaluation duplicates five and adds the pair; compilation emits the corresponding IR sequence; either backend carries that sequence to its target representation. The final stack contains ten. For BCPL, trace the same arithmetic into a variable cell instead. For matrix multiplication, trace one output entry through its accumulator register, the inner loop, and the destination write. These three examples give you stack, memory, and loop perspectives on the same architecture. Once those routes feel familiar, the larger theorem files become easier to navigate: identify the local semantic result, find its compiled fragment, locate the appropriate simulation, and follow the composition to the final outcome. Each step has a named home in this atlas for your next exploration.
 
 ## The project's verification practice
 
-The repository includes a namespace-wide axiom audit and a [CI workflow](.github/workflows/lean.yml) that builds the libraries, checks prohibited proof constructs, runs the audit, runs every backend's differential check (x86-64 natively, WebAssembly under Wasmtime, AArch64 and RISC-V under qemu, RV32 on the bare qemu `virt` board, Cortex-M on an emulated Cortex-M3), and runs the Forth example files. The audit command is:
+The repository includes a namespace-wide axiom audit and a [CI workflow](.github/workflows/lean.yml) that builds the libraries, checks prohibited proof constructs, runs the audit, runs every backend's differential check (x86-64 natively, WebAssembly under Wasmtime, AArch64 and RISC-V under qemu, RV32 on the bare qemu `virt` board, Cortex-M on emulated Cortex-M3 and Cortex-M0 boards), and runs the Forth example files. The audit command is:
 
 ```sh
 lake env lean formal/Audit.lean
@@ -2111,7 +2258,7 @@ Formal results describe the machine models and their stated interfaces. Differen
 
 When adding an operation, a useful path is to define its semantic behavior, connect its translation with an appropriate correctness result, and add a shared sample. An existing example provides a manageable starting point. For source-interface work, parser and printer properties show how text behavior can receive the same attention as machine behavior. For backend work, the instruction-family files indicate where a new local simulation joins the complete step theorem.
 
-After a code change, use the project's build, audit, and backend checks as the repository workflow prescribes. For navigation and documentation, this atlas lets you move directly to the relevant source file and follow its imports. Each numbered stop identifies a real module's contribution, from the first word representation to the six target machines.
+After a code change, use the project's build, audit, and backend checks as the repository workflow prescribes. For navigation and documentation, this atlas lets you move directly to the relevant source file and follow its imports. Each numbered stop identifies a real module's contribution, from the first word representation to the seven target machines.
 
 ## License
 

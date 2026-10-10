@@ -71,6 +71,16 @@ uses semihosting (a board without a debugger needs another end-of-run signal), t
 initialisation leaves the baud rate at its reset value, and the cell address uses `lsl` and
 `add` rather than Thumb-2's indexed `ldr`.
 
+## Done: Cortex-M0 profile
+
+`backend/cortexm0` lowers the 32-bit IR to ARMv6-M (Cortex-M0, M0+, M1) and proves it end to
+end, from the flash image (`CM0.Emit.boot_correct`). ARMv6-M has no divide instruction: IR
+`div` and `sdiv` become a restoring-division loop, proved to compute `BitVec.udiv` and
+`BitVec.sdiv` (`CM0/Divide.lean`). `cm0c` runs it on an emulated micro:bit
+(`qemu-system-arm -M microbit`); CI runs it. Choices a later change may revisit: every branch is
+a `bl` (simple, at a cost in code size), constants are built from bytes rather than loaded from
+literal pools, and the stacks hold 1024 words each to fit the 16 KiB of SRAM.
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
@@ -87,7 +97,7 @@ that `parse_iff` composes into a statement about characters.
 
 The formal results cover the Lean machine models. Their agreement with real
 assemblers and runtimes is checked by execution, not proved: keep running
-`wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check` and `cmc check`
+`wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check` and `cm0c check`
 (CI uses Wasmtime v30.0.2, `qemu-aarch64`, `qemu-riscv64`, `qemu-system-riscv32` and
 `qemu-system-arm`) after every change to
 a model, lowering or emitter.
