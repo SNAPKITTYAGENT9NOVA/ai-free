@@ -17,4 +17,5 @@ import CM.SimAux
 import CM.SimStep
 import CM.Correct
 import CM.Init
+import CM.Boot
 import CM.DataOps

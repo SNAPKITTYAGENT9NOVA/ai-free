@@ -14,14 +14,18 @@ a `b.w`, `sltiu` as `cmp` and an `ite` block, `call`, `ret`). An immediate or di
 what the encoding accepts is printed as an `.error` directive, so the assembler rejects the
 program instead of emitting something else.
 
-The runtime (`prologue`, `epilogue`) is the only hand-written assembly. There is no operating
-system: the image starts with the Cortex-M vector table (initial stack pointer and reset
-vector), and the reset handler is the prologue. It
-* sets `r4 … r9` to the conventions in `CM.Lower`, with the return stack in the `.rstack`
-  section,
+The image runs from flash. It starts with the Cortex-M vector table (initial stack pointer and
+reset vector); code and the vector table stay in flash, and `.data` (IR memory, register file)
+is linked to RAM with its load address in flash. There is no operating system. The reset handler
+* copies `.data` from flash to RAM with the loop `copyCode`, which is printed from the model like
+  the lowered program and proved in `CM/Boot.lean`,
+* then runs the prologue, which sets `r4 … r9` to the conventions in `CM.Lower`, with the return
+  stack in the `.rstack` section.
+
+The rest of the runtime (`epilogue`) is hand-written assembly. It
 * implements `exitHalt` as: write `depth`, the data stack, IR memory and the virtual register
-  file to the UART (the CMSDK UART of the ARM MPS2 boards at `uartBase`, polling its
-  transmit-full bit), one word per line as eight hexadecimal digits, then stop with status 0,
+  file to the UART (a PL011, UART0 of the Stellaris LM3S6965 at `uartBase`, polling its
+  transmit-full flag), one word per line as eight hexadecimal digits, then stop with status 0,
 * implements `exitTrap t` as stopping with status `code t`, and `exitOvf` (stack overflow) with
   status 6.
 
@@ -57,7 +61,10 @@ def shiftName : Shift → String
 
 def hex (n : Nat) : String := "0x" ++ String.ofList (Nat.toDigits 16 n)
 
-def lbl (t : Nat) : String := s!".L{t}"
+/-- The label of model instruction `t` of a code list printed with label prefix `p`. -/
+def lblP (p : String) (t : Nat) : String := s!".L{p}{t}"
+
+def lbl (t : Nat) : String := lblP "" t
 
 def err (msg : String) : String := s!".error \"{msg}\""
 
@@ -87,11 +94,12 @@ def condNot : Cond → Cond
   | .slt => .sge | .sge => .slt | .sgt => .sle | .sle => .sgt
 
 /-- Branch to `t` when `c` holds after `cmp`: the opposite branch over a `b.w`. -/
-def farBranch (k : Nat) (cmp : String) (c : Cond) (t : Nat) : String :=
-  s!"{cmp}\n\tb{condName (condNot c)} .Ls{k}\n\tb.w {lbl t}\n.Ls{k}:"
+def farBranch (p : String) (k : Nat) (cmp : String) (c : Cond) (t : Nat) : String :=
+  s!"{cmp}\n\tb{condName (condNot c)} .Ls{p}{k}\n\tb.w {lblP p t}\n.Ls{p}{k}:"
 
-/-- The text of model instruction `k`. -/
-def instr (k : Nat) : Instr Nat → String
+/-- The text of model instruction `k` of a code list printed with label prefix `p` (the lowered
+program uses `""`, the start-up copy loop `"c"`). -/
+def instrP (p : String) (k : Nat) : Instr Nat → String
   | .movImm d v => li (regName d) v.toNat
   | .movRR d s => s!"mov {regName d}, {regName s}"
   | .load d b disp => ldst "ldr" d b disp
@@ -123,16 +131,18 @@ def instr (k : Nat) : Instr Nat → String
     -- `lsr`/`asr` by `#0` do not exist (that encoding means 32); a shift by 0 is a move
     if n = 0 then s!"mov {regName d}, {regName a}"
     else if n < 32 then s!"{shiftName sh} {regName d}, {regName a}, #{n}" else err s!"shift {n}"
-  | .bcc c a b t => farBranch k s!"cmp {regName a}, {regName b}" c t
-  | .beqz a t => farBranch k s!"cmp {regName a}, #0" .eq t
-  | .bnez a t => farBranch k s!"cmp {regName a}, #0" .ne t
-  | .jmp t => s!"b.w {lbl t}"
+  | .bcc c a b t => farBranch p k s!"cmp {regName a}, {regName b}" c t
+  | .beqz a t => farBranch p k s!"cmp {regName a}, #0" .eq t
+  | .bnez a t => farBranch p k s!"cmp {regName a}, #0" .ne t
+  | .jmp t => s!"b.w {lblP p t}"
   | .call t =>
-    s!"{la "lr" s!"({lbl (k + 1)} + 1)"}\n\tstr lr, [r8, #-4]!\n\tb.w {lbl t}"
+    s!"{la "lr" s!"({lblP p (k + 1)} + 1)"}\n\tstr lr, [r8, #-4]!\n\tb.w {lblP p t}"
   | .ret => "ldr lr, [r8], #4\n\tbx lr"
   | .exitHalt => "b.w .Lhalt"
   | .exitTrap t => s!"b.w .Ltrap{trapCode t}"
   | .exitOvf => "b.w .Ltrap6"
+
+def instr (k : Nat) (i : Instr Nat) : String := instrP "" k i
 
 def body (code : List (Instr Nat)) : String :=
   String.intercalate "\n" (code.zipIdx.map fun (i, k) => s!"{lbl k}:\n\t{instr k i}") ++ "\n"
@@ -140,7 +150,7 @@ def body (code : List (Instr Nat)) : String :=
 /-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack placement (`rcap`
 entries ending at `rEnd`), IR memory image, register-file size, auxiliary-stack placement
 (`acap` words ending at `aEnd`), the initial stack pointer of the vector table (used only by
-exception entry; the lowered code does not use `sp`), and the UART address. The three stacks
+exception entry; the lowered code does not use `sp`), and the address of the PL011 UART. The three stacks
 are sections the linker places at fixed addresses (`cmc` uses a linker script). -/
 structure Runtime where
   dEnd : Nat
@@ -152,7 +162,7 @@ structure Runtime where
   aEnd : Nat
   acap : Nat
   spInit : Nat := 0x20010000
-  uartBase : Nat := 0x40004000
+  uartBase : Nat := 0x4000C000
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -171,11 +181,34 @@ def vectors (r : Runtime) : String :=
   "\t.syntax unified\n\t.thumb\n\t.section .vectors, \"a\"\n" ++
   s!"\t.word {hex r.spInit}\n\t.word _start\n"
 
-/-- The runtime prologue, the reset handler. Its model is `CM.Emit.prologueCode`
-(`CM/Init.lean`), where each address is the `movImm` of the address the linker resolves the
-symbol to; keep the two in step. -/
+/-- The `.data` image: IR memory, the register file (`nregs + 1` words) and the two-word
+semihosting parameter block, in the order `epilogue` lays them out. The image is linked into
+flash and copied to RAM at reset. -/
+def dataImage (r : Runtime) : List Nat := r.memImage ++ List.replicate (r.nregs + 3) 0
+
+def dataWords (r : Runtime) : Nat := (dataImage r).length
+
+/-- The start-up copy loop: copy `n` words from `lma` (flash) to `vma` (RAM). Model indices
+`0 … 9`; it falls through to index 10, where the prologue starts. -/
+def copyCode (lma vma : W) (n : Nat) : List (Instr Nat) :=
+  [.movImm .r1 lma, .movImm .r2 vma, .movImm .r3 (BitVec.ofNat 32 n), .beqz .r3 10,
+   .load .r0 .r1 0, .store .r2 0 .r0, .addImm .r1 4, .addImm .r2 4, .addImm .r3 (-1),
+   .bnez .r3 4]
+
+/-- The text of the copy loop: `copyCode` printed with label prefix `c`, the two addresses as the
+symbols the linker resolves (`__data_load`, the load address of `.data` in flash, and `irmem`,
+its start in RAM). Its model is `copyCode` with those two addresses (`CM/Boot.lean`). -/
+def copyText (r : Runtime) : String :=
+  let code := copyCode 0 0 (dataWords r)
+  s!".Lc0:\n\t{la "r1" "__data_load"}\n.Lc1:\n\t{la "r2" "irmem"}\n" ++
+  String.join ((code.zipIdx.drop 2).map fun (i, k) => s!"{lblP "c" k}:\n\t{instrP "c" k i}\n") ++
+  ".Lc10:\n"
+
+/-- The reset handler: the copy loop, then the prologue. The prologue's model is
+`CM.Emit.prologueCode` (`CM/Init.lean`), where each address is the `movImm` of the address the
+linker resolves the symbol to; keep the two in step. -/
 def prologue (r : Runtime) : String :=
-  vectors r ++ "\t.text\n\t.globl _start\n\t.thumb_func\n_start:\n" ++
+  vectors r ++ "\t.text\n\t.globl _start\n\t.thumb_func\n_start:\n" ++ copyText r ++
   s!"\t{li "r7" r.rEnd}\n\tmov r8, r7\n\t{la "r6" "irmem"}\n\t{la "r5" "regfile"}\n" ++
   s!"\t{li "r4" r.dEnd}\n\t{li "r9" r.aEnd}\n"
 
@@ -186,7 +219,7 @@ through semihosting with status `r1`. -/
 def devices (r : Runtime) : String :=
   "\t.thumb_func\nputc:\n" ++
   s!"\t{li "r12" r.uartBase}\n" ++
-  "1:\tldr r11, [r12, #4]\n\ttst r11, #1\n\tbne 1b\n\tstr r3, [r12]\n\tbx lr\n" ++
+  "1:\tldr r11, [r12, #0x18]\n\ttst r11, #0x20\n\tbne 1b\n\tstr r3, [r12]\n\tbx lr\n" ++
   "\t.thumb_func\nputw:\n\tmov r10, lr\n\tmovs r1, #28\n" ++
   "2:\tlsr r2, r0, r1\n\tand r2, r2, #15\n\tcmp r2, #10\n\tite lo\n" ++
   "\taddlo r3, r2, #48\n\taddhs r3, r2, #87\n\tbl putc\n" ++
@@ -197,9 +230,12 @@ def devices (r : Runtime) : String :=
   s!".Lexit:\n\t{la "r0" "exitblk"}\n\t{li "r2" 0x20026}\n" ++
   "\tstr r2, [r0]\n\tstr r1, [r0, #4]\n\tmov r1, r0\n\tmovs r0, #0x20\n\tbkpt 0xab\n7:\tb 7b\n"
 
-/-- Turn on the UART transmitter (`CTRL.TXEN`). -/
+/-- Turn on UART0: its clock (`RCGC1`, bit 0, in the Stellaris system control block) and the
+UART with its transmitter (`UARTCTL = UARTEN | TXE | RXE`). The baud rate is left at its reset
+divisor; the emulator ignores it. -/
 def uartOn (r : Runtime) : String :=
-  s!"\t{li "r12" r.uartBase}\n\tmovs r11, #1\n\tstr r11, [r12, #8]\n"
+  s!"\t{li "r12" 0x400FE104}\n\tldr r11, [r12]\n\torr r11, r11, #1\n\tstr r11, [r12]\n" ++
+  s!"\t{li "r12" r.uartBase}\n\tmovw r11, #0x301\n\tstr r11, [r12, #0x30]\n"
 
 def epilogue (r : Runtime) : String :=
   let m := r.memImage.length

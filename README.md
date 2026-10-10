@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is the project's single guide. [Part I](#part-i-the-atlas) is a guided journey through that atlas: every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **176 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 22 files of the Cortex-M profile (`backend/cortexm`) and the 32-bit harness `backend/common/Harness32.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **177 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 23 files of the Cortex-M profile (`backend/cortexm`) and the 32-bit harness `backend/common/Harness32.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Contents
 
@@ -887,9 +887,9 @@ Exports the RV32 model, lowering, bare-metal emitter, simulation modules, whole-
 
 Implements `rv32c`: emit assembly, assemble with `clang`, link with `ld.lld` and a linker script that places code at `0x80000000`, run on the QEMU `virt` board with no firmware, read the UART dump, and compare against the Lean semantics at width 32. The shared samples and generated programs are narrowed to 32-bit words; Forth files are compiled at width 32. It also runs 32-bit edge cases, the auxiliary-stack and overflow programs, and the hand-written data-processing check.
 
-## Station XII: the Cortex-M profile — files 155–176
+## Station XII: the Cortex-M profile — files 155–177
 
-The same 32-bit IR on an ARM Cortex-M (Thumb-2, ARMv7-M: Cortex-M3 and later), with no operating system. The proof structure is that of the RV32 profile; what differs is the instruction set: ARM conditions after `cmp`, `movw`/`movt` constants, `ror` for rotations, shifts by the bottom byte of a register, and division by zero giving zero. `cmc` runs the image on an emulated Cortex-M3 board (`qemu-system-arm -M mps2-an385`), which starts from the vector table.
+The same 32-bit IR on an ARM Cortex-M (Thumb-2, ARMv7-M: Cortex-M3 and later), with no operating system. The proof structure is that of the RV32 profile; what differs is the instruction set: ARM conditions after `cmp`, `movw`/`movt` constants, `ror` for rotations, shifts by the bottom byte of a register, and division by zero giving zero. The image runs from flash: the reset handler copies `.data` to SRAM with a loop that is proved like the lowered code (`Boot.lean`). `cmc` runs it on an emulated Cortex-M3 microcontroller with read-only flash, the Stellaris LM3S6965 (`qemu-system-arm -M lm3s6965evb`).
 
 ### 155. [Isa.lean](backend/cortexm/CM/Isa.lean) — a Cortex-M core in the model
 
@@ -901,7 +901,7 @@ Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The ro
 
 ### 157. [Emit.lean](backend/cortexm/CM/Emit.lean) — a vector table, a UART and a breakpoint
 
-Prints Thumb-2 for `clang --target=thumbv7m-none-eabi`: constants as `movw`/`movt`, comparisons as `cmp` with the opposite branch over a `b.w`, calls as `movw`/`movt lr` with the Thumb bit, `str lr, [r8, #-4]!` and `b.w`. The runtime starts with the Cortex-M vector table (initial stack pointer, reset vector); the halt dump goes to the CMSDK UART of the MPS2 boards and the machine stops through semihosting (`bkpt 0xab`, `SYS_EXIT_EXTENDED`) with the exit status.
+Prints Thumb-2 for `clang --target=thumbv7m-none-eabi`: constants as `movw`/`movt`, comparisons as `cmp` with the opposite branch over a `b.w`, calls as `movw`/`movt lr` with the Thumb bit, `str lr, [r8, #-4]!` and `b.w`. The runtime starts with the Cortex-M vector table (initial stack pointer, reset vector) in flash; the reset handler copies `.data` from flash to SRAM with `copyCode`, printed from the model, then runs the prologue. The halt dump goes to UART0 (a PL011) of the Stellaris LM3S6965 and the machine stops through semihosting (`bkpt 0xab`, `SYS_EXIT_EXTENDED`) with the exit status.
 
 ### 158. [Rel.lean](backend/cortexm/CM/Rel.lean) — match the two timetables
 
@@ -967,17 +967,21 @@ The auxiliary stack on `r9`: guards and the `tor`, `fromr` and `rfetch` simulati
 
 The six-instruction reset handler (`movw`/`movt` pairs as `movImm`), `entry_rel` and `binary_correct`. `Loader.Holds` states what the image loader or debug probe must have placed in memory.
 
-### 174. [DataOps.lean](backend/cortexm/CM/DataOps.lean) — the photographed program, on Cortex-M
+### 174. [Boot.lean](backend/cortexm/CM/Boot.lean) — boot from flash, proved
+
+The reset handler's copy of `.data` from flash to RAM, proved: `copy_loop` (the loop invariant), `copy_run` (the whole loop, including an empty `.data`), `copy_holds` (afterwards `Loader.Holds` is true, so RAM holds the IR memory image and a zeroed register file) and `boot_correct` (from facts about flash only, `FlashHolds`, the copy loop, the prologue and the lowered code reach the IR outcome or exit with `overflow`).
+
+### 175. [DataOps.lean](backend/cortexm/CM/DataOps.lean) — the photographed program, on Cortex-M
 
 The three-register and constant-shift forms in Thumb-2 (`add sub mul and orr eor`, `lsl lsr asr`), with their unsigned and signed meanings, `lsl_reg_40` and `lsl_reg_257` (the bottom-byte rule), and `dataProcessing_run` for the AArch64 data-processing program written for `r0 … r11`.
 
-### 175. [CM.lean](backend/cortexm/CM.lean) — the Cortex-M library entrance
+### 176. [CM.lean](backend/cortexm/CM.lean) — the Cortex-M library entrance
 
-Exports the Cortex-M model, lowering, emitter, simulation modules, whole-program proofs, initialization result and hand-written programs.
+Exports the Cortex-M model, lowering, emitter, simulation modules, whole-program proofs, initialization and flash-boot results, and hand-written programs.
 
-### 176. [CMMain.lean](backend/cortexm/CMMain.lean) — ride the line on a Cortex-M3
+### 177. [CMMain.lean](backend/cortexm/CMMain.lean) — ride the line on a Cortex-M3
 
-Implements `cmc`: emit assembly, assemble with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3`, link with `ld.lld` and a linker script (vector table and code at address 0, data and stacks in SRAM), run on the emulated MPS2 board, and compare with the Lean semantics at width 32 through `Harness32`, plus the hand-written data-processing check.
+Implements `cmc`: emit assembly, assemble with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3`, link with `ld.lld` and a linker script (vector table, code and the load image of `.data` in flash; `.data` and the stacks in SRAM), run on the emulated Stellaris LM3S6965 board, and compare with the Lean semantics at width 32 through `Harness32`, plus the hand-written data-processing check.
 
 # Part II: how each part works
 
@@ -1900,8 +1904,8 @@ over; the differences are in the instruction set:
 | register shift amount | modulo 32 | bottom byte (32 … 255 give zero) |
 | `rotl` / `rotr` | two shifts and an `or` | `ror` by `-b` / `ror` by `b` (`ror_neg`, `ror_reg`) |
 | division by zero (hardware) | all ones | zero |
-| start | `_start` at `0x80000000` | vector table at 0: initial `sp`, reset vector |
-| halt output | 16550 UART | CMSDK UART (MPS2 boards) |
+| start | `_start` at `0x80000000`, image in RAM | vector table in flash: initial `sp`, reset vector; `.data` copied from flash to SRAM (`Boot.lean`) |
+| halt output | 16550 UART | PL011 UART0 (Stellaris LM3S6965) |
 | exit status | SiFive test device | semihosting `SYS_EXIT_EXTENDED` |
 
 The model has no flags. Thumb-2 sets and reads them, but every use is inside one fixed sequence
@@ -1909,11 +1913,25 @@ that the model treats as one instruction, so they are dead between model instruc
 keeps the proofs those of a flagless machine, as on RISC-V. The lowering guards the zero divisor
 before `udiv`/`sdiv`, so the hardware's zero is never observed; the model states it anyway.
 
+### `CM/Boot.lean`: booting from flash
+
+On a microcontroller the image sits in flash, and only RAM is writable. The Cortex-M image keeps
+its vector table and code in flash, and links `.data` (IR memory, register file, semihosting
+block) to SRAM with its load address in flash. The reset handler copies it with a ten-instruction
+loop, `Emit.copyCode`, which is a list of model instructions printed the same way as the lowered
+program. `Boot.lean` proves it: the invariant `copy_loop` (after `j` words, RAM holds the first `j`
+image words and every address outside the RAM area is unchanged, so flash still holds the image),
+`copy_run`, and `copy_holds`, which turns the RAM assumption `Loader.Holds` of `Init.lean` into a
+theorem from facts about flash only (`FlashHolds`). `boot_correct` composes it with
+`binary_correct`. The emulated flash ignores writes, and `Harness32`'s `w32_memory_image` sample
+halts with values read from a non-zero memory image, so a missing or wrong copy fails `cmc check`.
+
 ### `CMMain.lean` (the `cmc` executable)
 
 It emits assembly, assembles it with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3`, links
-with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M mps2-an385 -kernel`
-and semihosting enabled, and compares the exit status and UART dump with the Lean semantics at
+with `ld.lld` and a linker script (code and the `.data` load image in flash, `.data` and the
+stacks in the 64 KiB of SRAM), runs the image with `qemu-system-arm -M lm3s6965evb -kernel` and
+semihosting enabled, and compares the exit status and UART dump with the Lean semantics at
 width 32 through `Harness32` (the same programs as `rv32c`). The hand-written check runs the
 data-processing program of `CM/DataOps.lean` and 100 random programs whose registers often hold
 small values, so register shifts by 32 to 255 and by 256 or more, and zero divisors, occur.
@@ -1938,7 +1956,7 @@ flowchart TD
     MM["RV32 model = hardware,<br/>UART and test device<br/>(tested on the qemu virt board)"]
     CMM["Cortex-M model = hardware,<br/>UART and semihosting<br/>(tested on an emulated Cortex-M3)"]
     INST["wasm instantiation rule"]
-    LDR["ELF loader facts (Loader.Holds)"]
+    LDR["ELF loader facts (Loader.Holds;<br/>for Cortex-M only flash facts, FlashHolds)"]
   end
   subgraph Unproved["Not proved (NEXT_STEPS.md)"]
     LEX["lexer against an independent<br/>specification"]

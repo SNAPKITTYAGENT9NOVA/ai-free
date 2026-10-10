@@ -63,11 +63,13 @@ the device addresses are those of the `virt` board, and the stacks hold 4096 wor
 ## Done: Cortex-M profile
 
 `backend/cortexm` lowers the 32-bit IR to Thumb-2 (ARMv7-M) and proves it end to end
-(`CM.Emit.binary_correct`), with a bare-metal runtime (vector table, CMSDK UART output,
-semihosting exit). `cmc` runs it on an emulated Cortex-M3 (`qemu-system-arm -M mps2-an385`); CI
-runs it. Choices a later change may revisit: the image runs from RAM, the stop uses semihosting
-(a board without a debugger needs another end-of-run signal), the UART is the MPS2 board's, and
-the cell address uses `lsl` and `add` rather than Thumb-2's indexed `ldr`.
+(`CM.Emit.binary_correct`), with a bare-metal runtime (vector table, UART output, semihosting
+exit). The image boots from flash: the reset handler's copy of `.data` to SRAM is proved
+(`CM/Boot.lean`, `boot_correct`). `cmc` runs it on an emulated Stellaris LM3S6965 Cortex-M3
+(`qemu-system-arm -M lm3s6965evb`); CI runs it. Choices a later change may revisit: the stop
+uses semihosting (a board without a debugger needs another end-of-run signal), the UART
+initialisation leaves the baud rate at its reset value, and the cell address uses `lsl` and
+`add` rather than Thumb-2's indexed `ldr`.
 
 ## 1. Forth: double-cell storage and arithmetic
 

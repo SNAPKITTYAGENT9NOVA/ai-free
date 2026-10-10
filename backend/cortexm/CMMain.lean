@@ -8,11 +8,13 @@ Execution harness for the Cortex-M profile: Thumb-2 (ARMv7-M), 32-bit words, no 
 For each program it
 1. lowers the 32-bit IR to Thumb-2 and emits assembly with the bare-metal runtime (`CM.Emit`),
 2. assembles it with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3` and links it with
-   `ld.lld` and the linker script `linkerScript` (vector table and code from address 0, data in
-   SRAM from `0x20000000`, the three stacks at fixed addresses),
-3. runs the image on the emulated ARM MPS2 board with a Cortex-M3 (`qemu-system-arm -M
-   mps2-an385`), which takes the initial stack pointer and reset vector from the vector table,
-   prints through the CMSDK UART and stops through semihosting,
+   `ld.lld` and the linker script `linkerScript`: vector table and code in flash from address 0,
+   `.data` in SRAM from `0x20000000` with its load address in flash, the three stacks in SRAM,
+3. runs the image on the emulated Stellaris LM3S6965 evaluation board, a Cortex-M3 with 256 KiB
+   of flash and 64 KiB of SRAM (`qemu-system-arm -M lm3s6965evb`). It takes the initial stack
+   pointer and reset vector from the vector table, copies `.data` from flash to SRAM, prints
+   through UART0 and stops through semihosting. The emulated flash ignores writes, so a program
+   that ran on the flash copy of `.data` instead of the RAM copy would fail the comparison,
 4. runs the same IR program under the Lean semantics at width 32 (`WordDialect.run`), and
 5. compares the exit status and the dumped data stack, IR memory and virtual registers.
 
@@ -27,15 +29,17 @@ Usage: `cmc check [fuzzCount]`, `cmc emit <sample>`, `cmc forth <file.fs> [memWo
 
 open WordDialect
 
-/-! ## Building and running on the MPS2 board -/
+/-! ## Building and running on the Stellaris board -/
 
-def dBase : Nat := 0x20100000
+/-- SRAM (64 KiB from `0x20000000`): `.data` in the first 4 KiB, then the three stacks of 4096
+words (16 KiB) each, and the initial stack pointer at the top. -/
+def dBase : Nat := 0x20001000
 def capacity : Nat := 4096
 def dEnd : Nat := dBase + 4 * capacity
-def aBase : Nat := 0x20200000
+def aBase : Nat := 0x20005000
 def acap : Nat := 4096
 def aEnd : Nat := aBase + 4 * acap
-def rBase : Nat := 0x20300000
+def rBase : Nat := 0x20009000
 def rcap : Nat := 4096
 def rEnd : Nat := rBase + 4 * rcap
 
@@ -46,14 +50,17 @@ def runtimeFor (s : Sample32) : CM.Emit.Runtime :=
 def asmFor (s : Sample32) : String :=
   CM.Emit.program (runtimeFor s) (CM.lowerProg (runtimeFor s).layout s.prog)
 
-/-- The vector table and code from address 0 (where a Cortex-M reads its initial stack pointer
-and reset vector), data in SRAM; the stacks are uninitialised sections at fixed addresses. -/
+/-- The vector table and code in flash from address 0 (where a Cortex-M reads its initial stack
+pointer and reset vector); `.data` in the first 4 KiB of SRAM, loaded into flash after the code
+(`__data_load`); the stacks are uninitialised sections at fixed addresses. -/
 def linkerScript : String :=
-  "ENTRY(_start)\nSECTIONS {\n  . = 0x0;\n  .vectors : { *(.vectors) }\n  .text : { *(.text*) }\n" ++
-  "  .data 0x20000000 : { *(.data*) }\n" ++
-  s!"  .dstack {CM.Emit.hex dBase} (NOLOAD) : \{ *(.dstack) }\n" ++
-  s!"  .astack {CM.Emit.hex aBase} (NOLOAD) : \{ *(.astack) }\n" ++
-  s!"  .rstack {CM.Emit.hex rBase} (NOLOAD) : \{ *(.rstack) }\n}\n"
+  "ENTRY(_start)\nMEMORY {\n  FLASH (rx) : ORIGIN = 0x0, LENGTH = 256K\n" ++
+  "  DATA (rw) : ORIGIN = 0x20000000, LENGTH = 4K\n  STACKS (rw) : ORIGIN = 0x20001000, LENGTH = 48K\n}\nSECTIONS {\n" ++
+  "  .vectors : { *(.vectors) } > FLASH\n  .text : { *(.text*) } > FLASH\n" ++
+  "  .data : { *(.data*) } > DATA AT > FLASH\n  __data_load = LOADADDR(.data);\n" ++
+  s!"  .dstack {CM.Emit.hex dBase} (NOLOAD) : \{ *(.dstack) } > STACKS\n" ++
+  s!"  .astack {CM.Emit.hex aBase} (NOLOAD) : \{ *(.astack) } > STACKS\n" ++
+  s!"  .rstack {CM.Emit.hex rBase} (NOLOAD) : \{ *(.rstack) } > STACKS\n}\n"
 
 def workDir : String := "/tmp/cmc"
 
@@ -72,7 +79,7 @@ def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
   if l.exitCode != 0 then return .error s!"ld.lld failed: {l.stderr}"
   let child ← IO.Process.spawn
     { cmd := "qemu-system-arm",
-      args := #["-machine", "mps2-an385", "-kernel", base, "-display", "none", "-serial", "stdio",
+      args := #["-machine", "lm3s6965evb", "-kernel", base, "-display", "none", "-serial", "stdio",
         "-monitor", "none", "-semihosting-config", "enable=on,target=native"],
       stdout := .piped, stderr := .null, stdin := .null }
   let out ← readAll child.stdout ByteArray.empty

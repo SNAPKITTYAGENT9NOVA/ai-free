@@ -28,6 +28,10 @@ be derived inside the model, so it is stated once, explicitly, as `Loader.Holds`
   file and IR memory are addressable;
 * the placement is disjoint and in range (`Geom`).
 
+When the image runs from flash, as `cmc` builds it, the reset handler first copies `.data` from
+flash to RAM, and `CM/Boot.lean` proves that the copy establishes these facts from facts about
+flash only (`copy_holds`, `boot_correct`).
+
 `binary_correct`: under those loader facts, after the prologue the lowered code reaches the IR
 outcome from `State.init` on the memory image, or exits with `overflow`. Its other hypotheses are
 only about the program.

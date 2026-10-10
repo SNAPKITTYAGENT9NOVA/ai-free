@@ -120,7 +120,11 @@ def samples32 : List Sample32 :=
       prog := [.word 0x80000000, .word 0x7fffffff, .cmp .slt, .word 0x80000000, .word 0x7fffffff,
                .cmp .ult, .halt] }
   , { name := "w32_memory", mem := [7, 0xffffffff, 3], nregs := 2,
-      prog := [.word 1, .load, .word 2, .load, .add, .word 0, .store, .word 3, .load, .halt] } ]
+      prog := [.word 1, .load, .word 2, .load, .add, .word 0, .store, .word 3, .load, .halt] }
+    -- halts with values read from a non-zero memory image: the image must have reached RAM
+  , { name := "w32_memory_image", mem := [7, 0xffffffff, 3, 0x12345678], nregs := 2,
+      prog := [.word 1, .load, .word 2, .load, .add, .word 0, .store, .word 0, .load, .word 3,
+               .load, .halt] } ]
 
 /-- Programs that grow a stack without bound: the emitted code must stop with exit 6. -/
 def overflowSamples32 : List Sample32 :=

@@ -169,12 +169,16 @@ Porting:
   profile (`CM.Emit.binary_correct`). Flags are not model state: every flag-setting instruction
   sits inside one fixed sequence with its reader. Rotations use `ror`; register shifts follow
   ARM's bottom-byte rule, and division by zero gives zero. The image starts from the Cortex-M
-  vector table, prints through the CMSDK UART and stops through semihosting; `cmc` runs it on an
-  emulated Cortex-M3 (`qemu-system-arm -M mps2-an385`) through the shared 32-bit harness
-  (`Harness32`). CI runs it.
-* Next candidates: running the images from flash (start-up code that copies `.data` to RAM,
-  which `Loader.Holds` would then describe), and an ARMv6-M (Cortex-M0) profile, which has no
-  hardware divide and only 16-bit Thumb instructions.
+  vector table, prints through a UART and stops through semihosting; `cmc` runs it on an
+  emulated Cortex-M3 microcontroller through the shared 32-bit harness (`Harness32`). CI runs it.
+* **Booting from flash (Cortex-M): done.** The image keeps its vector table and code in flash,
+  and the reset handler copies `.data` to SRAM with a loop printed from the model and proved
+  (`CM/Boot.lean`: `copy_loop`, `copy_holds`, `boot_correct`). The end-to-end theorem now starts
+  from facts about flash only (`FlashHolds`) instead of assuming RAM already holds the data.
+  `cmc` runs it on the Stellaris LM3S6965 (`qemu-system-arm -M lm3s6965evb`), whose emulated
+  flash ignores writes.
+* Next candidates: an ARMv6-M (Cortex-M0) profile, which has no hardware divide and mostly
+  16-bit Thumb instructions, and the same flash boot for the RV32 profile.
 
 ## The strategic opportunity
 
