@@ -60,6 +60,15 @@ operating system). `rv32c` runs it on the QEMU `virt` board with no firmware; CI
 Choices a later change may revisit: the image runs from RAM (no flash-to-RAM copy of `.data`),
 the device addresses are those of the `virt` board, and the stacks hold 4096 words each.
 
+## Done: Cortex-M profile
+
+`backend/cortexm` lowers the 32-bit IR to Thumb-2 (ARMv7-M) and proves it end to end
+(`CM.Emit.binary_correct`), with a bare-metal runtime (vector table, CMSDK UART output,
+semihosting exit). `cmc` runs it on an emulated Cortex-M3 (`qemu-system-arm -M mps2-an385`); CI
+runs it. Choices a later change may revisit: the image runs from RAM, the stop uses semihosting
+(a board without a debugger needs another end-of-run signal), the UART is the MPS2 board's, and
+the cell address uses `lsl` and `add` rather than Thumb-2's indexed `ldr`.
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
@@ -76,6 +85,7 @@ that `parse_iff` composes into a statement about characters.
 
 The formal results cover the Lean machine models. Their agreement with real
 assemblers and runtimes is checked by execution, not proved: keep running
-`wordc check`, `wasmw check`, `a64c check`, `rv64c check` and `rv32c check` (CI uses
-Wasmtime v30.0.2, `qemu-aarch64`, `qemu-riscv64` and `qemu-system-riscv32`) after every change to
+`wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check` and `cmc check`
+(CI uses Wasmtime v30.0.2, `qemu-aarch64`, `qemu-riscv64`, `qemu-system-riscv32` and
+`qemu-system-arm`) after every change to
 a model, lowering or emitter.

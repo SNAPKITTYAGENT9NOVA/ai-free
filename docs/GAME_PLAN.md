@@ -47,8 +47,9 @@ emitted, and proved against their models (`X86.Emit.binary_correct`, `A64.Emit.b
 application processors; both backends are tested under qemu. The RV32 microcontroller profile
 (`backend/rv32`, `RV32.Emit.binary_correct`) runs the IR at 32-bit words with no operating
 system: the program starts at the reset address, prints through a UART and stops through a test
-device, and `rv32c` tests it on the bare QEMU `virt` board. An ARM Cortex-M (Thumb-2) profile is
-not modelled yet.
+device, and `rv32c` tests it on the bare QEMU `virt` board. The Cortex-M profile (`backend/cortexm`,
+`CM.Emit.binary_correct`) does the same in Thumb-2 for ARM Cortex-M3 and later cores, starting
+from the vector table, and `cmc` tests it on an emulated Cortex-M3 board.
 
 ### 3. Verified GPU and numerical kernels
 
@@ -126,8 +127,8 @@ flowchart TB
 | 1 | Formal word semantics | Establishes exactly what every operation means | Done: `formal/WordDialect/` |
 | 2 | Reference interpreter | Provides executable ground truth | Done: `exec`/`step`, `Forth.eval`, `BCPL` and `Wolfram` evaluators |
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
-| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, Forth example files |
-| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: five (x86-64, AArch64, RISC-V at 64 and 32 bits, and WebAssembly), proved against their models |
+| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, Forth example files |
+| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: six (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M, and WebAssembly), proved against their models |
 | 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
@@ -163,8 +164,17 @@ Porting:
   `rv32c` runs it with `qemu-system-riscv32 -machine virt -bios none`, on the shared samples and
   generated programs narrowed to 32 bits, 32-bit edge cases and the Forth files compiled at
   width 32. CI runs it.
-* Next candidates: an ARM Cortex-M (Thumb-2) profile, and running the RV32 image from flash
-  (start-up code that copies `.data`, which `Loader.Holds` would then describe).
+* **Cortex-M profile (Thumb-2, ARMv7-M, 32-bit words, no operating system): done.**
+  `backend/cortexm` lowers `Prog 32` to Thumb-2 with the structure and proofs of the RV32
+  profile (`CM.Emit.binary_correct`). Flags are not model state: every flag-setting instruction
+  sits inside one fixed sequence with its reader. Rotations use `ror`; register shifts follow
+  ARM's bottom-byte rule, and division by zero gives zero. The image starts from the Cortex-M
+  vector table, prints through the CMSDK UART and stops through semihosting; `cmc` runs it on an
+  emulated Cortex-M3 (`qemu-system-arm -M mps2-an385`) through the shared 32-bit harness
+  (`Harness32`). CI runs it.
+* Next candidates: running the images from flash (start-up code that copies `.data` to RAM,
+  which `Loader.Holds` would then describe), and an ARMv6-M (Cortex-M0) profile, which has no
+  hardware divide and only 16-bit Thumb instructions.
 
 ## The strategic opportunity
 

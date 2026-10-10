@@ -10,8 +10,8 @@ Runtime conventions (all fixed here; the assembly runtime in `RV32.Emit` establi
 | register | role |
 |----------|------|
 | `s1`    | data-stack pointer; the stack grows downward, `[s1]` is the top, empty = `dEnd` |
-| `s2`    | base of the virtual register file, cell `r` at `s2 + 8r` |
-| `s3`    | base of IR memory; IR word address `a` is at `s3 + 8a` |
+| `s2`    | base of the virtual register file, cell `r` at `s2 + 4r` |
+| `s3`    | base of IR memory; IR word address `a` is at `s3 + 4a` |
 | `s4`    | the empty return stack (`s5` at entry) |
 | `s5`    | return-stack pointer; grows downward, `[s5]` is the top return address |
 | `s6`    | auxiliary-stack pointer; grows downward, `[s6]` is the top, empty = `aEnd` |
@@ -46,7 +46,7 @@ structure Layout where
   aEnd : W        -- empty auxiliary stack: `s6 = aEnd`
   aLim : W        -- `aBase + 4`: the auxiliary stack has room for one more word iff `s6 ≥ aLim`
 
-/-- Stack-underflow guard for `k` operands: continue when `s1 ≤ dEnd - 8k`. -/
+/-- Stack-underflow guard for `k` operands: continue when `s1 ≤ dEnd - 4k`. -/
 def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
   if k = 0 then []
   else [.movImm t0 (L.dEnd - BitVec.ofNat 32 (4 * k)), .bcc .ule s1 t0 (base + 3),

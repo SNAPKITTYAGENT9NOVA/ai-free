@@ -1,15 +1,15 @@
-import RV32.SimStack
+import CM.SimStack
 
 /-!
-# RV32.SimMem
+# CM.SimMem
 
 Register-file and IR-memory cells: frame lemmas for writes into those regions, the address
-computation `slli t0, t0, 2; add t0, s3` (`idx_addr`, `idx_steps`), and the IR-memory load and
+computation `lsl r0, r0, #2; add r0, r0, r6` (`idx_addr`, `idx_steps`), and the IR-memory load and
 store (`ld_mem`, `st_mem`).
 -/
 
 namespace WordDialect
-namespace RV32
+namespace CM
 
 open Reg
 
@@ -89,18 +89,18 @@ theorem wf_mem_rf (hg : Geom c) (hs : Rel0 c p s x) {A : Nat} {v : W} {mem' : Me
   simp only [hne, ite_false]
   exact hs.mem a ha
 
-/-- Load virtual register `r` (through `s2`). -/
+/-- Load virtual register `r` (through `r5`). -/
 theorem ld_reg (hs : Rel0 c p s x) {r : Nat} (hr : r < c.nregs) (rd : Reg) {disp : Int}
     (hd : disp = 4 * (r : Int)) :
-    exec (.load rd Reg.s2 disp) x = .next (x.mov rd (s.regs r)) := by
+    exec (.load rd Reg.r5 disp) x = .next (x.mov rd (s.regs r)) := by
   have hread := hs.regs r hr
-  simp only [exec, M.ea, hs.s2, hd, ea_nat]
+  simp only [exec, M.ea, hs.r5, hd, ea_nat]
   rw [hread]
 
 /-- Store into virtual register `r`. -/
 theorem st_reg (hg : Geom c) (hs : Rel0 c p s x) {r : Nat} (hr : r < c.nregs) (rs : Reg)
     {disp : Int} (hd : disp = 4 * (r : Int)) :
-    ∃ mem', exec (.store Reg.s2 disp rs) x = .next { x.adv with mem := mem' } ∧
+    ∃ mem', exec (.store Reg.r5 disp rs) x = .next { x.adv with mem := mem' } ∧
       Rel0 c p { s with regs := State.setReg s.regs r (x.regs rs) } { x.adv with mem := mem' } := by
   have hrf := hg.rf_lt
   have hA1 : c.rf ≤ c.rf + 4 * r := by omega
@@ -110,21 +110,21 @@ theorem st_reg (hg : Geom c) (hs : Rel0 c p s x) {r : Nat} (hr : r < c.nregs) (r
   obtain ⟨mem', hw⟩ : ∃ m', x.mem.write? (ofN (c.rf + 4 * r)) (x.regs rs) = some m' := by
     simp [Memory.write?, hvalid]
   refine ⟨mem', ?_, ?_⟩
-  · simp only [exec, M.ea, hs.s2, hd, ea_nat]; rw [hw]
+  · simp only [exec, M.ea, hs.r5, hd, ea_nat]; rw [hw]
   · have hA : (c.rf ≤ c.rf + 4 * r ∧ c.rf + 4 * r < c.rf + 4 * c.nregs) ∨
         (c.mb ≤ c.rf + 4 * r ∧ c.rf + 4 * r < c.mb + 4 * c.M) := Or.inl ⟨hA1, hA2⟩
-    refine { s1 := ?_, s2 := ?_, s3 := ?_, s4 := ?_, s5 := ?_,
+    refine { r4 := ?_, r5 := ?_, r6 := ?_, r7 := ?_, r8 := ?_,
              stack := wf_stack hg hs hw hAlt hA, regs := ?_, mem := wf_mem_rf hg hs hw hAlt ⟨hA1, hA2⟩,
              rs := wf_rs hg hs hw hAlt hA, irvalid := hs.irvalid, xvalid := ?_, capD := hs.capD,
-             capR := hs.capR, s6 := by simpa [M.adv] using hs.s6,
+             capR := hs.capR, r9 := by simpa [M.adv] using hs.r9,
              aux := aux_write_other hg.aEnd_lt hs.capA hs.aux hw hAlt
                (by rcases hg.dA_F with h | h <;> omega),
              capA := hs.capA }
-    · simpa [M.adv] using hs.s1
-    · simpa [M.adv] using hs.s2
-    · simpa [M.adv] using hs.s3
-    · simpa [M.adv] using hs.s4
-    · simpa [M.adv] using hs.s5
+    · simpa [M.adv] using hs.r4
+    · simpa [M.adv] using hs.r5
+    · simpa [M.adv] using hs.r6
+    · simpa [M.adv] using hs.r7
+    · simpa [M.adv] using hs.r8
     · intro r' hr'
       rw [read_write_nat hw hAlt (by omega)]
       by_cases h : r' = r
@@ -136,8 +136,9 @@ theorem st_reg (hg : Geom c) (hs : Rel0 c p s x) {r : Nat} (hr : r < c.nregs) (r
       show RegionsValid c mem'.valid
       rw [this]; exact hs.xvalid
 
-/-- RV32 has no indexed addressing: `slli t0, t0, 2; add t0, s3` computes the address. -/
-theorem ofInt_zero64 : BitVec.ofInt 32 0 = 0#32 := by decide
+/-- The address of IR cell `a`: `lsl r0, r0, #2; add r0, r0, r6`. (Thumb-2 also has an indexed
+`ldr r0, [r6, r0, lsl #2]`; the lowering keeps the two-instruction form of `RV32.Lower`.) -/
+theorem ofInt_zero32 : BitVec.ofInt 32 0 = 0#32 := by decide
 
 theorem idx_addr (mb : Nat) (a : W) : (a <<< (2 % 32)) + ofN mb = ofN (mb + 4 * a.toNat) := by
   apply BitVec.eq_of_toNat_eq
@@ -145,31 +146,31 @@ theorem idx_addr (mb : Nat) (a : W) : (a <<< (2 % 32)) + ofN mb = ofN (mb + 4 * 
     show (2 : Nat) % 32 = 2 from rfl, show (2 : Nat) ^ 2 = 4 from rfl]
   omega
 
-/-- The address computation, preserving the relation (only `t0` changes). -/
-theorem idx_steps (hs : Rel0 c p s x) {code : List (Instr Nat)} {a : W} (hrax : x.regs t0 = a)
-    (hat : RAt code x.pc [.shlImm t0 2, .add t0 Reg.s3]) :
+/-- The address computation, preserving the relation (only `r0` changes). -/
+theorem idx_steps (hs : Rel0 c p s x) {code : List (Instr Nat)} {a : W} (hrax : x.regs r0 = a)
+    (hat : RAt code x.pc [.shlImm r0 2, .add r0 Reg.r6]) :
     ∃ x2, RSteps code x x2 ∧ Rel0 c p s x2 ∧ x2.pc = x.pc + 2 ∧
-      x2.regs t0 = ofN (c.mb + 4 * a.toNat) ∧ (∀ r, r ≠ t0 → x2.regs r = x.regs r) ∧
+      x2.regs r0 = ofN (c.mb + 4 * a.toNat) ∧ (∀ r, r ≠ r0 → x2.regs r = x.regs r) ∧
       x2.mem = x.mem := by
   obtain ⟨f0, f1, _⟩ := hat
-  let x1 := x.arith t0 (x.regs t0 <<< (2 % 32))
+  let x1 := x.arith r0 (x.regs r0 <<< (2 % 32))
   have hst1 : step code x = .next x1 := by rw [rstep_of_fetch f0]; rfl
   have hpc1 : x1.pc = x.pc + 1 := by simp [x1, M.arith]
-  let x2 := x1.arith t0 (x1.regs t0 + x1.regs Reg.s3)
+  let x2 := x1.arith r0 (x1.regs r0 + x1.regs Reg.r6)
   have hst2 : step code x1 = .next x2 := by rw [rstep_of_fetch (m := x1) (by rw [hpc1]; exact f1)]; rfl
   refine ⟨x2, (RSteps.single hst1).trans (RSteps.single hst2), ?_, by simp [x2, x1, M.arith], ?_,
     ?_, by simp [x2, x1, M.arith, M.setReg]⟩
   · refine hs.congr (by simp [x2, x1, M.arith, M.setReg]) ?_ ?_ ?_ ?_ ?_ ?_ <;>
       simp [x2, x1, M.arith, M.setReg]
-  · simp only [x2, x1, M.arith, M.setReg, ite_true, show (Reg.s3 = t0) = False by decide, ite_false,
-      hrax, hs.s3]
+  · simp only [x2, x1, M.arith, M.setReg, ite_true, show (Reg.r6 = r0) = False by decide, ite_false,
+      hrax, hs.r6]
     exact idx_addr c.mb a
   · intro r hr; simp [x2, x1, M.arith, M.setReg, hr]
 
-/-- Load IR memory cell at word address `a` (`t0` holds its address). -/
+/-- Load IR memory cell at word address `a` (`r0` holds its address). -/
 theorem ld_mem (hs : Rel0 c p s x) {a v : W} (hr : s.mem.read? a = some v)
-    (hrax : x.regs t0 = ofN (c.mb + 4 * a.toNat)) :
-    exec (.load t0 t0 0) x = .next (x.mov t0 v) := by
+    (hrax : x.regs r0 = ofN (c.mb + 4 * a.toNat)) :
+    exec (.load r0 r0 0) x = .next (x.mov r0 v) := by
   obtain ⟨hv, hc⟩ := Memory.read?_some hr
   have hlt : a.toNat < c.M := by
     have := hs.irvalid a
@@ -177,14 +178,14 @@ theorem ld_mem (hs : Rel0 c p s x) {a v : W} (hr : s.mem.read? a = some v)
     simpa using this.symm
   have hread := hs.mem a.toNat hlt
   rw [ofN_toNat, hc] at hread
-  simp only [exec, M.ea, hrax, ofInt_zero64, BitVec.add_zero]
+  simp only [exec, M.ea, hrax, ofInt_zero32, BitVec.add_zero]
   rw [hread]
 
-/-- Store into IR memory cell `a` (`t0` holds its address, `t1 = v`). -/
+/-- Store into IR memory cell `a` (`r0` holds its address, `r1 = v`). -/
 theorem st_mem (hg : Geom c) (hs : Rel0 c p s x) {a v : W} {m : Memory 32}
-    (hw : s.mem.write? a v = some m) (hrax : x.regs t0 = ofN (c.mb + 4 * a.toNat))
-    (hrcx : x.regs t1 = v) :
-    ∃ mem', exec (.store t0 0 t1) x = .next { x.adv with mem := mem' } ∧
+    (hw : s.mem.write? a v = some m) (hrax : x.regs r0 = ofN (c.mb + 4 * a.toNat))
+    (hrcx : x.regs r1 = v) :
+    ∃ mem', exec (.store r0 0 r1) x = .next { x.adv with mem := mem' } ∧
       Rel0 c p { s with mem := m } { x.adv with mem := mem' } := by
   have hv : s.mem.valid a = true := by
     by_cases hh : s.mem.valid a = true
@@ -202,21 +203,21 @@ theorem st_mem (hg : Geom c) (hs : Rel0 c p s x) {a v : W} {m : Memory 32}
   obtain ⟨mem', hw'⟩ : ∃ m', x.mem.write? (ofN (c.mb + 4 * a.toNat)) v = some m' := by
     simp [Memory.write?, hvalid]
   refine ⟨mem', ?_, ?_⟩
-  · simp only [exec, M.ea, hrax, hrcx, ofInt_zero64, BitVec.add_zero]; rw [hw']
+  · simp only [exec, M.ea, hrax, hrcx, ofInt_zero32, BitVec.add_zero]; rw [hw']
   · have hA : (c.rf ≤ c.mb + 4 * a.toNat ∧ c.mb + 4 * a.toNat < c.rf + 4 * c.nregs) ∨
         (c.mb ≤ c.mb + 4 * a.toNat ∧ c.mb + 4 * a.toNat < c.mb + 4 * c.M) := Or.inr ⟨hA1, hA2⟩
-    refine { s1 := ?_, s2 := ?_, s3 := ?_, s4 := ?_, s5 := ?_,
+    refine { r4 := ?_, r5 := ?_, r6 := ?_, r7 := ?_, r8 := ?_,
              stack := wf_stack hg hs hw' hAlt hA, regs := wf_regs_mb hg hs hw' hAlt ⟨hA1, hA2⟩,
              mem := ?_, rs := wf_rs hg hs hw' hAlt hA, irvalid := ?_, xvalid := ?_,
-             capD := hs.capD, capR := hs.capR, s6 := by simpa [M.adv] using hs.s6,
+             capD := hs.capD, capR := hs.capR, r9 := by simpa [M.adv] using hs.r9,
              aux := aux_write_other hg.aEnd_lt hs.capA hs.aux hw' hAlt
                (by rcases hg.dA_M with h | h <;> omega),
              capA := hs.capA }
-    · simpa [M.adv] using hs.s1
-    · simpa [M.adv] using hs.s2
-    · simpa [M.adv] using hs.s3
-    · simpa [M.adv] using hs.s4
-    · simpa [M.adv] using hs.s5
+    · simpa [M.adv] using hs.r4
+    · simpa [M.adv] using hs.r5
+    · simpa [M.adv] using hs.r6
+    · simpa [M.adv] using hs.r7
+    · simpa [M.adv] using hs.r8
     · intro a' ha'
       have hMlt : c.M < 2 ^ 32 := by omega
       rw [read_write_nat hw' hAlt (by omega)]
@@ -242,5 +243,5 @@ theorem st_mem (hg : Geom c) (hs : Rel0 c p s x) {a v : W} {m : Memory 32}
 
 end Frame
 
-end RV32
+end CM
 end WordDialect
