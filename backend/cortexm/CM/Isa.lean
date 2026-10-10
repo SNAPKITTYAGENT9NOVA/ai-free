@@ -41,7 +41,7 @@ Scope and trust boundary:
   a UART and stop the machine through semihosting (`CM.Emit`).
 
 That the model matches the hardware is the stated assumption of this backend; `cmc` tests it by
-running the emitted code on an emulated Cortex-M3 board (`qemu-system-arm -M mps2-an385`).
+running the emitted code on an emulated Cortex-M3 board (`qemu-system-arm -M lm3s6965evb`).
 -/
 
 namespace WordDialect
