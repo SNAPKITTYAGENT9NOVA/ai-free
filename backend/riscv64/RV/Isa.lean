@@ -43,10 +43,39 @@ abbrev W := BitVec 64
 
 /-- Registers. Roles (see `RV.Lower`): `t0 t1 t2 t3` scratch, `s1` data-stack pointer, `s2`
 register file, `s3` IR memory, `s4` empty return stack, `s5` return-stack pointer, `s6`
-auxiliary-stack pointer, `ra` return address (written by `call` and `ret`). -/
+auxiliary-stack pointer, `ra` return address (written by `call` and `ret`). The lowering uses
+no others; `a0 … a7` and `s7 … s10` are for hand-written programs (`RV.DataOps`). -/
 inductive Reg where
   | t0 | t1 | t2 | t3 | s5 | s6 | s4 | s3 | s2 | s1 | ra
+  | a0 | a1 | a2 | a3 | a4 | a5 | a6 | a7 | s7 | s8 | s9 | s10
   deriving DecidableEq, Repr
+
+/-- The register-register operations of the three-register form `op d, a, b`. The shifts use
+`b` modulo 64, as the hardware does. -/
+inductive Alu where
+  | add | sub | mul | and | or | xor | sll | srl | sra
+  deriving DecidableEq, Repr
+
+def Alu.eval : Alu → W → W → W
+  | .add, a, b => a + b
+  | .sub, a, b => a - b
+  | .mul, a, b => a * b
+  | .and, a, b => a &&& b
+  | .or, a, b => a ||| b
+  | .xor, a, b => a ^^^ b
+  | .sll, a, b => a <<< (b.toNat % 64)
+  | .srl, a, b => a >>> (b.toNat % 64)
+  | .sra, a, b => a.sshiftRight (b.toNat % 64)
+
+/-- Shifts by a constant: `slli`, `srli`, `srai`. -/
+inductive Shift where
+  | sll | srl | sra
+  deriving DecidableEq, Repr
+
+def Shift.eval : Shift → W → Nat → W
+  | .sll, a, n => a <<< n
+  | .srl, a, n => a >>> n
+  | .sra, a, n => a.sshiftRight n
 
 /-- Instructions, generic in the type of jump targets (`Nat` code indices for the model,
 `String` labels for assembly text). Two-operand forms `op d s` mean `d := d op s`. -/
@@ -76,6 +105,10 @@ inductive Instr (L : Type) where
   | srl (d s : Reg)
   | divu (d a b : Reg)
   | div (d a b : Reg)
+  /-- Three-register form `op d, a, b` (`d := a op b`), for hand-written programs. -/
+  | alu (op : Alu) (d a b : Reg)
+  /-- `slli`/`srli`/`srai d, a, n` (`d := a shifted by n`); `Emit` requires `n < 64`. -/
+  | shiftImm (k : Shift) (d a : Reg) (n : Nat)
   | bcc (c : Cond) (a b : Reg) (t : L)
   | beqz (a : Reg) (t : L)
   | bnez (a : Reg) (t : L)
@@ -145,6 +178,8 @@ def exec (i : Instr Nat) (m : M) : Out :=
   | .srl d s => .next (m.arith d (m.regs d >>> ((m.regs s).toNat % 64)))
   | .divu d a b => .next (m.arith d (divu (m.regs a) (m.regs b)))
   | .div d a b => .next (m.arith d (divs (m.regs a) (m.regs b)))
+  | .alu op d a b => .next (m.arith d (op.eval (m.regs a) (m.regs b)))
+  | .shiftImm k d a n => .next (m.arith d (k.eval (m.regs a) n))
   | .bcc c a b t => .next (if c.eval (m.regs a) (m.regs b) then { m with pc := t } else m.adv)
   | .beqz a t => .next (if m.regs a = 0#64 then { m with pc := t } else m.adv)
   | .bnez a t => .next (if m.regs a = 0#64 then m.adv else { m with pc := t })

@@ -150,7 +150,9 @@ Porting:
 * **RISC-V (RV64IM): done.** `backend/riscv64` has the model, lowering, emitter, the full
   simulation proof (`RV.Emit.binary_correct`), and the `rv64c` driver. RISC-V has no condition
   flags, so its guards and comparisons are compare-and-branch sequences, proved directly against
-  the IR's comparison predicates. CI runs `rv64c` under `qemu-riscv64`.
+  the IR's comparison predicates. CI runs `rv64c` under `qemu-riscv64`. As on AArch64, the model
+  also covers the hand-written data-processing forms (three-register `add sub mul and or xor sll
+  srl sra`, `slli`/`srli`/`srai`), proved in `RV/DataOps.lean` and checked against qemu.
 * Next candidate: a microcontroller profile (32-bit words, no operating system, for example
   RV32IM or ARM Cortex-M) for embedded use. The IR and the frontends are already generic in the
   word width.

@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is the project's single guide. [Part I](#part-i-the-atlas) is a guided journey through that atlas: every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **130 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) and the 21 files of the RISC-V backend (`backend/riscv64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **131 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) and the 22 files of the RISC-V backend (`backend/riscv64`) have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Contents
 
@@ -689,13 +689,13 @@ Exports the AArch64 model, lowering, emitter, simulation modules, whole-program 
 
 Implements `a64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-aarch64` (or directly on an AArch64 Linux host), and compare against Lean. It runs the same fixed, generated, auxiliary-stack, overflow and Forth-file checks as `wordc`, plus a check of hand-written programs: the data-processing program of `DataOps.lean` and 100 random programs over the three-register and constant-shift forms, compared register by register (`x0`–`x11`) with the model.
 
-## Station X: the RISC-V line — files 110–130
+## Station X: the RISC-V line — files 110–131
 
 The RV64 route keeps the register roles and proof structure of the x86-64 and AArch64 backends, but RISC-V has no condition flags. Every check is a compare-and-branch on two registers, a comparison result comes from a branch around a constant, and `select` branches around a move. There is no indexed addressing and no rotate instruction in the base ISA. `rv64c` runs the emitted binaries under `qemu-riscv64`.
 
 ### 110. [Isa.lean](backend/riscv64/RV/Isa.lean) — a machine without flags
 
-Models the emitted RV64IM subset: integer registers, `ld`/`sd`, register-register arithmetic, `sltiu`, `sll`/`srl` with the amount modulo 64, and `divu`/`div` exactly as RISC-V defines them (all ones on a zero divisor; `div` wraps on overflow). The conditional branch `bcc c a b t` takes the IR's own comparison `Cond`, so its meaning needs no flag encoding. `movImm` (the assembler's `li`), far branches, `call` and `ret` are fixed sequences.
+Models the emitted RV64IM subset: integer registers, `ld`/`sd`, register-register arithmetic, `sltiu`, `sll`/`srl` with the amount modulo 64, and `divu`/`div` exactly as RISC-V defines them (all ones on a zero divisor; `div` wraps on overflow). The conditional branch `bcc c a b t` takes the IR's own comparison `Cond`, so its meaning needs no flag encoding. `movImm` (the assembler's `li`), far branches, `call` and `ret` are fixed sequences. For hand-written programs it also has the three-register forms (`alu`), shifts by a constant (`shiftImm`: `slli srli srai`) and the registers `a0`–`a7`, `s7`–`s10`.
 
 ### 111. [Lower.lean](backend/riscv64/RV/Lower.lean) — the same track without signals
 
@@ -769,13 +769,17 @@ The auxiliary stack on `s6`: its `bcc` guards and the `tor`, `fromr` and `rfetch
 
 The six-instruction prologue model and its effect, `entry_rel`, and the end-to-end `binary_correct`.
 
-### 129. [RV.lean](backend/riscv64/RV.lean) — the RISC-V library entrance
+### 129. [DataOps.lean](backend/riscv64/RV/DataOps.lean) — hand-written RISC-V programs
+
+The general RISC-V data-processing forms that hand-written programs use: three registers (`add a2, a0, a1`, and likewise `sub mul and or xor`), register shifts (`sll srl sra`, amount modulo 64) and shifts by a constant (`slli`, `srli`, and the arithmetic `srai`). It proves what each computes (`alu_toNat`, `slli_toNat`, `srli_toNat`, `srai_toInt`, `divu_toNat`, `sub_toInt`, `mul_toInt`, `shift_reg`), that division by zero gives all ones (`divu_zero`, `div_zero`), and that the RISC-V version of the AArch64 data-processing program halts with the same values (`dataProcessing_run`). `rv64c check` runs that program and 100 random ones under qemu and compares the registers with the model.
+
+### 130. [RV.lean](backend/riscv64/RV.lean) — the RISC-V library entrance
 
 Exports the RISC-V model, lowering, emitter, simulation modules, whole-program proofs and initialization result.
 
-### 130. [RVMain.lean](backend/riscv64/RVMain.lean) — ride the line under qemu
+### 131. [RVMain.lean](backend/riscv64/RVMain.lean) — ride the line under qemu
 
-Implements `rv64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-riscv64` (or directly on a RISC-V Linux host), and compare against Lean, with the same checks as `wordc` and `a64c`.
+Implements `rv64c`: emit assembly, assemble with `clang`, link with `ld.lld`, run under `qemu-riscv64` (or directly on a RISC-V Linux host), and compare against Lean, with the same checks as `wordc` and `a64c`, including the hand-written data-processing check of `DataOps.lean` (registers `a0`–`a7`, `s7`–`s10`).
 
 # Part II: how each part works
 
@@ -1620,6 +1624,22 @@ zero is never observed; after the guard `divu`/`div` equal `BitVec.udiv`/`BitVec
 `select` and `cmp` branch inside one IR instruction, and `SimDiv.lean` proves both paths.
 Conditional branches are emitted as the opposite branch over a `j`, so their range is that of
 `j` rather than the 4 KiB of a RISC-V branch.
+
+### `RV/DataOps.lean`: hand-written RISC-V programs
+
+As on AArch64, the model also covers the data-processing instructions as hand-written RISC-V
+programs use them: three registers (`add/sub/mul/and/or/xor/sll/srl/sra d, a, b`, the `alu`
+instruction; the register shifts use the amount modulo 64) and shifts by a constant
+(`slli/srli/srai d, a, n`, the `shiftImm` instruction), on `a0 … a7` and `s7 … s10` as well as the
+lowering's registers. `DataOps.lean` proves `alu_toNat`, `sub_toInt`/`mul_toInt`, `shift_reg`
+(a register shift is the constant shift by the amount modulo 64, so `sll` by 65 is `sll` by 1:
+`sll_mod`), `slli_toNat`, `srli_toNat`, `srai_toInt` (signed division by `2^n`, rounded toward
+negative infinity), `divu_toNat`, and `divu_zero`/`div_zero` (division by zero gives all ones and
+does not fault). `dataProcessing_run` runs the RISC-V version of the AArch64 program
+(`li a0, 10; li a1, 3`, then one of each) and proves `a2 … a7, s7 … s10 = 13 7 30 3 2 11 9 40 5 5`
+from any initial registers and memory. `rv64c check` runs it, and 100 random programs that include
+large shift amounts and zero divisors, under `qemu-riscv64` and compares all twelve registers with
+the model.
 
 ### `RVMain.lean` (the `rv64c` executable)
 

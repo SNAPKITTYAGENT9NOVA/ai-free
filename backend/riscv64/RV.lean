@@ -17,3 +17,4 @@ import RV.SimAux
 import RV.SimStep
 import RV.Correct
 import RV.Init
+import RV.DataOps
