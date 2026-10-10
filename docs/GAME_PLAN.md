@@ -26,7 +26,7 @@ Best starting point: establish semantic equivalence before adding optimizations.
 
 **Status:** in place. The word semantics are in `formal/WordDialect/`, generic over the width
 `n`. The source-to-IR theorems are `Forth.Program.compile_correct`, `BCPL.compile_correct` and
-`Wolfram.dotProgram_correct`. `wordc`, `wasmw`, `a64c` and `rv64c` compare the Lean semantics against real
+`Wolfram.dotProgram_correct`. `wordc`, `wasmw`, `a64c`, `rv64c` and `rv32c` compare the Lean semantics against real
 execution.
 
 ### 2. Bare-metal and embedded systems
@@ -44,8 +44,11 @@ This is particularly valuable when you want tight control over what executes on 
 emitted, and proved against their models (`X86.Emit.binary_correct`, `A64.Emit.binary_correct`,
 `RV.Emit.binary_correct`, `Wasm.module_correct`). Memory accesses outside the valid cells trap
 `badAddress`. AArch64 and RISC-V are the two instruction sets most used in current embedded
-application processors; both backends are tested under qemu. Microcontroller profiles (32-bit
-words, no operating system, for example ARM Cortex-M or RV32) are not modelled yet.
+application processors; both backends are tested under qemu. The RV32 microcontroller profile
+(`backend/rv32`, `RV32.Emit.binary_correct`) runs the IR at 32-bit words with no operating
+system: the program starts at the reset address, prints through a UART and stops through a test
+device, and `rv32c` tests it on the bare QEMU `virt` board. An ARM Cortex-M (Thumb-2) profile is
+not modelled yet.
 
 ### 3. Verified GPU and numerical kernels
 
@@ -123,8 +126,8 @@ flowchart TB
 | 1 | Formal word semantics | Establishes exactly what every operation means | Done: `formal/WordDialect/` |
 | 2 | Reference interpreter | Provides executable ground truth | Done: `exec`/`step`, `Forth.eval`, `BCPL` and `Wolfram` evaluators |
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
-| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, Forth example files |
-| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: four (x86-64, AArch64, RISC-V and WebAssembly), proved against their models |
+| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, Forth example files |
+| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: five (x86-64, AArch64, RISC-V at 64 and 32 bits, and WebAssembly), proved against their models |
 | 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
@@ -153,9 +156,15 @@ Porting:
   the IR's comparison predicates. CI runs `rv64c` under `qemu-riscv64`. As on AArch64, the model
   also covers the hand-written data-processing forms (three-register `add sub mul and or xor sll
   srl sra`, `slli`/`srli`/`srai`), proved in `RV/DataOps.lean` and checked against qemu.
-* Next candidate: a microcontroller profile (32-bit words, no operating system, for example
-  RV32IM or ARM Cortex-M) for embedded use. The IR and the frontends are already generic in the
-  word width.
+* **Microcontroller profile (RV32IM, 32-bit words, no operating system): done.**
+  `backend/rv32` is the RISC-V backend at word width 32, with every proof carried over
+  (`RV32.Emit.binary_correct` for `Prog 32`), and a bare-metal runtime: code starts at the reset
+  address, the halt dump goes to a 16550 UART and the exit status to the SiFive test device.
+  `rv32c` runs it with `qemu-system-riscv32 -machine virt -bios none`, on the shared samples and
+  generated programs narrowed to 32 bits, 32-bit edge cases and the Forth files compiled at
+  width 32. CI runs it.
+* Next candidates: an ARM Cortex-M (Thumb-2) profile, and running the RV32 image from flash
+  (start-up code that copies `.data`, which `Loader.Holds` would then describe).
 
 ## The strategic opportunity
 

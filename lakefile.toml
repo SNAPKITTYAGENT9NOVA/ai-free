@@ -1,6 +1,6 @@
 name = "UniversalWord"
 version = "0.1.0"
-defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw", "A64", "a64c", "RV", "rv64c"]
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw", "A64", "a64c", "RV", "rv64c", "RV32", "rv32c"]
 
 [[lean_lib]]
 name = "WordDialect"
@@ -61,3 +61,12 @@ srcDir = "backend/riscv64"
 name = "rv64c"
 root = "RVMain"
 srcDir = "backend/riscv64"
+
+[[lean_lib]]
+name = "RV32"
+srcDir = "backend/rv32"
+
+[[lean_exe]]
+name = "rv32c"
+root = "RV32Main"
+srcDir = "backend/rv32"

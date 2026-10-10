@@ -52,6 +52,14 @@ flags as unknown after arithmetic (AArch64 leaves them unchanged).
 compare-and-branch sequences, and the model's branch takes the IR's own `Cond`. `rv64c` runs
 the emitted code under `qemu-riscv64`; CI runs it.
 
+## Done: microcontroller profile (RV32)
+
+`backend/rv32` lowers the 32-bit IR (`Prog 32`) to RV32IM and proves it end to end
+(`RV32.Emit.binary_correct`), with a bare-metal runtime (UART output, test-device exit, no
+operating system). `rv32c` runs it on the QEMU `virt` board with no firmware; CI runs it.
+Choices a later change may revisit: the image runs from RAM (no flash-to-RAM copy of `.data`),
+the device addresses are those of the `virt` board, and the stacks hold 4096 words each.
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic
@@ -68,6 +76,6 @@ that `parse_iff` composes into a statement about characters.
 
 The formal results cover the Lean machine models. Their agreement with real
 assemblers and runtimes is checked by execution, not proved: keep running
-`wordc check`, `wasmw check`, `a64c check` and `rv64c check` (CI uses Wasmtime
-v30.0.2, `qemu-aarch64` and `qemu-riscv64`) after every change to
+`wordc check`, `wasmw check`, `a64c check`, `rv64c check` and `rv32c check` (CI uses
+Wasmtime v30.0.2, `qemu-aarch64`, `qemu-riscv64` and `qemu-system-riscv32`) after every change to
 a model, lowering or emitter.
