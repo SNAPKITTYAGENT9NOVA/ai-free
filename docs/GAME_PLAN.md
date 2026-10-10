@@ -127,8 +127,8 @@ flowchart TB
 | 1 | Formal word semantics | Establishes exactly what every operation means | Done: `formal/WordDialect/` |
 | 2 | Reference interpreter | Provides executable ground truth | Done: `exec`/`step`, `Forth.eval`, `BCPL` and `Wolfram` evaluators |
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
-| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, Forth example files |
-| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: six (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M, and WebAssembly), proved against their models |
+| 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, `cm0c check`, Forth example files |
+| 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: seven (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M3, Cortex-M0, and WebAssembly), proved against their models |
 | 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
@@ -177,8 +177,15 @@ Porting:
   from facts about flash only (`FlashHolds`) instead of assuming RAM already holds the data.
   `cmc` runs it on the Stellaris LM3S6965 (`qemu-system-arm -M lm3s6965evb`), whose emulated
   flash ignores writes.
-* Next candidates: an ARMv6-M (Cortex-M0) profile, which has no hardware divide and mostly
-  16-bit Thumb instructions, and the same flash boot for the RV32 profile.
+* **Cortex-M0 profile (ARMv6-M, 32-bit words, no operating system, no divide instruction):
+  done.** `backend/cortexm0` lowers `Prog 32` to the 16-bit Thumb subset of the Cortex-M0, M0+
+  and M1, with the proofs carried over (`CM0.Emit.binary_correct`, `boot_correct`). Division is
+  a restoring-division loop of ordinary instructions, proved to compute `BitVec.udiv` and
+  `BitVec.sdiv` (`CM0/Divide.lean`). The return stack is `sp` (`push {lr}`, `pop {pc}`) and
+  every branch is a `bl`. `cm0c` runs it from flash on an emulated BBC micro:bit
+  (`qemu-system-arm -M microbit`). CI runs it.
+* Next candidates: the same flash boot for the RV32 profile, and verified optimizations (build
+  order item 6).
 
 ## The strategic opportunity
 

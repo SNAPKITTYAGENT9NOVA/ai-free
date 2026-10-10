@@ -32,7 +32,7 @@ jobs:
         run: .lake/build/bin/wasmw check 300
       - name: Forth source files (WebAssembly)
         run: for f in examples/forth/*.fs; do .lake/build/bin/wasmw forth "$f" || exit 1; done
-      - name: Install AArch64/RISC-V toolchain and emulators (user mode, the bare RV32 board and the Cortex-M3 board)
+      - name: Install AArch64/RISC-V toolchain and emulators (user mode, the bare RV32 board and the Cortex-M boards)
         run: sudo apt-get update && sudo apt-get install -y clang lld qemu-user qemu-system-misc qemu-system-arm
       - name: AArch64 execution check (qemu)
         run: .lake/build/bin/a64c check 300
@@ -46,7 +46,11 @@ jobs:
         run: .lake/build/bin/rv32c check 300
       - name: Forth source files (RV32, 32-bit words)
         run: for f in examples/forth/*.fs; do .lake/build/bin/rv32c forth "$f" || exit 1; done
-      - name: Cortex-M profile check (bare-metal Cortex-M3, qemu mps2-an385)
+      - name: Cortex-M profile check (bare-metal Cortex-M3 booting from flash, qemu lm3s6965evb)
         run: .lake/build/bin/cmc check 300
       - name: Forth source files (Cortex-M, 32-bit words)
         run: for f in examples/forth/*.fs; do .lake/build/bin/cmc forth "$f" || exit 1; done
+      - name: Cortex-M0 profile check (bare-metal Cortex-M0, qemu microbit)
+        run: .lake/build/bin/cm0c check 300
+      - name: Forth source files (Cortex-M0, 32-bit words)
+        run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" || exit 1; done

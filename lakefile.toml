@@ -1,6 +1,6 @@
 name = "UniversalWord"
 version = "0.1.0"
-defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw", "A64", "a64c", "RV", "rv64c", "RV32", "rv32c", "CM", "cmc"]
+defaultTargets = ["WordDialect", "WordIR", "Forth", "BCPL", "Wolfram", "Harness", "X86", "wordc", "Wasm", "wasmw", "A64", "a64c", "RV", "rv64c", "RV32", "rv32c", "CM", "cmc", "CM0", "cm0c"]
 
 [[lean_lib]]
 name = "WordDialect"
@@ -80,3 +80,12 @@ srcDir = "backend/cortexm"
 name = "cmc"
 root = "CMMain"
 srcDir = "backend/cortexm"
+
+[[lean_lib]]
+name = "CM0"
+srcDir = "backend/cortexm0"
+
+[[lean_exe]]
+name = "cm0c"
+root = "CM0Main"
+srcDir = "backend/cortexm0"

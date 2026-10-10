@@ -121,6 +121,14 @@ def samples32 : List Sample32 :=
                .cmp .ult, .halt] }
   , { name := "w32_memory", mem := [7, 0xffffffff, 3], nregs := 2,
       prog := [.word 1, .load, .word 2, .load, .add, .word 0, .store, .word 3, .load, .halt] }
+    -- unsigned and signed division across signs and extremes (Cortex-M0 divides in software)
+  , { name := "w32_div_extremes", mem := [], nregs := 1,
+      prog := [.word 0xffffffff, .word 1, .div, .word 0xffffffff, .word 0xffffffff, .div,
+               .word 0xfffffffe, .word 0xffffffff, .div, .word 0x80000000, .word 3, .div,
+               .word 7, .word 0xfffffffe, .sdiv, .word 0xfffffff9, .word 2, .sdiv,
+               .word 0xfffffff9, .word 0xfffffffe, .sdiv, .word 0x80000000, .word 1, .sdiv,
+               .word 0x7fffffff, .word 0x80000000, .sdiv, .word 0x80000000, .word 0x80000000, .sdiv,
+               .word 123456789, .word 1000, .div, .halt] }
     -- halts with values read from a non-zero memory image: the image must have reached RAM
   , { name := "w32_memory_image", mem := [7, 0xffffffff, 3, 0x12345678], nregs := 2,
       prog := [.word 1, .load, .word 2, .load, .add, .word 0, .store, .word 0, .load, .word 3,
