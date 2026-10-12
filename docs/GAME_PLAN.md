@@ -129,7 +129,7 @@ flowchart TB
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
 | 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, `cm0c check`, Forth example files |
 | 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: seven (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M3, Cortex-M0, and WebAssembly), proved against their models |
-| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Not started |
+| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Started: underflow-guard elimination from a checked stack-depth certificate (Cortex-M0), about a third smaller code |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
 ## Next phase: close out the Lean work, then port
@@ -184,8 +184,14 @@ Porting:
   `BitVec.sdiv` (`CM0/Divide.lean`). The return stack is `sp` (`push {lr}`, `pop {pc}`) and
   every branch is a `bl`. `cm0c` runs it from flash on an emulated BBC micro:bit
   (`qemu-system-arm -M microbit`). CI runs it.
-* Next candidates: the same flash boot for the RV32 profile, and verified optimizations (build
-  order item 6).
+* **Verified optimization, first step: done.** `formal/WordDialect/Depth.lean` defines stack-depth
+  certificates, a local check `certOk`, and proves that a checked certificate holds at every
+  reachable state. The Cortex-M0 lowering leaves out each underflow guard the certificate makes
+  redundant, and its end-to-end theorems (`binary_correct`, `boot_correct`) take `certOk` as one
+  more hypothesis. The analysis that proposes certificates is untrusted. `cm0c` images are about a
+  third smaller (`double.fs`: 40408 → 24616 bytes of code).
+* Next candidates: the same certificate for the other backends, overflow-guard elimination
+  from a bound on the maximum depth, and the same flash boot for the RV32 profile.
 
 ## The strategic opportunity
 

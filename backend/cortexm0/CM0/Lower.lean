@@ -51,6 +51,9 @@ structure Layout where
   rGap : W        -- `4 rcap - 8`: a call has room iff `sp ≥ r9 - rGap`
   aEnd : W        -- empty auxiliary stack: `r6 = aEnd`
   aLim : W        -- `aBase + 4`: the auxiliary stack has room for one more word iff `r6 ≥ aLim`
+  /-- A depth certificate (`WordDialect.Depth`): at IR instruction `k` the data stack holds at
+  least `cert k` words, so an operand-count guard for at most that many words is left out. -/
+  cert : Nat → Nat := fun _ => 0
 
 /-- Stack-underflow guard for `k` operands: continue when `r4 ≤ dEnd - 4k`. -/
 def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
@@ -59,6 +62,14 @@ def uf (L : Layout) (k base : Nat) : List (Instr Nat) :=
         .exitTrap .stackUnderflow]
 
 def ufSize (k : Nat) : Nat := if k = 0 then 0 else 3
+
+/-- The operand count an instruction popping `k` words still has to check when the data stack is
+known to hold at least `g` words: none if `k ≤ g`. -/
+def need (g k : Nat) : Nat := if k ≤ g then 0 else k
+
+theorem need_le (g k : Nat) : need g k ≤ k := by unfold need; split <;> omega
+
+theorem need_of_lt {g k : Nat} (h : g < k) : need g k = k := by unfold need; split <;> omega
 
 /-- Data-stack overflow guard: exit 6 unless one more word fits. -/
 def ovfD (L : Layout) (base : Nat) : List (Instr Nat) :=
@@ -98,109 +109,110 @@ def sdivSeq (q : Nat) : List (Instr Nat) :=
   [.movRR r3 r10, .movImm r7 0#32, .bcc .sge r3 r7 (q + 26), .neg r2, .movRR r0 r2]
 
 /-- Code size of one IR instruction. -/
-def isize : WordDialect.Instr 32 → Nat
+def isize (g : Nat) : WordDialect.Instr 32 → Nat
   | .word _ | .ptr _ => 6
-  | .load => ufSize 1 + 8
-  | .store => ufSize 2 + 9
-  | .add | .sub | .mul | .and | .or | .xor => ufSize 2 + 5
-  | .div => ufSize 2 + 21
-  | .sdiv => ufSize 2 + 33
-  | .not => ufSize 1 + 3
-  | .shl | .shr => ufSize 2 + 8
-  | .rotl => ufSize 2 + 6
-  | .rotr => ufSize 2 + 5
-  | .cmp _ => ufSize 2 + 7
-  | .select => ufSize 3 + 7
+  | .load => ufSize (need g 1) + 8
+  | .store => ufSize (need g 2) + 9
+  | .add | .sub | .mul | .and | .or | .xor => ufSize (need g 2) + 5
+  | .div => ufSize (need g 2) + 21
+  | .sdiv => ufSize (need g 2) + 33
+  | .not => ufSize (need g 1) + 3
+  | .shl | .shr => ufSize (need g 2) + 8
+  | .rotl => ufSize (need g 2) + 6
+  | .rotr => ufSize (need g 2) + 5
+  | .cmp _ => ufSize (need g 2) + 7
+  | .select => ufSize (need g 3) + 7
   | .jmp _ => 1
-  | .branch _ => ufSize 1 + 3
+  | .branch _ => ufSize (need g 1) + 3
   | .call _ => 6
   | .ret => 3
   | .push _ => 6
-  | .pop _ => ufSize 1 + 3
-  | .dup => ufSize 1 + 6
-  | .drop => ufSize 1 + 1
-  | .swap => ufSize 2 + 4
-  | .over => ufSize 2 + 6
-  | .rot => ufSize 3 + 6
-  | .tor => ufSize 1 + 7
+  | .pop _ => ufSize (need g 1) + 3
+  | .dup => ufSize (need g 1) + 6
+  | .drop => ufSize (need g 1) + 1
+  | .swap => ufSize (need g 2) + 4
+  | .over => ufSize (need g 2) + 6
+  | .rot => ufSize (need g 3) + 6
+  | .tor => ufSize (need g 1) + 7
   | .fromr => 10
   | .rfetch => 9
   | .halt => 1
 
 /-- Code for one IR instruction placed at code index `base`; `off t` is the code index of IR
 instruction `t` (clamped to the bad-pc stub for out-of-range targets). -/
-def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr 32 → List (Instr Nat)
+def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) (g : Nat) :
+    WordDialect.Instr 32 → List (Instr Nat)
   | .word w => ovfD L base ++ [.movImm r0 w, .addImm r4 (-4), .store r4 0 r0]
   | .ptr p => ovfD L base ++ [.movImm r0 p.toWord, .addImm r4 (-4), .store r4 0 r0]
   | .load =>
-    let b0 := base + ufSize 1
-    uf L 1 base ++
+    let b0 := base + ufSize (need g 1)
+    uf L (need g 1) base ++
       [.load r0 r4 0, .movImm r1 (BitVec.ofNat 32 L.memSize), .bcc .ult r0 r1 (b0 + 4),
        .exitTrap .badAddress, .shlImm r0 2, .add r0 r8, .load r0 r0 0, .store r4 0 r0]
   | .store =>
-    let b0 := base + ufSize 2
-    uf L 2 base ++
+    let b0 := base + ufSize (need g 2)
+    uf L (need g 2) base ++
       [.load r0 r4 0, .load r1 r4 4, .movImm r2 (BitVec.ofNat 32 L.memSize), .bcc .ult r0 r2 (b0 + 5),
        .exitTrap .badAddress, .shlImm r0 2, .add r0 r8, .store r0 0 r1, .addImm r4 8]
-  | .add => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .add r0 r1, .store r4 4 r0, .addImm r4 4]
-  | .sub => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .sub r0 r1, .store r4 4 r0, .addImm r4 4]
-  | .mul => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .mul r0 r1, .store r4 4 r0, .addImm r4 4]
-  | .and => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .and r0 r1, .store r4 4 r0, .addImm r4 4]
-  | .or => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .or r0 r1, .store r4 4 r0, .addImm r4 4]
-  | .xor => uf L 2 base ++ [.load r1 r4 0, .load r0 r4 4, .xor r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .add => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .add r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .sub => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .sub r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .mul => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .mul r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .and => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .and r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .or => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .or r0 r1, .store r4 4 r0, .addImm r4 4]
+  | .xor => uf L (need g 2) base ++ [.load r1 r4 0, .load r0 r4 4, .xor r0 r1, .store r4 4 r0, .addImm r4 4]
   | .div =>
-    let b0 := base + ufSize 2
-    uf L 2 base ++
+    let b0 := base + ufSize (need g 2)
+    uf L (need g 2) base ++
       ([.load r1 r4 0, .load r0 r4 4, .bnez r1 (b0 + 4), .exitTrap .divideByZero] ++
        udivSeq (b0 + 4) ++ [.store r4 4 r0, .addImm r4 4])
   | .sdiv =>
-    let b0 := base + ufSize 2
-    uf L 2 base ++
+    let b0 := base + ufSize (need g 2)
+    uf L (need g 2) base ++
       ([.load r1 r4 0, .load r0 r4 4, .bnez r1 (b0 + 4), .exitTrap .divideByZero] ++
        sdivSeq (b0 + 4) ++ [.store r4 4 r0, .addImm r4 4])
-  | .not => uf L 1 base ++ [.load r0 r4 0, .not r0, .store r4 0 r0]
+  | .not => uf L (need g 1) base ++ [.load r0 r4 0, .not r0, .store r4 0 r0]
   | .shl =>
-    uf L 2 base ++
+    uf L (need g 2) base ++
       [.load r1 r4 0, .load r0 r4 4, .lsl r0 r1, .sltiu r2 r1 32, .neg r2, .and r0 r2,
        .store r4 4 r0, .addImm r4 4]
   | .shr =>
-    uf L 2 base ++
+    uf L (need g 2) base ++
       [.load r1 r4 0, .load r0 r4 4, .lsr r0 r1, .sltiu r2 r1 32, .neg r2, .and r0 r2,
        .store r4 4 r0, .addImm r4 4]
   | .rotl =>
-    uf L 2 base ++
+    uf L (need g 2) base ++
       [.load r1 r4 0, .load r0 r4 4, .neg r1, .ror r0 r1, .store r4 4 r0, .addImm r4 4]
   | .rotr =>
-    uf L 2 base ++
+    uf L (need g 2) base ++
       [.load r1 r4 0, .load r0 r4 4, .ror r0 r1, .store r4 4 r0, .addImm r4 4]
   | .cmp c =>
-    let b0 := base + ufSize 2
-    uf L 2 base ++
+    let b0 := base + ufSize (need g 2)
+    uf L (need g 2) base ++
       [.load r1 r4 0, .load r0 r4 4, .movImm r2 1#32, .bcc c r0 r1 (b0 + 5), .movImm r2 0#32,
        .store r4 4 r2, .addImm r4 4]
   | .select =>
-    let b0 := base + ufSize 3
-    uf L 3 base ++
+    let b0 := base + ufSize (need g 3)
+    uf L (need g 3) base ++
       [.load r1 r4 0, .load r0 r4 4, .load r3 r4 8, .beqz r1 (b0 + 5), .movRR r0 r3,
        .store r4 8 r0, .addImm r4 8]
   | .jmp t => [.jmp (off t)]
-  | .branch t => uf L 1 base ++ [.load r0 r4 0, .addImm r4 4, .bnez r0 (off t)]
+  | .branch t => uf L (need g 1) base ++ [.load r0 r4 0, .addImm r4 4, .bnez r0 (off t)]
   | .call t => ovfR L base ++ [.call (off t)]
   | .ret => [.bcc .ne sp r9 (base + 2), .exitTrap .returnUnderflow, .ret]
   | .push r => ovfD L base ++ [.load r0 r5 (4 * (r : Int)), .addImm r4 (-4), .store r4 0 r0]
-  | .pop r => uf L 1 base ++ [.load r0 r4 0, .addImm r4 4, .store r5 (4 * (r : Int)) r0]
+  | .pop r => uf L (need g 1) base ++ [.load r0 r4 0, .addImm r4 4, .store r5 (4 * (r : Int)) r0]
   | .dup =>
-    uf L 1 base ++ ovfD L (base + ufSize 1) ++ [.load r0 r4 0, .addImm r4 (-4), .store r4 0 r0]
-  | .drop => uf L 1 base ++ [.addImm r4 4]
-  | .swap => uf L 2 base ++ [.load r0 r4 0, .load r1 r4 4, .store r4 0 r1, .store r4 4 r0]
+    uf L (need g 1) base ++ ovfD L (base + ufSize (need g 1)) ++ [.load r0 r4 0, .addImm r4 (-4), .store r4 0 r0]
+  | .drop => uf L (need g 1) base ++ [.addImm r4 4]
+  | .swap => uf L (need g 2) base ++ [.load r0 r4 0, .load r1 r4 4, .store r4 0 r1, .store r4 4 r0]
   | .over =>
-    uf L 2 base ++ ovfD L (base + ufSize 2) ++ [.load r0 r4 4, .addImm r4 (-4), .store r4 0 r0]
+    uf L (need g 2) base ++ ovfD L (base + ufSize (need g 2)) ++ [.load r0 r4 4, .addImm r4 (-4), .store r4 0 r0]
   | .rot =>
-    uf L 3 base ++
+    uf L (need g 3) base ++
       [.load r0 r4 0, .load r1 r4 4, .load r2 r4 8, .store r4 0 r2, .store r4 4 r0,
        .store r4 8 r1]
   | .tor =>
-    uf L 1 base ++ ovfA L (base + ufSize 1) ++
+    uf L (need g 1) base ++ ovfA L (base + ufSize (need g 1)) ++
       [.load r0 r4 0, .addImm r4 4, .addImm r6 (-4), .store r6 0 r0]
   | .fromr =>
     emptyA L base ++ ovfD L (base + 3) ++
@@ -209,21 +221,31 @@ def lowerInstr (L : Layout) (base : Nat) (off : Nat → Nat) : WordDialect.Instr
     emptyA L base ++ ovfD L (base + 3) ++ [.load r0 r6 0, .addImm r4 (-4), .store r4 0 r0]
   | .halt => [.exitHalt]
 
-theorem lowerInstr_length (L : Layout) (base : Nat) (off : Nat → Nat) (i : WordDialect.Instr 32) :
-    (lowerInstr L base off i).length = isize i := by
-  cases i <;> simp [lowerInstr, isize, uf, ufSize, ovfD, ovfR, ovfA, emptyA, udivSeq, sdivSeq, udivCode] <;> (try split) <;> simp
+theorem uf_length (L : Layout) (k base : Nat) : (uf L k base).length = ufSize k := by
+  unfold uf ufSize; split <;> simp
 
-/-- Prefix sums of instruction sizes: `offs p k` is the code index of IR instruction `k`.
-For `k` past the end it is the index of the final bad-pc stub. -/
-def offs (p : Prog 32) (k : Nat) : Nat := ((p.take k).map isize).sum
+theorem lowerInstr_length (L : Layout) (base : Nat) (off : Nat → Nat) (g : Nat)
+    (i : WordDialect.Instr 32) : (lowerInstr L base off g i).length = isize g i := by
+  cases i <;> simp [lowerInstr, isize, uf_length, ovfD, ovfR, ovfA, emptyA, udivSeq, sdivSeq,
+    udivCode] <;> omega
 
-def lowerGo (L : Layout) (off : Nat → Nat) : Nat → List (WordDialect.Instr 32) → List (Instr Nat)
-  | _, [] => [.exitTrap .badPc]
-  | b, i :: is => lowerInstr L b off i ++ lowerGo L off (b + isize i) is
+/-- Prefix sums of instruction sizes: `offs cf p k` is the code index of IR instruction `k`,
+where `cf` is the depth certificate (instruction `j`'s guards depend on `cf j`). For `k` past
+the end it is the index of the final bad-pc stub. -/
+def offs (cf : Nat → Nat) : Prog 32 → Nat → Nat
+  | _, 0 => 0
+  | [], _ + 1 => 0
+  | i :: is, k + 1 => isize (cf 0) i + offs (fun j => cf (j + 1)) is k
+
+def lowerGo (L : Layout) (off : Nat → Nat) :
+    (Nat → Nat) → Nat → List (WordDialect.Instr 32) → List (Instr Nat)
+  | _, _, [] => [.exitTrap .badPc]
+  | cf, b, i :: is => lowerInstr L b off (cf 0) i ++ lowerGo L off (fun j => cf (j + 1)) (b + isize (cf 0) i) is
 
 /-- The whole program; the last instruction is the bad-pc stub, so jumping past the end of the
-IR program traps `badPc` exactly as the IR semantics does. -/
-def lowerProg (L : Layout) (p : Prog 32) : List (Instr Nat) := lowerGo L (offs p) 0 p
+IR program traps `badPc` exactly as the IR semantics does. Instruction `k` leaves out the
+operand-count guards that `L.cert k` makes redundant. -/
+def lowerProg (L : Layout) (p : Prog 32) : List (Instr Nat) := lowerGo L (offs L.cert p) L.cert 0 p
 
 end CM0
 end WordDialect
