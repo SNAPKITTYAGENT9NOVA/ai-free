@@ -14,7 +14,8 @@ divide instruction. For each program it
 3. runs the image on the emulated BBC micro:bit, an nRF51822 (Cortex-M0, 256 KiB of flash,
    16 KiB of SRAM; `qemu-system-arm -M microbit`). It takes the initial stack pointer and reset
    vector from the vector table, copies `.data` from flash to SRAM, prints through the nRF51
-   UART and stops through semihosting,
+   UART and ends the run there (an `EXIT` line and the status, then `wfi`; the harness reads up
+   to that line and stops the emulator),
 4. runs the same IR program under the Lean semantics at width 32 (`WordDialect.run`), and
 5. compares the exit status and the dumped data stack, IR memory and virtual registers.
 
@@ -23,7 +24,13 @@ shared samples and generated programs narrowed to 32-bit words, 32-bit edge case
 `INT_MIN / -1`, which the division loop must wrap), the auxiliary-stack and overflow programs,
 and Forth source files compiled at width 32.
 
-Usage: `cm0c check [fuzzCount]`, `cm0c emit <sample>`, `cm0c forth <file.fs> [memWords]`,
+For a real board, `cm0c image` writes the ELF, an Intel HEX file (copy it onto the micro:bit's
+`MICROBIT` drive) and the UART transcript a correct run prints, for the micro:bit V1 or, with
+`--board microbit-v2`, the V2; `cm0c verify` checks a serial log captured from the board
+(`docs/HARDWARE.md`).
+
+Usage: `cm0c check [fuzzCount]`, `cm0c image <file.fs> [memWords] [--board …]`,
+`cm0c verify <file.fs> <serial.log> [memWords]`, `cm0c emit <sample>`, `cm0c forth <file.fs> [memWords]`,
 `cm0c emit-forth <file.fs> [memWords]`.
 -/
 
@@ -43,12 +50,25 @@ def rBase : Nat := 0x20002400
 def rcap : Nat := 1024
 def rEnd : Nat := rBase + 4 * rcap
 
-def runtimeFor (s : Sample32) : CM0.Emit.Runtime :=
-  { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
-    nregs := s.nregs, aEnd := aEnd, acap := acap }
+/-- A board's UART pins. -/
+structure Board where
+  name : String
+  txPin : Nat
+  rxPsel : Nat
 
-def asmFor (s : Sample32) : String :=
-  CM0.Emit.program (runtimeFor s) (CM0.lowerProg (runtimeFor s).layout s.prog)
+/-- The BBC micro:bit V1 (nRF51822, a Cortex-M0): TX P0.24, RX P0.25. The emulator models it. -/
+def microbitV1 : Board := { name := "microbit-v1", txPin := 24, rxPsel := 25 }
+
+/-- The BBC micro:bit V2 (nRF52833, a Cortex-M4F, which runs ARMv6-M code): TX P0.06, RX P1.08
+(`PSEL` 40 = port 1, pin 8). Not modelled by the emulator; for real boards. -/
+def microbitV2 : Board := { name := "microbit-v2", txPin := 6, rxPsel := 40 }
+
+def runtimeFor (s : Sample32) (b : Board := microbitV1) : CM0.Emit.Runtime :=
+  { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
+    nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel }
+
+def asmFor (s : Sample32) (b : Board := microbitV1) : String :=
+  CM0.Emit.program (runtimeFor s b) (CM0.lowerProg (runtimeFor s b).layout s.prog)
 
 /-- The vector table and code in flash from address 0 (where a Cortex-M reads its initial stack
 pointer and reset vector); `.data` in the first 1 KiB of SRAM, loaded into flash after the code
@@ -64,8 +84,8 @@ def linkerScript : String :=
 
 def workDir : String := "/tmp/cm0c"
 
-/-- Assemble, link and run one assembly file; the UART output and the exit status. -/
-def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
+/-- Assemble and link one assembly file; the ELF's path. -/
+def buildElf (name asm : String) : IO (Except String String) := do
   IO.FS.createDirAll workDir
   let base := s!"{workDir}/{name}"
   IO.FS.writeFile (base ++ ".s") asm
@@ -77,23 +97,38 @@ def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
   let l ← IO.Process.output
     { cmd := "ld.lld", args := #["-T", workDir ++ "/link.ld", "-o", base, base ++ ".o"] }
   if l.exitCode != 0 then return .error s!"ld.lld failed: {l.stderr}"
-  let child ← IO.Process.spawn
-    { cmd := "qemu-system-arm",
-      args := #["-machine", "microbit", "-kernel", base, "-display", "none", "-serial", "stdio",
-        "-monitor", "none", "-semihosting-config", "enable=on,target=native"],
-      stdout := .piped, stderr := .null, stdin := .null }
-  let out ← readAll child.stdout ByteArray.empty
-  let code ← child.wait
-  match String.fromUTF8? out with
-  | some t => return .ok (t, code)
-  | none => return .error "UART output is not text"
+  return .ok base
+
+/-- Build, run on the emulated micro:bit, and read its UART up to the end of the run (the `EXIT`
+line and the status). The emulator is then stopped: the board itself sleeps for good. -/
+def runAsm (name asm : String) : IO (Except String String) := do
+  match ← buildElf name asm with
+  | .error e => return .error e
+  | .ok elf =>
+    let child ← IO.Process.spawn
+      { cmd := "qemu-system-arm",
+        args := #["-machine", "microbit", "-kernel", elf, "-display", "none", "-serial", "stdio",
+          "-monitor", "none"],
+        stdout := .piped, stderr := .null, stdin := .null }
+    let out ← readUntilExit child.stdout
+    child.kill
+    let _ ← child.wait
+    return .ok out
 
 def runNative : Runner32 := fun s => do
   match ← runAsm s.name (asmFor s) with
   | .error e => return .error e
-  | .ok (out, code) => return (if code != 0 then .ok (.trap code.toNat) else parseHexDump s out)
+  | .ok out => return parseTranscript s out
 
 /-! ## Driver -/
+
+/-- `--board microbit-v1|microbit-v2` anywhere in the arguments, and the rest. -/
+def takeBoard : List String → Option Board × List String
+  | "--board" :: "microbit-v1" :: rest => (some microbitV1, rest)
+  | "--board" :: "microbit-v2" :: rest => (some microbitV2, rest)
+  | "--board" :: _ :: rest => (none, "--board?" :: rest)
+  | a :: rest => let (b, r) := takeBoard rest; (b, a :: r)
+  | [] => (none, [])
 
 def parseMem (rest : List String) : Option Nat :=
   match rest with
@@ -119,8 +154,23 @@ def main (args : List String) : IO UInt32 := do
       match s.buildError with
       | some e => IO.eprintln e; return 1
       | none => IO.println (asmFor s); return 0
+  | "image" :: path :: rest =>
+    let (b, rest) := takeBoard rest
+    match parseMem rest with
+    | none => IO.eprintln "usage: cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2]"; return 2
+    | some m =>
+      let board := b.getD microbitV1
+      let s ← forthFileSample32 path m
+      if let some e := s.buildError then IO.eprintln e; return 1
+      match ← buildElf s!"{s.name}-{board.name}" (asmFor s board) with
+      | .error e => IO.eprintln e; return 1
+      | .ok elf => writeImage s elf s!"{s.name}-{board.name}"
+  | "verify" :: path :: log :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: cm0c verify <file.fs> <serial.log> [memWords]"; return 2
+    | some m => verifyLog (← forthFileSample32 path m) log
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let ok ← checkAll32 runNative count
     return (if ok then 0 else 1)
-  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords]"; return 2
+  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords]"; return 2

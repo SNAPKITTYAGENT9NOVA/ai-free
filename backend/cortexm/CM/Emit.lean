@@ -25,13 +25,14 @@ is linked to RAM with its load address in flash. There is no operating system. T
 The rest of the runtime (`epilogue`) is hand-written assembly. It
 * implements `exitHalt` as: write `depth`, the data stack, IR memory and the virtual register
   file to the UART (a PL011, UART0 of the Stellaris LM3S6965 at `uartBase`, polling its
-  transmit-full flag), one word per line as eight hexadecimal digits, then stop with status 0,
-* implements `exitTrap t` as stopping with status `code t`, and `exitOvf` (stack overflow) with
+  transmit-full flag), one word per line as eight hexadecimal digits, then end with status 0,
+* implements `exitTrap t` as ending with status `code t`, and `exitOvf` (stack overflow) with
   status 6.
 
-The machine is stopped through semihosting (`bkpt 0xab`, operation `SYS_EXIT_EXTENDED`), which
-the emulator and debug probes implement; on a board running without a debugger, that one stub is
-replaced by whatever signals the end of a run. The lowered code itself uses no device.
+A run ends on the UART, the same way on the emulator and on a board, with no debugger: after
+the dump (if any) the runtime prints a line `EXIT` and the status, stores the status at `exitblk`,
+and sleeps. Before printing it sets up the clock and UART0 as a board needs (`uartInit`). The
+lowered code itself uses no device.
 -/
 
 namespace WordDialect
@@ -150,7 +151,8 @@ def body (code : List (Instr Nat)) : String :=
 /-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack placement (`rcap`
 entries ending at `rEnd`), IR memory image, register-file size, auxiliary-stack placement
 (`acap` words ending at `aEnd`), the initial stack pointer of the vector table (used only by
-exception entry; the lowered code does not use `sp`), and the address of the PL011 UART. The three stacks
+exception entry; the lowered code does not use `sp`), the address of the PL011 UART, and the
+clock and baud rate its divisor is computed from. The three stacks
 are sections the linker places at fixed addresses (`cmc` uses a linker script). -/
 structure Runtime where
   dEnd : Nat
@@ -163,6 +165,9 @@ structure Runtime where
   acap : Nat
   spInit : Nat := 0x20010000
   uartBase : Nat := 0x4000C000
+  /-- System clock the UART divisor is computed from: the 8 MHz crystal of the EK-LM3S6965. -/
+  clockHz : Nat := 8000000
+  baud : Nat := 115200
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -182,7 +187,7 @@ def vectors (r : Runtime) : String :=
   s!"\t.word {hex r.spInit}\n\t.word _start\n"
 
 /-- The `.data` image: IR memory, the register file (`nregs + 1` words) and the two-word
-semihosting parameter block, in the order `epilogue` lays them out. The image is linked into
+status block `exitblk`, in the order `epilogue` lays them out. The image is linked into
 flash and copied to RAM at reset. -/
 def dataImage (r : Runtime) : List Nat := r.memImage ++ List.replicate (r.nregs + 3) 0
 
@@ -212,11 +217,43 @@ def prologue (r : Runtime) : String :=
   s!"\t{li "r7" r.rEnd}\n\tmov r8, r7\n\t{la "r6" "irmem"}\n\t{la "r5" "regfile"}\n" ++
   s!"\t{li "r4" r.dEnd}\n\t{li "r9" r.aEnd}\n"
 
-/-- Output and exit routines, entered only from `exitHalt`, `exitTrap` and `exitOvf`, so they
-may use any register. `putc` writes `r3` to the UART; `putw` writes `r0` as eight hexadecimal
-digits and a newline; `putws` writes the `r9` words at address `r7`. `.Lexit` stops the machine
-through semihosting with status `r1`. -/
+/-- The UART divisor for `baud` at `clockHz`: 64 × the PL011's `clock / (16 baud)`, rounded,
+split into the integer (`IBRD`) and fractional (`FBRD`) parts. -/
+def Runtime.divisor (r : Runtime) : Nat × Nat :=
+  let d := (r.clockHz * 4 + r.baud / 2) / r.baud
+  (d / 64, d % 64)
+
+/-- Bring up UART0 as a board needs it (the emulator needs none of it): run the system clock
+from the main oscillator with the 8 MHz crystal (as StellarisWare's `SysCtlClockSet` with
+`SYSCTL_USE_OSC | SYSCTL_OSC_MAIN | SYSCTL_XTAL_8MHZ` does: `RCC.MOSCDIS = 0`, `OSCSRC = main`,
+`XTAL = 8 MHz`), wait for it, clock UART0 and GPIO port A, give PA0/PA1 to the UART, and set
+`baud` 8N1. Uses `r10 … r12`. -/
+def uartInit (r : Runtime) : String :=
+  let (ib, fb) := r.divisor
+  "\t.thumb_func\nuart_init:\n" ++
+  s!"\t{li "r12" 0x400FE060}\n\tldr r11, [r12]\n\t{li "r10" 0x3F1}\n\tbic r11, r11, r10\n" ++
+  "\torr r11, r11, #0x380\n\tstr r11, [r12]\n" ++
+  "\tmovw r11, #0x8000\n9:\tsubs r11, r11, #1\n\tbne 9b\n" ++
+  s!"\t{li "r12" 0x400FE104}\n\tldr r11, [r12]\n\torr r11, r11, #1\n\tstr r11, [r12]\n" ++
+  s!"\t{li "r12" 0x400FE108}\n\tldr r11, [r12]\n\torr r11, r11, #1\n\tstr r11, [r12]\n" ++
+  "\tnop\n\tnop\n\tnop\n" ++
+  s!"\t{li "r12" 0x40004000}\n\tldr r11, [r12, #0x420]\n\torr r11, r11, #3\n\tstr r11, [r12, #0x420]\n" ++
+  "\tldr r11, [r12, #0x51C]\n\torr r11, r11, #3\n\tstr r11, [r12, #0x51C]\n" ++
+  s!"\t{li "r12" r.uartBase}\n\tmovs r11, #0\n\tstr r11, [r12, #0x30]\n" ++
+  s!"\tmovw r11, #{ib}\n\tstr r11, [r12, #0x24]\n\tmovw r11, #{fb}\n\tstr r11, [r12, #0x28]\n" ++
+  "\tmovs r11, #0x60\n\tstr r11, [r12, #0x2C]\n\tmovw r11, #0x301\n\tstr r11, [r12, #0x30]\n" ++
+  "\tbx lr\n"
+
+/-- Output and end-of-run routines, entered only from `exitHalt`, `exitTrap` and `exitOvf`, so
+they may use any register. `putc` writes `r3` to the UART; `putw` writes `r0` as eight
+hexadecimal digits and a newline; `putws` writes the `r9` words at address `r7`.
+
+The end of a run (`.Lexit` with the status in `r1`, entered with the UART not yet set up;
+`.Lfinish` with it set up) needs no debugger: the status goes to the two words at `exitblk`
+(the status and the marker `0xE0D0F1A1`, for a debugger that wants to read it), then the UART
+gets the line `EXIT` and the status as a word line, and the core sleeps (`wfi`) for good. -/
 def devices (r : Runtime) : String :=
+  uartInit r ++
   "\t.thumb_func\nputc:\n" ++
   s!"\t{li "r12" r.uartBase}\n" ++
   "1:\tldr r11, [r12, #0x18]\n\ttst r11, #0x20\n\tbne 1b\n\tstr r3, [r12]\n\tbx lr\n" ++
@@ -227,15 +264,13 @@ def devices (r : Runtime) : String :=
   "\t.thumb_func\nputws:\n\tmov r8, lr\n" ++
   "5:\tcmp r9, #0\n\tbeq 6f\n\tldr r0, [r7], #4\n\tbl putw\n\tsubs r9, r9, #1\n\tb 5b\n" ++
   "6:\tbx r8\n" ++
-  s!".Lexit:\n\t{la "r0" "exitblk"}\n\t{li "r2" 0x20026}\n" ++
-  "\tstr r2, [r0]\n\tstr r1, [r0, #4]\n\tmov r1, r0\n\tmovs r0, #0x20\n\tbkpt 0xab\n7:\tb 7b\n"
+  ".Lexit:\n\tmov r6, r1\n\tbl uart_init\n\tmov r1, r6\n" ++
+  s!".Lfinish:\n\tmov r6, r1\n\t{la "r0" "exitblk"}\n\tstr r1, [r0]\n\t{li "r2" 0xE0D0F1A1}\n\tstr r2, [r0, #4]\n" ++
+  String.join ("EXIT\n".toList.map fun ch => s!"\tmovs r3, #{ch.toNat}\n\tbl putc\n") ++
+  "\tmov r0, r6\n\tbl putw\n7:\twfi\n\tb 7b\n"
 
-/-- Turn on UART0: its clock (`RCGC1`, bit 0, in the Stellaris system control block) and the
-UART with its transmitter (`UARTCTL = UARTEN | TXE | RXE`). The baud rate is left at its reset
-divisor; the emulator ignores it. -/
-def uartOn (r : Runtime) : String :=
-  s!"\t{li "r12" 0x400FE104}\n\tldr r11, [r12]\n\torr r11, r11, #1\n\tstr r11, [r12]\n" ++
-  s!"\t{li "r12" r.uartBase}\n\tmovw r11, #0x301\n\tstr r11, [r12, #0x30]\n"
+/-- Set up the UART for the halt dump. -/
+def uartOn (_r : Runtime) : String := "\tbl uart_init\n"
 
 def epilogue (r : Runtime) : String :=
   let m := r.memImage.length
@@ -244,7 +279,7 @@ def epilogue (r : Runtime) : String :=
   "\tmov r7, r4\n\tbl putws\n" ++
   s!"\t{la "r7" "irmem"}\n\t{li "r9" m}\n\tbl putws\n" ++
   s!"\t{la "r7" "regfile"}\n\t{li "r9" r.nregs}\n\tbl putws\n" ++
-  "\tmovs r1, #0\n\tb .Lexit\n" ++
+  "\tmovs r1, #0\n\tb .Lfinish\n" ++
   String.join ((List.range 6).map fun k => s!".Ltrap{k + 1}:\n\tmovs r1, #{k + 1}\n\tb .Lexit\n") ++
   devices r ++ "\t.ltorg\n" ++
   "\t.data\n\t.balign 4\nirmem:\n" ++

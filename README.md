@@ -18,8 +18,9 @@ This README is the project's single guide. [Part I](#part-i-the-atlas) is a guid
   library, and [the trust boundaries](#trust-boundaries-in-one-place)
 * [Part III: run it and read it](#part-iii-run-it-and-read-it): building, running the checks,
   reading routes, the verification practice, and the license
-* Elsewhere: the [game plan](docs/GAME_PLAN.md) (direction and status) and
-  [NEXT_STEPS.md](NEXT_STEPS.md) (the next concrete items)
+* Elsewhere: the [game plan](docs/GAME_PLAN.md) (direction and status),
+  [NEXT_STEPS.md](NEXT_STEPS.md) (the next concrete items) and
+  [docs/HARDWARE.md](docs/HARDWARE.md) (running on real boards)
 
 ## Choose your route
 
@@ -906,7 +907,7 @@ Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The ro
 
 ### 157. [Emit.lean](backend/cortexm/CM/Emit.lean) — a vector table, a UART and a breakpoint
 
-Prints Thumb-2 for `clang --target=thumbv7m-none-eabi`: constants as `movw`/`movt`, comparisons as `cmp` with the opposite branch over a `b.w`, calls as `movw`/`movt lr` with the Thumb bit, `str lr, [r8, #-4]!` and `b.w`. The runtime starts with the Cortex-M vector table (initial stack pointer, reset vector) in flash; the reset handler copies `.data` from flash to SRAM with `copyCode`, printed from the model, then runs the prologue. The halt dump goes to UART0 (a PL011) of the Stellaris LM3S6965 and the machine stops through semihosting (`bkpt 0xab`, `SYS_EXIT_EXTENDED`) with the exit status.
+Prints Thumb-2 for `clang --target=thumbv7m-none-eabi`: constants as `movw`/`movt`, comparisons as `cmp` with the opposite branch over a `b.w`, calls as `movw`/`movt lr` with the Thumb bit, `str lr, [r8, #-4]!` and `b.w`. The runtime starts with the Cortex-M vector table (initial stack pointer, reset vector) in flash; the reset handler copies `.data` from flash to SRAM with `copyCode`, printed from the model, then runs the prologue. The halt dump goes to UART0 (a PL011) of the Stellaris LM3S6965, set up as a board needs (system clock from the 8 MHz crystal, UART clock and pins, 115200 8N1), and the run ends on the UART too: a line `EXIT`, the status, then `wfi`. No debugger is needed.
 
 ### 158. [Rel.lean](backend/cortexm/CM/Rel.lean) — match the two timetables
 
@@ -2007,7 +2008,7 @@ over; the differences are in the instruction set:
 | division by zero (hardware) | all ones | zero |
 | start | `_start` at `0x80000000`, image in RAM | vector table in flash: initial `sp`, reset vector; `.data` copied from flash to SRAM (`Boot.lean`) |
 | halt output | 16550 UART | PL011 UART0 (Stellaris LM3S6965) |
-| exit status | SiFive test device | semihosting `SYS_EXIT_EXTENDED` |
+| exit status | SiFive test device | the UART: an `EXIT` line and the status, then `wfi` (no debugger needed) |
 
 The model has no flags. Thumb-2 sets and reads them, but every use is inside one fixed sequence
 that the model treats as one instruction, so they are dead between model instructions; this
@@ -2017,7 +2018,7 @@ before `udiv`/`sdiv`, so the hardware's zero is never observed; the model states
 ### `CM/Boot.lean`: booting from flash
 
 On a microcontroller the image sits in flash, and only RAM is writable. The Cortex-M image keeps
-its vector table and code in flash, and links `.data` (IR memory, register file, semihosting
+its vector table and code in flash, and links `.data` (IR memory, register file, status
 block) to SRAM with its load address in flash. The reset handler copies it with a ten-instruction
 loop, `Emit.copyCode`, which is a list of model instructions printed the same way as the lowered
 program. `Boot.lean` proves it: the invariant `copy_loop` (after `j` words, RAM holds the first `j`
@@ -2031,8 +2032,8 @@ halts with values read from a non-zero memory image, so a missing or wrong copy 
 
 It emits assembly, assembles it with `clang --target=thumbv7m-none-eabi -mcpu=cortex-m3`, links
 with `ld.lld` and a linker script (code and the `.data` load image in flash, `.data` and the
-stacks in the 64 KiB of SRAM), runs the image with `qemu-system-arm -M lm3s6965evb -kernel` and
-semihosting enabled, and compares the exit status and UART dump with the Lean semantics at
+stacks in the 64 KiB of SRAM), runs the image with `qemu-system-arm -M lm3s6965evb -kernel`,
+reads the UART up to the `EXIT` line, and compares the status and dump with the Lean semantics at
 width 32 through `Harness32` (the same programs as `rv32c`). The hand-written check runs the
 data-processing program of `CM/DataOps.lean` and 100 random programs whose registers often hold
 small values, so register shifts by 32 to 255 and by 256 or more, and zero divisors, occur.
@@ -2071,8 +2072,8 @@ across signs and extremes on every 32-bit target.
 ### `CM0Main.lean` (the `cm0c` executable)
 
 It emits assembly, assembles it with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, links
-with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M microbit -kernel`
-and semihosting enabled, and compares the exit status and UART dump with the Lean semantics at
+with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M microbit -kernel`,
+reads the UART up to the `EXIT` line, and compares the status and dump with the Lean semantics at
 width 32 through `Harness32` (the same programs as `rv32c` and `cmc`).
 
 ## Trust boundaries in one place
@@ -2093,7 +2094,7 @@ flowchart TD
     AM["AArch64 model = hardware<br/>(tested under qemu)"]
     RM["RISC-V model = hardware<br/>(tested under qemu)"]
     MM["RV32 model = hardware,<br/>UART and test device<br/>(tested on the qemu virt board)"]
-    CMM["Cortex-M model = hardware,<br/>UART and semihosting<br/>(tested on an emulated Cortex-M3)"]
+    CMM["Cortex-M model = hardware,<br/>UART and board set-up<br/>(tested on an emulated Cortex-M3)"]
     CM0M["Cortex-M0 model = hardware<br/>(tested on an emulated Cortex-M0)"]
     INST["wasm instantiation rule"]
     LDR["ELF loader facts (Loader.Holds;<br/>for Cortex-M only flash facts, FlashHolds)"]
@@ -2189,6 +2190,16 @@ You can also inspect a built-in sample's output without running the target:
 ```
 
 Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call_ret`. The shared harness contains the complete sample lists. Native execution artifacts are written under `/tmp/wordc`; WebAssembly artifacts use `/tmp/wasmw`, AArch64 artifacts `/tmp/a64c`, RISC-V artifacts `/tmp/rv64c`, RV32 artifacts `/tmp/rv32c`, Cortex-M artifacts `/tmp/cmc`, and Cortex-M0 artifacts `/tmp/cm0c`. Successful target output is a binary state dump decoded by the harness, so these commands are most informative when used with the comparison tools or emitter output.
+
+## Running on a real board
+
+`cm0c image prog.fs` (BBC micro:bit V1, or `--board microbit-v2`) and `cmc image prog.fs`
+(Stellaris EK-LM3S6965) write a flashable ELF and Intel HEX file plus the exact serial output a
+correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
+`cm0c verify prog.fs serial.log` / `cmc verify prog.fs serial.log`. The runtimes need no debugger:
+a run ends with an `EXIT` line and the status on the UART. The runbook, including what a mismatch
+means, is [docs/HARDWARE.md](docs/HARDWARE.md). The board set-up has so far been exercised only on
+QEMU's models of these boards.
 
 ## Checking everything at once
 

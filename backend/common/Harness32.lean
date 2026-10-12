@@ -93,6 +93,55 @@ def parseHexDump (s : Sample32) (out : String) : Except String Result :=
     else .ok (.halted (rest.take depth) ((rest.drop depth).take m) (rest.drop (depth + m)))
   | _ => .error s!"malformed dump: {out}"
 
+/-! ## The end-of-run protocol of the microcontroller runtimes
+
+A board has no exit status to give back, so the Cortex-M runtimes end every run on the UART:
+after the halt dump (if the program halted) they write a line `EXIT` and the status as one more
+word line (`0` for halt, the trap code otherwise), then sleep. The host reads up to that line,
+whether the other end is an emulator or a serial port. -/
+
+def exitMarker : String := "EXIT"
+
+/-- The eight-hexadecimal-digit line the runtimes print for a word. -/
+def hexLine (v : Nat) : String :=
+  let d := Nat.toDigits 16 (v % 2 ^ 32)
+  String.ofList (List.replicate (8 - d.length) '0' ++ d)
+
+/-- Lines of a transcript: carriage returns dropped (a serial terminal may add them), blank
+lines and anything before the first word line (boot noise on a real board) ignored. -/
+def transcriptLines (t : String) : List String :=
+  let ls := ((t.replace "\r" "").splitOn "\n").map String.trim |>.filter (· ≠ "")
+  ls.dropWhile fun l => l ≠ exitMarker ∧ (hexWords l).isNone
+
+/-- The result a transcript reports: the status after `EXIT`, and for status 0 the dump before it. -/
+def parseTranscript (s : Sample32) (t : String) : Except String Result :=
+  let ls := transcriptLines t
+  match ls.findIdx? (· == exitMarker) with
+  | none => .error s!"no {exitMarker} line in the output: {t}"
+  | some i =>
+    match hexWords (ls.getD (i + 1) "") with
+    | some [0] => parseHexDump s (String.intercalate "\n" (ls.take i))
+    | some [k] => .ok (.trap k)
+    | _ => .error s!"no status after {exitMarker}: {t}"
+
+/-- The exact UART output a correct run prints: what a board's serial log must contain. -/
+def transcriptOf : Result → Option String
+  | .halted st mem regs =>
+    some (String.intercalate "\n" ((st.length :: st ++ mem ++ regs).map hexLine ++
+      [exitMarker, hexLine 0]) ++ "\n")
+  | .trap k => some (exitMarker ++ "\n" ++ hexLine k ++ "\n")
+  | .timeout => none
+
+/-- Read a running target's UART up to the `EXIT` line and the status after it (or the end of
+the output, if the target stops first). -/
+partial def readUntilExit (h : IO.FS.Handle) (acc : String := "") (seen : Bool := false) :
+    IO String := do
+  let l ← h.getLine
+  if l.isEmpty then return acc
+  let acc := acc ++ l
+  if seen then return acc
+  readUntilExit h acc (l.trim == exitMarker)
+
 def check32 (run : Runner32) (s : Sample32) : IO Bool := do
   if let some e := s.buildError then
     IO.println s!"ERROR {s.name}: {e}"; return false
@@ -211,3 +260,35 @@ def checkAll32 (run : Runner32) (count : Nat) : IO Bool := do
   let fz ← fuzz32 run count
   let ovf ← checkOverflow32 run
   return ok && fz && ovf
+
+/-! ## Images for real boards
+
+`image` turns a program into files for a real board: the ELF, an Intel HEX file (what a
+micro:bit takes by drag and drop, and what most flash tools accept), and the UART transcript a
+correct run prints (`transcriptOf` of the Lean outcome). `verify` checks a serial log captured
+from the board against the Lean semantics. -/
+
+/-- Write `<stem>.elf`, `<stem>.hex` and `<stem>.expected` next to each other. -/
+def writeImage (s : Sample32) (elf : String) (stem : String) : IO UInt32 := do
+  if let some e := s.buildError then IO.eprintln e; return 1
+  match transcriptOf (expected32 s) with
+  | none => IO.eprintln s!"{s.name}: the IR run does not end within the fuel"; return 1
+  | some t =>
+    IO.FS.writeBinFile (stem ++ ".elf") (← IO.FS.readBinFile elf)
+    let o ← IO.Process.output
+      { cmd := "llvm-objcopy", args := #["-O", "ihex", elf, stem ++ ".hex"] }
+    if o.exitCode != 0 then IO.eprintln s!"llvm-objcopy failed: {o.stderr}"; return 1
+    IO.FS.writeFile (stem ++ ".expected") t
+    IO.println s!"wrote {stem}.elf, {stem}.hex and {stem}.expected (the UART output a correct run prints)"
+    return 0
+
+/-- Compare a serial log from a board with the Lean semantics. -/
+def verifyLog (s : Sample32) (logPath : String) : IO UInt32 := do
+  if let some e := s.buildError then IO.eprintln e; return 1
+  let log ← IO.FS.readFile logPath
+  let exp := expected32 s
+  match parseTranscript s log with
+  | .error e => IO.println s!"FAIL  {s.name}: {e}"; return 1
+  | .ok got =>
+    if got == exp then IO.println s!"PASS  {s.name}  {repr exp}"; return 0
+    else IO.println s!"FAIL  {s.name}\n  lean:  {repr exp}\n  board: {repr got}"; return 1

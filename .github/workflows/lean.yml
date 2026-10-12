@@ -54,3 +54,11 @@ jobs:
         run: .lake/build/bin/cm0c check 300
       - name: Forth source files (Cortex-M0, 32-bit words)
         run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" || exit 1; done
+      - name: Board images (image, run on the emulated boards, verify the serial log)
+        run: |
+          mkdir -p /tmp/board && cd /tmp/board
+          for t in cm0c cmc; do $GITHUB_WORKSPACE/.lake/build/bin/$t image $GITHUB_WORKSPACE/examples/forth/fib.fs || exit 1; done
+          (timeout 10 qemu-system-arm -M microbit -kernel fib-microbit-v1.elf -display none -serial stdio -monitor none || true) > v1.log
+          (timeout 10 qemu-system-arm -M lm3s6965evb -kernel fib.elf -display none -serial stdio -monitor none || true) > lm3s.log
+          $GITHUB_WORKSPACE/.lake/build/bin/cm0c verify $GITHUB_WORKSPACE/examples/forth/fib.fs v1.log
+          $GITHUB_WORKSPACE/.lake/build/bin/cmc verify $GITHUB_WORKSPACE/examples/forth/fib.fs lm3s.log

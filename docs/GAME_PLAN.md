@@ -169,7 +169,7 @@ Porting:
   profile (`CM.Emit.binary_correct`). Flags are not model state: every flag-setting instruction
   sits inside one fixed sequence with its reader. Rotations use `ror`; register shifts follow
   ARM's bottom-byte rule, and division by zero gives zero. The image starts from the Cortex-M
-  vector table, prints through a UART and stops through semihosting; `cmc` runs it on an
+  vector table, prints through a UART and ends the run there; `cmc` runs it on an
   emulated Cortex-M3 microcontroller through the shared 32-bit harness (`Harness32`). CI runs it.
 * **Booting from flash (Cortex-M): done.** The image keeps its vector table and code in flash,
   and the reset handler copies `.data` to SRAM with a loop printed from the model and proved

@@ -4,7 +4,7 @@ import CM.Init
 # CM.Boot
 
 Booting from flash, proved. A Cortex-M runs from flash: the vector table and code are there, and
-`.data` (IR memory, the register file and the semihosting block) is linked to RAM with its load
+`.data` (IR memory, the register file and the two-word status block) is linked to RAM with its load
 address in flash. The reset handler first copies `.data` to RAM with the ten-instruction loop
 `Emit.copyCode`, printed from the model like the lowered program, then runs the prologue.
 
