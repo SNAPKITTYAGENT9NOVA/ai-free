@@ -261,14 +261,14 @@ copy loop runs to its end; from there the prologue runs, and the lowered code re
 the IR reaches from `State.init` on the memory image, or exits with `overflow`. -/
 theorem boot_correct (r : Runtime) (ld : Loader) (lma : Nat) (p : Prog 32)
     (hlen : 36 * p.length < 2 ^ 32) (hreg : RegsOk (cfgOf r ld) p) (hok : certOk p r.cert = true)
-    (hbok : boundOk p r.dCap r.ub = true) {o : Outcome 32} (hx : Exec p (State.init (Memory.ofImage r.memImage)) o) {x0 : M}
+    (hub : UbSound p r.dCap r.ub) {o : Outcome 32} (hx : Exec p (State.init (Memory.ofImage r.memImage)) o) {x0 : M}
     (h : FlashHolds r ld lma x0) (hpc : x0.pc = 0) :
     ∃ x1, RSteps (copyCode (ofN lma) (ofN ld.mb) (dataWords r)) x0 x1 ∧ x1.pc = 10 ∧
       rseq (prologueCode r ld) x1 = .next { entryState r ld x1 with pc := x1.pc + 8 } ∧
       (Final (cfgOf r ld) p (lowerProg r.layout p) (entryState r ld x1) o ∨
         RExec (lowerProg r.layout p) (entryState r ld x1) .overflow) := by
   obtain ⟨x1, hs, hpc1, hh⟩ := copy_holds h hpc
-  exact ⟨x1, hs, hpc1, binary_correct r ld p hlen hreg hok hbok hx hh⟩
+  exact ⟨x1, hs, hpc1, binary_correct r ld p hlen hreg hok hub hx hh⟩
 
 end Emit
 end CM0

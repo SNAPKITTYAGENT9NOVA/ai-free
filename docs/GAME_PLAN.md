@@ -195,9 +195,14 @@ Porting:
   also leaves out each data-stack overflow guard where the bound shows room, with `boundOk` as
   one more hypothesis of `binary_correct` and `boot_correct`. With both certificates `double.fs`
   goes from 40408 to 11488 bytes of code (72% smaller).
-* Next candidates: the certificates for the other backends, context-sensitive return bounds
-  (so one recursive word does not saturate every return point), auxiliary- and return-stack
-  bounds, and the same flash boot for the RV32 profile.
+* **Per-word stack effects: done.** Frame certificates (`Frames`, `frameOk`, `FrameInv.step`)
+  bound the depth relative to the entry of the current word, with each word's net effect, so a
+  recursive word no longer saturates the bounds of its callers. The backends take any upper bound
+  backed by an invariant (`UbSound`); `upperTable` combines both kinds. Across the ten Forth
+  examples, 2 of 947 data-stack overflow guards remain, both inside recursive words that grow
+  the stack.
+* Next candidates: the certificates for the other backends, auxiliary- and return-stack bounds,
+  and the same flash boot for the RV32 profile.
 
 ## The strategic opportunity
 

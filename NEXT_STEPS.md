@@ -100,9 +100,9 @@ guard the certificate covers and each data-stack overflow guard where the bound 
 change may revisit:
 
 - only the Cortex-M0 backend uses them;
-- returns are context-insensitive: every return point allows the deepest `ret`, so one recursive
-  word saturates the bound after every call (`core.fs`, `leave.fs` keep some overflow guards for
-  this reason); per-callee summaries would fix it;
+- upper bounds are per word (frame certificates): a word is identified by its entry, so code
+  shared between two words (one reached by a jump from another) makes `frameOk` reject the
+  certificate, and the context-insensitive bound is used alone;
 - auxiliary-stack and return-stack overflow guards are all kept (they are few);
 - call return points claim depth 0 for lower bounds, so an underflow guard right after a call
   stays.

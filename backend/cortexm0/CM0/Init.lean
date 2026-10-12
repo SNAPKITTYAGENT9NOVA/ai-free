@@ -36,7 +36,7 @@ flash only (`copy_holds`, `boot_correct`).
 `binary_correct`: under those loader facts, after the prologue the lowered code reaches the IR
 outcome from `State.init` on the memory image, or exits with `overflow`. Its other hypotheses are
 only about the program, including `certOk` for the runtime's stack-depth certificate and
-`boundOk` for its upper bound (the lowering leaves out the underflow and overflow guards they
+`UbSound` for its upper bound (the lowering leaves out the underflow and overflow guards they
 cover).
 -/
 
@@ -134,15 +134,16 @@ the outcome the IR reaches from `State.init` on the memory image, or exits with 
 code 6). Program hypotheses: code indices fit in 32 bits and register indices are in range. -/
 theorem binary_correct (r : Runtime) (ld : Loader) (p : Prog 32) (hlen : 36 * p.length < 2 ^ 32)
     (hreg : RegsOk (cfgOf r ld) p) (hok : certOk p r.cert = true)
-    (hbok : boundOk p r.dCap r.ub = true) {o : Outcome 32}
+    (hub : UbSound p r.dCap r.ub) {o : Outcome 32}
     (hx : Exec p (State.init (Memory.ofImage r.memImage)) o) {x0 : M} (h : ld.Holds r x0) :
     rseq (prologueCode r ld) x0 = .next { entryState r ld x0 with pc := x0.pc + 8 } ∧
       (Final (cfgOf r ld) p (lowerProg r.layout p) (entryState r ld x0) o ∨
         RExec (lowerProg r.layout p) (entryState r ld x0) .overflow) := by
   obtain ⟨hLc, hL, hMs, hLd, hLr, hLa, hLal⟩ := layout_ok r ld
+  obtain ⟨I, hI0, hIs, hIb⟩ := hub
   exact ⟨prologue_run r ld x0,
-    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr hLa hLal hLc hok hbok (offs_lt _ hlen) hreg
-      hx (entry_rel r ld h p) (DepthInv.init (certOk_entry hok) _) (BoundInv.init _ _)⟩
+    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr hLa hLal hLc hok hIs hIb (offs_lt _ hlen)
+      hreg hx (entry_rel r ld h p) (DepthInv.init (certOk_entry hok) _) (hI0 _)⟩
 
 end Emit
 end CM0

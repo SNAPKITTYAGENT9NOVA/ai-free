@@ -273,7 +273,7 @@ Builds memory from an image, defines the initial state, and extracts a final dat
 
 ### 9. [Depth.lean](formal/WordDialect/Depth.lean) — checked depth certificates
 
-A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. A `Bound` claims upper bounds, checked by `boundOk` against a stack capacity; `BoundInv.step` keeps them through every step taken within that capacity. The analyses that propose them (`analyse`, `analyseBound`) are untrusted; `certTable` and `boundTable` use their results only when the checkers accept them. The Cortex-M0 backend uses both to leave out underflow and overflow guards (stops 180 and 187).
+A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. Upper bounds come in two kinds, both checked against a stack capacity: a `Bound` per instruction (`boundOk`), and a frame certificate (`frameOk`) that tracks depth relative to the entry of the word being executed, with each word's net stack effect, so a recursive word does not spoil the bounds of its callers. Each is backed by an invariant (`UbSound`), and they combine by `min` (`upperTable_sound`). The analyses that propose certificates (`analyse`, `analyseBound`, `analyseFrames`) are untrusted; their results are used only when the checkers accept them. The Cortex-M0 backend uses both to leave out underflow and overflow guards (stops 180 and 187).
 
 ### 10. [WordDialect.lean](formal/WordDialect.lean) — the public doorway
 
@@ -1087,7 +1087,7 @@ Exports the Cortex-M0 model, lowering, division proofs, emitter, simulation modu
 
 ### 201. [CM0Main.lean](backend/cortexm0/CM0Main.lean) — ride the line on a micro:bit
 
-Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `boundTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6).
+Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `boundTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6), the same after a call to a word with a known net effect, and a recursion that grows the stack (exit 6).
 
 # Part II: how each part works
 
@@ -1251,8 +1251,26 @@ for every `ret`; `boundOk p cap b` checks:
 `BoundInv b s` says `depth ≤ b.bound s.pc` and every return address on the return stack allows
 `b.ret`; `BoundInv.step` keeps it through any step from a state within the capacity. Returns are
 handled context-insensitively, so one recursive word saturates every return point at the
-capacity; code that is not under such a word keeps tight bounds. `Bound.top cap`
-(`cap + 3` everywhere) always checks and shows no room.
+capacity. `Bound.top cap` (`cap + 3` everywhere) always checks and shows no room.
+
+**Per-word stack effects.** A *frame certificate* (`Frames`) fixes that. For each live
+instruction it gives the word `fn k` it belongs to (a `call t` starts word `t`) and a bound
+`rel k` on the depth relative to the depth at that word's entry; for each word `f`, a bound
+`eff f` on that relative depth at its `ret`s (its net stack effect) and a bound `base f` on its
+entry depth. The absolute bound is `base (fn k) + rel k`. `frameOk` checks, with
+`m = min (rel k) cap`: a successor in the same word gets `rel t ≥ m - pops + pushes`; a `call t`
+needs `t` to start its own word with `rel t ≥ 0`, leaves the caller at `rel (k + 1) ≥ m + eff t`
+and gives `base t ≥ min cap (base (fn k) + rel k)`; a `ret` needs `m ≤ eff (fn k)`.
+`FrameInv` carries the actual entry depth of every active word along the return stack
+(`Frames.chain`), and `FrameInv.step` proves the checker sound. A call now leaves its caller at
+`rel` plus the callee's effect whatever the callee does in between, so even after calling a
+recursive word with a balanced effect (`sum.fs`) the caller's bounds stay tight; only the
+recursive word's own body, whose `base` saturates, keeps its guards.
+
+`UbSound p cap u` packages any such bound: an invariant that holds initially, is kept by every
+step within the capacity, and implies `depth ≤ u pc`. Sound bounds combine by `min`, and
+`upperTable` (the least of the two bounds and `cap + 3`, as a table) is sound
+(`upperTable_sound`). The backends' theorems take `UbSound`, not a particular certificate.
 
 Nothing about the analyses that propose certificates is trusted. `analyse` (least depth, with
 unreachable code given `0`) and `analyseBound` (least upper bound, by iteration from `0`) are
@@ -1265,20 +1283,20 @@ theorem with the checks as extra hypotheses. The Cortex-M0 backend does this
 (`CM0/Lower.lean`: `need`, `ovf`). Guards are three model instructions each (an overflow guard's
 constant takes several more Thumb instructions) and were most of the code:
 
-| Forth file | `.text` bytes, every guard | underflow guards removed | and overflow guards | saved | overflow guards left |
+| Forth file | `.text` bytes, every guard | underflow guards removed | and overflow guards (per-word) | saved | overflow guards left |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `double.fs` | 40408 | 24616 | 11488 | 72% | 0 of 547 |
-| `core.fs` | 5660 | 3716 | 2420 | 57% | 15 of 69 |
-| `leave.fs` | 9860 | 6260 | 4364 | 56% | 19 of 98 |
-| `loops.fs` | 6036 | 4164 | 3012 | 50% | 14 of 62 |
-| `while.fs` | 3952 | 2704 | 2032 | 49% | 8 of 36 |
+| `core.fs` | 5660 | 3716 | 2060 | 64% | 0 of 69 |
+| `leave.fs` | 9860 | 6260 | 3908 | 60% | 0 of 98 |
+| `loops.fs` | 6036 | 4164 | 2676 | 56% | 0 of 62 |
+| `while.fs` | 3952 | 2704 | 1840 | 53% | 0 of 36 |
 | `words.fs` | 2092 | 1540 | 1108 | 47% | 0 of 18 |
 | `fib.fs` | 1112 | 920 | 776 | 30% | 1 of 7 |
 
 (`cm0c emit-forth`, with and without `--no-opt`, assembled for `thumbv6m`; `cm0c stats` counts
-the guards.) The guards that remain are those an underflow or overflow can actually reach, or
-that sit under a recursive word, so the traps the IR semantics predicts, and exit 6 on a full
-stack, still happen; `cm0c check` exercises them.
+the guards.) The guards that remain are those an underflow can actually reach, and the overflow
+guards inside the bodies of recursive words that grow the stack (`fib.fs`, `sum.fs`), so the traps
+the IR semantics predicts, and exit 6 on a full stack, still happen; `cm0c check` exercises them.
 
 ### `formal/WordDialect.lean` and `formal/Audit.lean`
 
@@ -2198,8 +2216,8 @@ Things to keep in mind when reading the theorems:
   (WebAssembly).
 * **Optimisations take a checked certificate, not a trusted analysis.** The Cortex-M0 lowering
   drops an underflow or overflow guard only where a stack-depth certificate or bound says it
-  cannot fire; its theorems assume `certOk` and `boundOk` for them, decidable checks the driver
-  runs. The analyses that propose them are outside the trusted base: if a result fails its check,
+  cannot fire; its theorems assume `certOk` and `UbSound` for them, which the driver obtains from
+  decidable checks (`certTable_ok`, `upperTable_sound`). The analyses that propose them are outside the trusted base: if a result fails its check,
   the driver uses the certificate that claims nothing and keeps those guards.
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
   `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
