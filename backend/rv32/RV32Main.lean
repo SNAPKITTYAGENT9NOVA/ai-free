@@ -21,7 +21,8 @@ and Forth source files compiled at width 32. `check` also runs the hand-written 
 programs of `RV32.DataOps`.
 
 Usage: `rv32c check [fuzzCount]`, `rv32c emit <sample>`, `rv32c forth <file.fs> [memWords]`,
-`rv32c emit-forth <file.fs> [memWords]`.
+`rv32c emit-forth <file.fs> [memWords]`, `rv32c stats <file.fs> [memWords]` (the guards the depth
+certificates leave out); `--no-opt` with any of them lowers with every guard.
 -/
 
 open WordDialect
@@ -38,12 +39,23 @@ def rBase : Nat := 0x80300000
 def rcap : Nat := 4096
 def rEnd : Nat := rBase + 4 * rcap
 
-def runtimeFor (s : Sample32) : RV32.Emit.Runtime :=
-  { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
-    nregs := s.nregs, aEnd := aEnd, acap := acap }
+/-- The runtime for one program. With `opt` the lowering uses the checked stack-depth
+certificate `certTable` and the checked upper bounds `upperTable` (`WordDialect.Depth`), which
+decide the guards left out; their checks are all the correctness theorem needs, so the analyses
+are not trusted. Without it every guard stays. -/
+def runtimeFor (s : Sample32) (opt : Bool := true) : RV32.Emit.Runtime :=
+  let r : RV32.Emit.Runtime :=
+    { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
+      nregs := s.nregs, aEnd := aEnd, acap := acap }
+  if opt then
+    let tbl := certTable s.prog
+    let up := upperTable s.prog r.dCap
+    { r with cert := fun k => tbl.getD k 0, ub := fun k => upperAt up r.dCap k }
+  else r
 
-def asmFor (s : Sample32) : String :=
-  RV32.Emit.program (runtimeFor s) (RV32.lowerProg (runtimeFor s).layout s.prog)
+def asmFor (s : Sample32) (opt : Bool := true) : String :=
+  let r := runtimeFor s opt
+  RV32.Emit.program r (RV32.lowerProg r.layout s.prog)
 
 /-- Code from `0x80000000` (where the `virt` board starts with `-bios none`), then data; the
 stacks are uninitialised sections at fixed addresses. -/
@@ -80,8 +92,8 @@ def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
   | some t => return .ok (t, code)
   | none => return .error "UART output is not text"
 
-def runNative : Runner32 := fun s => do
-  match ← runAsm s.name (asmFor s) with
+def runNative (opt : Bool := true) : Runner32 := fun s => do
+  match ← runAsm s.name (asmFor s opt) with
   | .error e => return .error e
   | .ok (out, code) => return (if code != 0 then .ok (.trap code.toNat) else parseHexDump s out)
 
@@ -157,27 +169,40 @@ def parseMem (rest : List String) : Option Nat :=
   | [m] => m.toNat?
   | _ => none
 
-def main (args : List String) : IO UInt32 := do
+def main (args0 : List String) : IO UInt32 := do
+  -- `--no-opt` keeps every guard (the lowering without depth certificates).
+  let opt := !args0.contains "--no-opt"
+  let args := args0.filter (· != "--no-opt")
   match args with
   | ["emit", name] =>
     match allSamples32.find? (·.name == name) with
-    | some s => IO.println (asmFor s); return 0
+    | some s => IO.println (asmFor s opt); return 0
     | none => IO.eprintln "unknown sample"; return 1
   | "forth" :: path :: rest =>
     match parseMem rest with
     | none => IO.eprintln "usage: rv32c forth <file.fs> [memWords]"; return 2
-    | some m => return (if ← check32 runNative (← forthFileSample32 path m) then 0 else 1)
+    | some m => return (if ← check32 (runNative opt) (← forthFileSample32 path m) then 0 else 1)
   | "emit-forth" :: path :: rest =>
     match parseMem rest with
-    | none => IO.eprintln "usage: rv32c emit-forth <file.fs> [memWords]"; return 2
+    | none => IO.eprintln "usage: rv32c emit-forth <file.fs> [memWords] | rv32c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2
     | some m =>
       let s ← forthFileSample32 path m
       match s.buildError with
       | some e => IO.eprintln e; return 1
-      | none => IO.println (asmFor s); return 0
+      | none => IO.println (asmFor s opt); return 0
+  | "stats" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: rv32c stats <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample32 path m
+      if let some e := s.buildError then IO.eprintln e; return 1
+      let r := runtimeFor s
+      IO.println (guardStats s r.cert r.ub r.dCap)
+      return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
-    let ok ← checkAll32 runNative count
+    let ok ← checkAll32 (runNative opt) count
+    let okc ← checkCapacity32 (runNative opt) capacity
     let isa ← checkIsa 100
-    return (if ok && isa then 0 else 1)
-  | _ => IO.eprintln "usage: rv32c check [fuzzCount] | rv32c emit <sample> | rv32c forth <file.fs> [memWords] | rv32c emit-forth <file.fs> [memWords]"; return 2
+    return (if ok && okc && isa then 0 else 1)
+  | _ => IO.eprintln "usage: rv32c check [fuzzCount] | rv32c emit <sample> | rv32c forth <file.fs> [memWords] | rv32c emit-forth <file.fs> [memWords] | rv32c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2

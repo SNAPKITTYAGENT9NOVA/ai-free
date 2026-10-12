@@ -16,7 +16,7 @@ open Reg
 section Ops
 
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-  {L : Layout} {base : Nat} {off : Nat → Nat}
+  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts}
 
 theorem ult_memSize {a : W} {n : Nat} (hn : n < 2 ^ 32) :
     a.ult (BitVec.ofNat 32 n) = decide (a.toNat < n) := by
@@ -65,42 +65,42 @@ theorem addr_trap (hs : Rel0 c p s x) {rt : Reg} (hrt : rt = t1 ∨ rt = t2) {n 
 
 theorem sim_push_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
     (hr : r < c.nregs) (hLd : L.dLim = ofN (c.dBase + 4))
-    (hat : RAt code base (lowerInstr L base off (.push r)))
+    (hat : RAt code base (lowerInstr L base off g (.push r)))
     (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := s.regs r :: s.dstack } x' ∧
-      x'.pc = base + isize (.push r : WordDialect.Instr 32) := by
+      x'.pc = base + isize g (.push r : WordDialect.Instr 32) := by
   obtain ⟨hato, f0, f1, f2⟩ := xat_ovf3 (L := L) (by exact hat)
-  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfD_pass hg hs hLd hfit hpc hato
+  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfG_pass hg hs hLd hfit hpc hato
   have hst : step code x0 = .next (x0.mov t0 (s.regs r)) := by
     rw [rstep_of_fetch (by rw [hpc0]; exact f0), ld_reg hr0 hr t0 rfl]
   have hr1 : Rel0 c p s (x0.mov t0 (s.regs r)) := mov_rel0 hr0 t0 (scratch_ne t0 (by simp)) _
-  have hpc1 : (x0.mov t0 (s.regs r)).pc = base + 3 + 1 := by simp [M.mov, M.setReg, M.adv, hpc0]
+  have hpc1 : (x0.mov t0 (s.regs r)).pc = base + ovfSize g + 1 := by simp [M.mov, M.setReg, M.adv, hpc0]
   obtain ⟨x2, hs2, hr2, hpc2, _⟩ := push_pair hg hr1 t0 (by decide) hfit
     ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), trivial⟩
   have hv : (x0.mov t0 (s.regs r)).regs t0 = s.regs r := by simp [M.mov, M.setReg, M.adv]
   rw [hv] at hr2
   exact ⟨x2, (hs0.trans (RSteps.single hst)).trans hs2, hr2, by simp [isize]; omega⟩
 
-theorem sim_push_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off (.push r)))
+theorem sim_push_ovf (hn : g.noOvf = false) (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.push r)))
     (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) : RExec code x .overflow := by
   obtain ⟨hato, _⟩ := xat_ovf3 (L := L) (by exact hat)
-  exact ovfD_trap hg hs hLd h hpc hato
+  exact ovfG_trap hn hg hs hLd h hpc hato
 
 theorem sim_pop_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    {r : Nat} (hr : r < c.nregs) (hat : RAt code base (lowerInstr L base off (.pop r)))
+    {r : Nat} (hr : r < c.nregs) (hat : RAt code base (lowerInstr L base off g (.pop r)))
     {a : W} {d : List W} (hd : s.dstack = a :: d) :
     ∃ x', RSteps code x x' ∧
       Rel0 c p { s with dstack := d, regs := State.setReg s.regs r a } x' ∧
-      x'.pc = base + isize (.pop r : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 1 base ++ [.load t0 Reg.s1 0, .addImm Reg.s1 4,
+      x'.pc = base + isize g (.pop r : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 1) base ++ [.load t0 Reg.s1 0, .addImm Reg.s1 4,
       .store Reg.s2 (4 * (r : Int)) t0]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 1 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 1) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, _⟩ := hatr
   have hk : 1 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := t0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, ho3⟩ := adj_step (code := code) hg hr2 (n := 1) (by simp [hd])
@@ -114,18 +114,18 @@ theorem sim_pop_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) 
   have e : s.dstack.drop 1 = d := by simp [hd]
   rw [e, hax3] at hr4'
   exact ⟨_, ((hs1.trans hs2).trans hs3).trans (RSteps.single hst4), hr4',
-    by simp [M.adv, isize, ufSize]; omega⟩
+    by simp [M.adv, isize]; omega⟩
 
 theorem sim_load_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
-    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off .load))
+    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off g .load))
     {a v : W} {d : List W} (hd : s.dstack = a :: d) (hv : s.mem.read? a = some v) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := v :: d } x' ∧
-      x'.pc = base + isize (.load : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 1 base ++ [.load t0 Reg.s1 0, .movImm t1 (BitVec.ofNat 32 L.memSize),
-      .bcc .ult t0 t1 (base + ufSize 1 + 4), .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3,
+      x'.pc = base + isize g (.load : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 1) base ++ [.load t0 Reg.s1 0, .movImm t1 (BitVec.ofNat 32 L.memSize),
+      .bcc .ult t0 t1 (base + ufSize (need g 1) + 4), .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3,
       .load t0 t0 0, .store Reg.s1 0 t0]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 1 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 1) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, f4, f5, f6, f7, _⟩ := hatr
   have hk : 1 ≤ s.dstack.length := by simp [hd]
@@ -135,11 +135,11 @@ theorem sim_load_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = 
     have := hs.irvalid a
     rw [hvv] at this
     simpa using this.symm
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, ho2, hm2⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := t0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hax3, ho3, hm3⟩ := addr_pass (code := code) hr2 (rt := t1) (by simp)
-    (n := c.M) hMlt (t := base + ufSize 1 + 4) (by simp [ufSize]; omega) hv2 hlt (by
+    (n := c.M) hMlt (t := base + ufSize (need g 1) + 4) (by omega) hv2 hlt (by
       rw [← hMs]
       refine ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), fetch_cast f3 (by omega), trivial⟩)
   obtain ⟨x4, hs4, hr4, hpc4, hax4, _, _⟩ := idx_steps hr3 hax3
@@ -153,17 +153,17 @@ theorem sim_load_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = 
     simp [hd, M.mov, M.setReg, M.adv]
   rw [e] at hr6
   exact ⟨x6, ((((hs1.trans hs2).trans hs3).trans hs4).trans (RSteps.single hst5)).trans hs6, hr6,
-    by simp [M.mov, M.setReg, M.adv, isize, ufSize] at *; omega⟩
+    by simp [M.mov, M.setReg, M.adv, isize] at *; omega⟩
 
 theorem sim_load_trap (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
-    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off .load))
+    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off g .load))
     {a : W} {d : List W} (hd : s.dstack = a :: d) (hv : s.mem.read? a = none) :
     RExec code x (.trapped .badAddress) := by
-  have hat' : RAt code base (uf L 1 base ++ [.load t0 Reg.s1 0, .movImm t1 (BitVec.ofNat 32 L.memSize),
-      .bcc .ult t0 t1 (base + ufSize 1 + 4), .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3,
+  have hat' : RAt code base (uf L (need g 1) base ++ [.load t0 Reg.s1 0, .movImm t1 (BitVec.ofNat 32 L.memSize),
+      .bcc .ult t0 t1 (base + ufSize (need g 1) + 4), .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3,
       .load t0 t0 0, .store Reg.s1 0 t0]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 1 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 1) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, _⟩ := hatr
   have hk : 1 ≤ s.dstack.length := by simp [hd]
@@ -173,25 +173,25 @@ theorem sim_load_trap (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize 
     have := hs.irvalid a
     rw [hvv] at this
     simpa using this
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, ho2, hm2⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := t0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   exact RExec.of_steps (hs1.trans hs2) (addr_trap (code := code) hr2 (rt := t1) (by simp)
-    (n := c.M) hMlt (t := base + ufSize 1 + 4) (by simp [ufSize]; omega) hv2 hge (by
+    (n := c.M) hMlt (t := base + ufSize (need g 1) + 4) (by omega) hv2 hge (by
       rw [← hMs]
       refine ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), fetch_cast f3 (by omega), trivial⟩))
 
 theorem sim_store_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
-    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off .store))
+    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off g .store))
     {a v : W} {d : List W} (hd : s.dstack = a :: v :: d) {m : Memory 32}
     (hw : s.mem.write? a v = some m) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := d, mem := m } x' ∧
-      x'.pc = base + isize (.store : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 2 base ++ [.load t0 Reg.s1 0, .load t1 Reg.s1 4,
-      .movImm t2 (BitVec.ofNat 32 L.memSize), .bcc .ult t0 t2 (base + ufSize 2 + 5),
+      x'.pc = base + isize g (.store : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 2) base ++ [.load t0 Reg.s1 0, .load t1 Reg.s1 4,
+      .movImm t2 (BitVec.ofNat 32 L.memSize), .bcc .ult t0 t2 (base + ufSize (need g 2) + 5),
       .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3, .store t0 0 t1, .addImm Reg.s1 8]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 2 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 2) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, f4, f5, f6, f7, f8, _⟩ := hatr
   have hk : 2 ≤ s.dstack.length := by simp [hd]
@@ -204,14 +204,14 @@ theorem sim_store_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize =
     have := hs.irvalid a
     rw [hv] at this
     simpa using this.symm
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, ho2, hm2⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := t0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hv3, ho3, hm3⟩ := ld_step (code := code) hr2 (j := 1) (v := v)
     (by simp [hd]) (rd := t1) (by simp) (disp := 4) (by simp) (fetch_cast f1 (by omega))
   have hax3 : x3.regs t0 = a := by rw [ho3 t0 (by decide), hv2]
   obtain ⟨x4, hs4, hr4, hpc4, hax4, ho4, hm4⟩ := addr_pass (code := code) hr3 (rt := t2) (by simp)
-    (n := c.M) hMlt (t := base + ufSize 2 + 5) (by simp [ufSize]; omega) hax3 hlt (by
+    (n := c.M) hMlt (t := base + ufSize (need g 2) + 5) (by omega) hax3 hlt (by
       rw [← hMs]
       refine ⟨fetch_cast f2 (by omega), fetch_cast f3 (by omega), fetch_cast f4 (by omega), trivial⟩)
   have hcx4 : x4.regs t1 = v := by rw [ho4 t1 (by decide), hv3]
@@ -229,17 +229,17 @@ theorem sim_store_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize =
         = { s with dstack := d, mem := m } := by simp [hd]
     rw [← this]; exact hr7
   exact ⟨x7, (((((hs1.trans hs2).trans hs3).trans hs4).trans hs5).trans (RSteps.single hst6)).trans hs7,
-    hr7', by simp [M.adv, isize, ufSize] at *; omega⟩
+    hr7', by simp [M.adv, isize] at *; omega⟩
 
 theorem sim_store_trap (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
-    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off .store))
+    (hs : Rel0 c p s x) (hpc : x.pc = base) (hat : RAt code base (lowerInstr L base off g .store))
     {a v : W} {d : List W} (hd : s.dstack = a :: v :: d) (hw : s.mem.write? a v = none) :
     RExec code x (.trapped .badAddress) := by
-  have hat' : RAt code base (uf L 2 base ++ [.load t0 Reg.s1 0, .load t1 Reg.s1 4,
-      .movImm t2 (BitVec.ofNat 32 L.memSize), .bcc .ult t0 t2 (base + ufSize 2 + 5),
+  have hat' : RAt code base (uf L (need g 2) base ++ [.load t0 Reg.s1 0, .load t1 Reg.s1 4,
+      .movImm t2 (BitVec.ofNat 32 L.memSize), .bcc .ult t0 t2 (base + ufSize (need g 2) + 5),
       .exitTrap .badAddress, .shlImm t0 2, .add t0 Reg.s3, .store t0 0 t1, .addImm Reg.s1 8]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 2 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 2) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, f4, _⟩ := hatr
   have hk : 2 ≤ s.dstack.length := by simp [hd]
@@ -249,14 +249,14 @@ theorem sim_store_trap (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize
     have := hs.irvalid a
     rw [hvv] at this
     simpa using this
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, ho2, hm2⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := t0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hv3, ho3, hm3⟩ := ld_step (code := code) hr2 (j := 1) (v := v)
     (by simp [hd]) (rd := t1) (by simp) (disp := 4) (by simp) (fetch_cast f1 (by omega))
   have hax3 : x3.regs t0 = a := by rw [ho3 t0 (by decide), hv2]
   exact RExec.of_steps ((hs1.trans hs2).trans hs3) (addr_trap (code := code) hr3 (rt := t2)
-    (by simp) (n := c.M) hMlt (t := base + ufSize 2 + 5) (by simp [ufSize]; omega) hax3 hge (by
+    (by simp) (n := c.M) hMlt (t := base + ufSize (need g 2) + 5) (by omega) hax3 hge (by
       rw [← hMs]
       refine ⟨fetch_cast f2 (by omega), fetch_cast f3 (by omega), fetch_cast f4 (by omega), trivial⟩))
 

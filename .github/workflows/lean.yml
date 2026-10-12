@@ -54,19 +54,25 @@ jobs:
         run: .lake/build/bin/cm0c check 300
       - name: Forth source files (Cortex-M0, 32-bit words)
         run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" || exit 1; done
-      - name: Cortex-M0 without the depth certificate (--no-opt keeps every guard)
-        run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" --no-opt || exit 1; done
-      - name: Guard elimination shrinks the Cortex-M0 code
+      - name: Without the depth certificates (--no-opt keeps every guard)
+        run: |
+          for t in cm0c cmc rv32c; do
+            for f in examples/forth/*.fs; do .lake/build/bin/$t forth "$f" --no-opt || exit 1; done
+          done
+      - name: Guard elimination shrinks the microcontroller code
         run: |
           mkdir -p /tmp/size && cd /tmp/size
-          for f in $GITHUB_WORKSPACE/examples/forth/*.fs; do
-            n=$(basename "$f" .fs)
-            $GITHUB_WORKSPACE/.lake/build/bin/cm0c emit-forth "$f" > "$n-opt.s"
-            $GITHUB_WORKSPACE/.lake/build/bin/cm0c emit-forth "$f" --no-opt > "$n-all.s"
-            for v in opt all; do clang --target=thumbv6m-none-eabi -mcpu=cortex-m0 -c -o "$n-$v.o" "$n-$v.s" || exit 1; done
-            a=$(llvm-size "$n-all.o" | awk 'NR==2{print $1}'); b=$(llvm-size "$n-opt.o" | awk 'NR==2{print $1}')
-            echo "$n: $a -> $b bytes of code"
-            [ "$b" -le "$a" ] || exit 1
+          for spec in cm0c:thumbv6m-none-eabi:-mcpu=cortex-m0 cmc:thumbv7m-none-eabi:-mcpu=cortex-m3 rv32c:riscv32-unknown-elf:-march=rv32im; do
+            t=${spec%%:*}; rest=${spec#*:}; tgt=${rest%%:*}; fl=${rest#*:}
+            for f in $GITHUB_WORKSPACE/examples/forth/*.fs; do
+              n=$(basename "$f" .fs)
+              $GITHUB_WORKSPACE/.lake/build/bin/$t emit-forth "$f" > "$t-$n-opt.s"
+              $GITHUB_WORKSPACE/.lake/build/bin/$t emit-forth "$f" --no-opt > "$t-$n-all.s"
+              for v in opt all; do clang --target=$tgt $fl -c -o "$t-$n-$v.o" "$t-$n-$v.s" || exit 1; done
+              a=$(llvm-size "$t-$n-all.o" | awk 'NR==2{print $1}'); b=$(llvm-size "$t-$n-opt.o" | awk 'NR==2{print $1}')
+              echo "$t $n: $a -> $b bytes of code"
+              [ "$b" -le "$a" ] || exit 1
+            done
           done
       - name: Board images (image, run on the emulated boards, verify the serial log)
         run: |
