@@ -35,7 +35,8 @@ flash only (`copy_holds`, `boot_correct`).
 
 `binary_correct`: under those loader facts, after the prologue the lowered code reaches the IR
 outcome from `State.init` on the memory image, or exits with `overflow`. Its other hypotheses are
-only about the program.
+only about the program, including `certOk` for the runtime's stack-depth certificate (the
+lowering leaves out the underflow guards it covers).
 -/
 
 namespace WordDialect

@@ -1218,9 +1218,48 @@ harness and all four backends' end-to-end theorems start from exactly this pair,
 on the image" means the same thing in the proofs and in the tests. The file closes with the
 specification's own example, Forth `5 DUP +`, run to the stack `[10]`.
 
+### `WordDialect/Depth.lean`: stack-depth certificates
+
+Most underflow guards in compiled code can never fire: after `5 DUP`, `+` has its two
+operands. A *certificate* `c : Nat → Nat` records such facts, "at instruction `k` the data stack
+holds at least `c k` words", and `certOk p c` checks one locally, one instruction at a time:
+
+* `c 0 = 0` (the program starts with an empty stack);
+* for every instruction `i` at `k` and every successor `t` it can continue to,
+  `c t ≤ c k - pops i + pushes i`;
+* the return point `k + 1` of every `call` claims nothing (`c (k + 1) = 0`), since a `ret` can
+  come back with any depth.
+
+`DepthInv c s` says the claim holds in state `s` (`c s.pc ≤ depth`) and every address on the
+return stack claims nothing. `DepthInv.init` and `DepthInv.step` give `DepthInv.steps`: under a
+checked certificate the invariant holds at every reachable state. Nothing about the analysis
+that proposes a certificate is trusted. `analyse` is a fixpoint iteration (least depth along the
+paths from the entry, with unreachable code given `0`), and `certTable`/`safeCert` use its result
+only when `certOk` accepts it, falling back to the empty certificate, which `certOk` always
+accepts (`certTable_ok`, `safeCert_ok`).
+
+A backend that drops a guard for `k` operands where `k ≤ c pc` keeps its correctness theorem with
+one extra hypothesis, `certOk p cert`: the invariant guarantees the guard would have passed. The
+Cortex-M0 backend does this (`CM0/Lower.lean`, `need`). Guards are three instructions each and
+were most of the code, so `cm0c` images shrink by about a third:
+
+| Forth file | `.text` bytes, every guard | with the certificate | saved | underflow guards left |
+| --- | ---: | ---: | ---: | ---: |
+| `core.fs` | 5660 | 3716 | 34% | 0 of 81 |
+| `double.fs` | 40408 | 24616 | 39% | 0 of 658 |
+| `leave.fs` | 9860 | 6260 | 36% | 11 of 161 |
+| `loops.fs` | 6036 | 4164 | 31% | 2 of 80 |
+| `while.fs` | 3952 | 2704 | 31% | 1 of 53 |
+| `words.fs` | 2092 | 1540 | 26% | 1 of 24 |
+| `fib.fs` | 1112 | 920 | 17% | 2 of 10 |
+
+(`cm0c emit-forth`, with and without `--no-opt`, assembled for `thumbv6m`.) The guards that
+remain are those an underflow can actually reach, so the traps the IR semantics predicts still
+happen; `cm0c check` exercises them.
+
 ### `formal/WordDialect.lean` and `formal/Audit.lean`
 
-`WordDialect.lean` re-exports the eight modules above. `Audit.lean` imports every library and
+`WordDialect.lean` re-exports the nine modules above. `Audit.lean` imports every library and
 collects every theorem in the `WordDialect` namespace, more than two thousand of them. For each
 it computes the axioms the proof depends on. Lean's standard `propext`, `Quot.sound` and
 `Classical.choice` are allowed; any other axiom is reported with `logError`, so the command, and
@@ -2078,7 +2117,9 @@ across signs and extremes on every 32-bit target.
 It emits assembly, assembles it with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, links
 with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M microbit -kernel`,
 reads the UART up to the `EXIT` line, and compares the status and dump with the Lean semantics at
-width 32 through `Harness32` (the same programs as `rv32c` and `cmc`).
+width 32 through `Harness32` (the same programs as `rv32c` and `cmc`). It lowers with the checked
+stack-depth certificate `certTable` (see `WordDialect/Depth.lean` above); `--no-opt` lowers with
+every guard, for comparison.
 
 ## Trust boundaries in one place
 
@@ -2132,6 +2173,11 @@ Things to keep in mind when reading the theorems:
   `push`/`pop` exist (`RegsOk`), the program has fewer than `2^32` instructions (WebAssembly) or
   `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), or `36 · length < 2^32` (Cortex-M0, whose division sequences are longer), and the register file and memory image fit the runtime layout
   (WebAssembly).
+* **Optimisations take a checked certificate, not a trusted analysis.** The Cortex-M0 lowering
+  drops an underflow guard only where a stack-depth certificate says it cannot fire; its
+  theorems assume `certOk` for that certificate, a decidable check the driver runs. The analysis
+  that proposes the certificate is outside the trusted base: if its result fails the check, the
+  driver uses the empty certificate and keeps every guard.
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
   `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap

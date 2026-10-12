@@ -25,6 +25,9 @@ Hypotheses of both (all explicit):
                       at least two;
 * `L` matches `c`     data-stack end and limit, return-stack gap, auxiliary-stack end and limit,
                       and IR memory size;
+* `hLc`, `hok`        the code was lowered with the configuration's stack-depth certificate, and
+                      that certificate passes `certOk` (`WordDialect/Depth.lean`); the runs carry
+                      `DepthInv`, so every underflow guard the lowering left out would have passed;
 * `hsz`               code indices fit in 32 bits;
 * `RegsOk`            every `push r`/`pop r` names a register inside the register file.
 -/

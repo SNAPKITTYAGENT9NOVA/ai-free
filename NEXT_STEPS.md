@@ -89,6 +89,16 @@ end, from the flash image (`CM0.Emit.boot_correct`). ARMv6-M has no divide instr
 a `bl` (simple, at a cost in code size), constants are built from bytes rather than loaded from
 literal pools, and the stacks hold 1024 words each to fit the 16 KiB of SRAM.
 
+## Done: underflow-guard elimination (Cortex-M0)
+
+`formal/WordDialect/Depth.lean`: a stack-depth certificate, checked by `certOk`, holds at every
+reachable state (`DepthInv.steps`). The Cortex-M0 lowering drops each underflow guard the
+certificate covers; `binary_correct` and `boot_correct` assume `certOk`, which `cm0c` checks
+(`certTable`), falling back to keeping every guard. Code is about a third smaller. Choices a
+later change may revisit: only the Cortex-M0 backend uses it; overflow guards are all kept (a
+maximum-depth bound would remove most of them on programs without unbounded recursion); call
+return points claim depth 0, so a guard right after a call stays.
+
 ## 1. Forth: double-cell storage and arithmetic
 
 The double-cell storage words (`2@ 2! 2VARIABLE`) and double-cell arithmetic

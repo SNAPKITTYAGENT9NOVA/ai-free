@@ -54,6 +54,20 @@ jobs:
         run: .lake/build/bin/cm0c check 300
       - name: Forth source files (Cortex-M0, 32-bit words)
         run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" || exit 1; done
+      - name: Cortex-M0 without the depth certificate (--no-opt keeps every guard)
+        run: for f in examples/forth/*.fs; do .lake/build/bin/cm0c forth "$f" --no-opt || exit 1; done
+      - name: Guard elimination shrinks the Cortex-M0 code
+        run: |
+          mkdir -p /tmp/size && cd /tmp/size
+          for f in $GITHUB_WORKSPACE/examples/forth/*.fs; do
+            n=$(basename "$f" .fs)
+            $GITHUB_WORKSPACE/.lake/build/bin/cm0c emit-forth "$f" > "$n-opt.s"
+            $GITHUB_WORKSPACE/.lake/build/bin/cm0c emit-forth "$f" --no-opt > "$n-all.s"
+            for v in opt all; do clang --target=thumbv6m-none-eabi -mcpu=cortex-m0 -c -o "$n-$v.o" "$n-$v.s" || exit 1; done
+            a=$(llvm-size "$n-all.o" | awk 'NR==2{print $1}'); b=$(llvm-size "$n-opt.o" | awk 'NR==2{print $1}')
+            echo "$n: $a -> $b bytes of code"
+            [ "$b" -le "$a" ] || exit 1
+          done
       - name: Board images (image, run on the emulated boards, verify the serial log)
         run: |
           mkdir -p /tmp/board && cd /tmp/board
