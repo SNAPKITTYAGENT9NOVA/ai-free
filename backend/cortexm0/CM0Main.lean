@@ -136,34 +136,6 @@ def runNative (opt : Bool := true) : Runner32 := fun s => do
   | .error e => return .error e
   | .ok out => return parseTranscript s out
 
-/-- The data stack filled exactly to capacity by straight-line code, where the upper bound removes
-every overflow guard, and one word more, where the bound must keep the last guard (exit 6). -/
-def checkCapacity (opt : Bool) : IO Bool := do
-  let fill : Sample32 :=
-    { name := "cap_fill", prog := List.replicate capacity (.word 1) ++ [.halt], mem := [] }
-  let ok1 ← check32 (runNative opt) fill
-  -- After a call to a word with net effect -1 (it pushes two words and drops three), the frame
-  -- certificate knows the depth exactly: filling to capacity removes every guard, one more keeps
-  -- the last.
-  let afterCall (extra : Nat) : List (WordDialect.Instr 32) :=
-    let w := 2 + (capacity + extra) + 1
-    [.word 7, .call w] ++ List.replicate (capacity + extra) (.word 1) ++ [.halt] ++
-      [.word 1, .word 2, .drop, .drop, .drop, .ret]
-  let ok2 ← check32 (runNative opt)
-    { name := "cap_fill_after_call", prog := afterCall 0, mem := [] }
-  let mut ok := ok1 && ok2
-  for (name, prog) in [("cap_over_word", List.replicate capacity (.word 1) ++ [.word 1, .halt]),
-                       ("cap_over_dup", List.replicate capacity (.word 1) ++ [.dup, .halt]),
-                       ("cap_over_after_call", afterCall 1),
-                       -- recursion that grows the data stack by two words a level
-                       ("ovf_recursive_push2", [.call 2, .halt, .word 1, .word 2, .call 2, .ret])] do
-    let s : Sample32 := { name, prog, mem := [] }
-    match ← runNative opt s with
-    | .ok (.trap 6) => IO.println s!"PASS  {name}  overflow exit 6"
-    | .ok got => IO.println s!"FAIL  {name}  expected overflow exit 6, got {repr got}"; ok := false
-    | .error e => IO.println s!"ERROR {name}: {e}"; ok := false
-  return ok
-
 /-! ## Driver -/
 
 /-- `--board microbit-v1|microbit-v2` anywhere in the arguments, and the rest. -/
@@ -222,24 +194,12 @@ def main (args0 : List String) : IO UInt32 := do
     | some m =>
       let s ← forthFileSample32 path m
       if let some e := s.buildError then IO.eprintln e; return 1
-      let p := s.prog
       let r := runtimeFor s
-      let lo := r.cert
-      let hi := r.ub
-      let grows : WordDialect.Instr 32 → Bool
-        | .word _ | .ptr _ | .push _ | .dup | .over | .fromr | .rfetch => true
-        | _ => false
-      let idx := p.zipIdx
-      let uf := idx.filter fun (i, _) => 0 < i.pops
-      let ufKept := uf.filter fun (i, k) => lo k < i.pops
-      let ov := idx.filter fun (i, _) => grows i
-      let ovKept := ov.filter fun (_, k) => !(hi k + 1 ≤ r.dCap)
-      let frames := if frameOk p r.dCap (analyseFrames p r.dCap) then "accepted" else "rejected"
-      IO.println s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length} (frame certificate {frames})"
+      IO.println (guardStats s r.cert r.ub r.dCap)
       return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let ok ← checkAll32 (runNative opt) count
-    let okc ← checkCapacity opt
+    let okc ← checkCapacity32 (runNative opt) capacity
     return (if ok && okc then 0 else 1)
   | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords] | cm0c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2

@@ -64,51 +64,53 @@ theorem not_step (hs : Rel0 c p s x) (hf : code[x.pc]? = some (.not r0)) :
 
 end Steps
 
-/-- Placement of `ovfD L base ++ [i0, i1, i2]`. -/
-theorem xat_ovf3 {code : List (Instr Nat)} {L : Layout} {base : Nat} {i0 i1 i2 : Instr Nat}
-    (hat : RAt code base (ovfD L base ++ [i0, i1, i2])) :
-    RAt code base (ovfD L base) ∧ code[base + 3]? = some i0 ∧ code[base + 3 + 1]? = some i1 ∧
-      code[base + 3 + 1 + 1]? = some i2 := by
+/-- Placement of `ovf L g base ++ [i0, i1, i2]`. -/
+theorem xat_ovf3 {code : List (Instr Nat)} {L : Layout} {g : Facts} {base : Nat}
+    {i0 i1 i2 : Instr Nat} (hat : RAt code base (ovf L g base ++ [i0, i1, i2])) :
+    RAt code base (ovf L g base) ∧ code[base + ovfSize g]? = some i0 ∧
+      code[base + ovfSize g + 1]? = some i1 ∧ code[base + ovfSize g + 1 + 1]? = some i2 := by
   obtain ⟨hato, hatr⟩ := rat_append.mp hat
-  have hl : (ovfD L base).length = 3 := rfl
-  rw [hl] at hatr
+  rw [ovf_length] at hatr
   obtain ⟨f0, f1, f2, _⟩ := hatr
   exact ⟨hato, f0, f1, f2⟩
 
-/-- Placement of `uf L n base ++ ovfD L (base + ufSize n) ++ [i0, i1, i2]`. -/
-theorem xat_uf_ovf {code : List (Instr Nat)} {L : Layout} {base n : Nat} (hn : 0 < n)
+/-- Placement of `uf L n base ++ ovf L g (base + ufSize n) ++ [i0, i1, i2]`. -/
+theorem xat_uf_ovf {code : List (Instr Nat)} {L : Layout} {g : Facts} {base n : Nat}
     {i0 i1 i2 : Instr Nat} {rest : List (Instr Nat)} (hrest : rest = [i0, i1, i2])
-    (hat : RAt code base (uf L n base ++ ovfD L (base + ufSize n) ++ rest)) :
-    RAt code base (uf L n base) ∧ RAt code (base + 3) (ovfD L (base + 3)) ∧
-      code[base + 6]? = some i0 ∧ code[base + 6 + 1]? = some i1 ∧ code[base + 6 + 1 + 1]? = some i2 := by
+    (hat : RAt code base (uf L n base ++ ovf L g (base + ufSize n) ++ rest)) :
+    RAt code base (uf L n base) ∧ RAt code (base + ufSize n) (ovf L g (base + ufSize n)) ∧
+      code[base + ufSize n + ovfSize g]? = some i0 ∧
+      code[base + ufSize n + ovfSize g + 1]? = some i1 ∧
+      code[base + ufSize n + ovfSize g + 1 + 1]? = some i2 := by
   subst hrest
-  rw [ufSize_pos hn] at hat
   obtain ⟨hatuo, hatr⟩ := rat_append.mp hat
   obtain ⟨hatuf, hato⟩ := rat_append.mp hatuo
-  have hufl : (uf L n base).length = 3 := by rw [uf_eq L hn]; rfl
+  have hufl := uf_length L n base
   rw [hufl] at hato
-  have hl : (uf L n base ++ ovfD L (base + 3)).length = 6 := by simp [hufl, ovfD]
+  have hl : (uf L n base ++ ovf L g (base + ufSize n)).length = ufSize n + ovfSize g := by
+    simp [hufl, ovf_length]
   rw [hl] at hatr
   obtain ⟨f0, f1, f2, _⟩ := hatr
-  exact ⟨hatuf, hato, f0, f1, f2⟩
+  exact ⟨hatuf, hato, by simpa [Nat.add_assoc] using f0, by simpa [Nat.add_assoc] using f1,
+    by simpa [Nat.add_assoc] using f2⟩
 
 section Ops
 
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-  {L : Layout} {base : Nat} {off : Nat → Nat}
+  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts}
 
 theorem sim_not_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hat : RAt code base (lowerInstr L base off .not)) {a : W} {d : List W}
+    (hat : RAt code base (lowerInstr L base off g .not)) {a : W} {d : List W}
     (hd : s.dstack = a :: d) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := (~~~a) :: d } x' ∧
-      x'.pc = base + isize (.not : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 1 base ++ [.load r0 Reg.r4 0, .not r0, .store Reg.r4 0 r0]) := hat
+      x'.pc = base + isize g (.not : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 1) base ++ [.load r0 Reg.r4 0, .not r0, .store Reg.r4 0 r0]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 1 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 1) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, _⟩ := hatr
   have hk : 1 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1 (j := 0) (v := a)
     (by simp [hd]) (rd := r0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hv3⟩ := not_step (code := code) hr2 (fetch_cast f1 (by omega))
@@ -116,57 +118,57 @@ theorem sim_not_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) 
     (rs := r0) (disp := 0) (by simp) (fetch_cast f2 (by omega))
   have e : s.dstack.set 0 (x3.regs r0) = (~~~a) :: d := by simp [hd, hv3, hv2]
   rw [e] at hr4
-  exact ⟨x4, ((hs1.trans hs2).trans hs3).trans hs4, hr4, by simp [isize, ufSize]; omega⟩
+  exact ⟨x4, ((hs1.trans hs2).trans hs3).trans hs4, hr4, by simp [isize]; omega⟩
 
 theorem sim_dup_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off .dup)) {a : W}
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g .dup)) {a : W}
     {d : List W} (hd : s.dstack = a :: d) (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := a :: a :: d } x' ∧
-      x'.pc = base + isize (.dup : WordDialect.Instr 32) := by
-  obtain ⟨hatuf, hato, f0, f1, f2⟩ := xat_uf_ovf (L := L) (n := 1) (by decide) rfl hat
+      x'.pc = base + isize g (.dup : WordDialect.Instr 32) := by
+  obtain ⟨hatuf, hato, f0, f1, f2⟩ := xat_uf_ovf (L := L) (n := need g 1) rfl hat
   have hk : 1 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
-  obtain ⟨x1', hs1', hr1', hpc1', _, _⟩ := ovfD_pass hg hr1 hLd hfit hpc1 hato
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
+  obtain ⟨x1', hs1', hr1', hpc1', _, _⟩ := ovfG_pass hg hr1 hLd hfit hpc1 hato
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1' (j := 0) (v := a)
     (by simp [hd]) (rd := r0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, _⟩ := push_pair hg hr2 r0 (by decide) hfit
     ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), trivial⟩
   rw [hv2, hd] at hr3
-  exact ⟨x3, ((hs1.trans hs1').trans hs2).trans hs3, hr3, by simp [isize, ufSize]; omega⟩
+  exact ⟨x3, ((hs1.trans hs1').trans hs2).trans hs3, hr3, by simp [isize]; omega⟩
 
-theorem sim_dup_ovf (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off .dup)) {a : W}
+theorem sim_dup_ovf (hn : g.noOvf = false) (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g .dup)) {a : W}
     {d : List W} (hd : s.dstack = a :: d) (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     RExec code x .overflow := by
-  obtain ⟨hatuf, hato, _⟩ := xat_uf_ovf (L := L) (n := 1) (by decide) rfl hat
-  obtain ⟨x1, hs1, hr1, hpc1, _, _⟩ := uf_pass hg hs hL (by decide) (by decide) (by simp [hd]) hpc hatuf
-  exact RExec.of_steps hs1 (ovfD_trap hg hr1 hLd h hpc1 hato)
+  obtain ⟨hatuf, hato, _⟩ := xat_uf_ovf (L := L) (n := need g 1) rfl hat
+  obtain ⟨x1, hs1, hr1, hpc1, _, _⟩ := uf_pass hg hs hL (by decide) (by simp [hd]) hpc hatuf
+  exact RExec.of_steps hs1 (ovfG_trap hn hg hr1 hLd h hpc1 hato)
 
 theorem sim_drop_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hat : RAt code base (lowerInstr L base off .drop)) {a : W} {d : List W}
+    (hat : RAt code base (lowerInstr L base off g .drop)) {a : W} {d : List W}
     (hd : s.dstack = a :: d) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := d } x' ∧
-      x'.pc = base + isize (.drop : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 1 base ++ [.addImm Reg.r4 4]) := hat
+      x'.pc = base + isize g (.drop : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 1) base ++ [.addImm Reg.r4 4]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 1 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 1) base
   rw [hufl] at hatr
   obtain ⟨f0, _⟩ := hatr
   have hk : 1 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, _⟩ := adj_step (code := code) hg hr1 (n := 1) (by simp [hd])
     (δ := 4) (by simp) (fetch_cast f0 (by omega))
   have e : (s.dstack).drop 1 = d := by simp [hd]
   rw [e] at hr2
-  exact ⟨x2, hs1.trans hs2, hr2, by simp [isize, ufSize]; omega⟩
+  exact ⟨x2, hs1.trans hs2, hr2, by simp [isize]; omega⟩
 
 theorem sim_word_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (w : W)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off (.word w)))
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.word w)))
     (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := w :: s.dstack } x' ∧
-      x'.pc = base + isize (.word w : WordDialect.Instr 32) := by
+      x'.pc = base + isize g (.word w : WordDialect.Instr 32) := by
   obtain ⟨hato, f0, f1, f2⟩ := xat_ovf3 (L := L) (by exact hat)
-  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfD_pass hg hs hLd hfit hpc hato
+  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfG_pass hg hs hLd hfit hpc hato
   obtain ⟨x1, hs1, hr1, hpc1, hv1, _⟩ := movimm_step (code := code) hr0 (rd := r0) (by simp)
     (v := w) (by rw [hpc0]; exact f0)
   obtain ⟨x2, hs2, hr2, hpc2, _⟩ := push_pair hg hr1 r0 (by decide) hfit
@@ -174,37 +176,37 @@ theorem sim_word_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (w : W
   rw [hv1] at hr2
   exact ⟨x2, (hs0.trans hs1).trans hs2, hr2, by simp [isize]; omega⟩
 
-theorem sim_word_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (w : W)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off (.word w)))
+theorem sim_word_ovf (hn : g.noOvf = false) (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (w : W)
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.word w)))
     (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) : RExec code x .overflow := by
   obtain ⟨hato, _⟩ := xat_ovf3 (L := L) (by exact hat)
-  exact ovfD_trap hg hs hLd h hpc hato
+  exact ovfG_trap hn hg hs hLd h hpc hato
 
 theorem sim_ptr_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (q : WordDialect.Ptr 32)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off (.ptr q)))
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.ptr q)))
     (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := q.toWord :: s.dstack } x' ∧
-      x'.pc = base + isize (.ptr q : WordDialect.Instr 32) :=
-  sim_word_ok (L := L) (off := off) hg hs hpc q.toWord hLd hat hfit
+      x'.pc = base + isize g (.ptr q : WordDialect.Instr 32) :=
+  sim_word_ok (L := L) (off := off) (g := g) hg hs hpc q.toWord hLd hat hfit
 
-theorem sim_ptr_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (q : WordDialect.Ptr 32)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off (.ptr q)))
+theorem sim_ptr_ovf (hn : g.noOvf = false) (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) (q : WordDialect.Ptr 32)
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.ptr q)))
     (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) : RExec code x .overflow :=
-  sim_word_ovf (L := L) (off := off) hg hs hpc q.toWord hLd hat h
+  sim_word_ovf (L := L) (off := off) (g := g) hn hg hs hpc q.toWord hLd hat h
 
 theorem sim_swap_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hat : RAt code base (lowerInstr L base off .swap)) {b a : W} {d : List W}
+    (hat : RAt code base (lowerInstr L base off g .swap)) {b a : W} {d : List W}
     (hd : s.dstack = b :: a :: d) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := a :: b :: d } x' ∧
-      x'.pc = base + isize (.swap : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 2 base ++ [.load r0 Reg.r4 0, .load r1 Reg.r4 4,
+      x'.pc = base + isize g (.swap : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 2) base ++ [.load r0 Reg.r4 0, .load r1 Reg.r4 4,
       .store Reg.r4 0 r1, .store Reg.r4 4 r0]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 2 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 2) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, _⟩ := hatr
   have hk : 2 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1 (j := 0) (v := b)
     (by simp [hd]) (rd := r0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hv3, ho3, _⟩ := ld_step (code := code) hr2 (j := 1) (v := a)
@@ -220,45 +222,45 @@ theorem sim_swap_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x)
   have e : (s.dstack.set 0 (x3.regs r1)).set 1 (x4.regs r0) = a :: b :: d := by
     simp [hd, hv3, hreg4, hax3]
   rw [e] at hr5'
-  exact ⟨x5, (((hs1.trans hs2).trans hs3).trans hs4).trans hs5, hr5', by simp [isize, ufSize]; omega⟩
+  exact ⟨x5, (((hs1.trans hs2).trans hs3).trans hs4).trans hs5, hr5', by simp [isize]; omega⟩
 
 theorem sim_over_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off .over)) {b a : W}
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g .over)) {b a : W}
     {d : List W} (hd : s.dstack = b :: a :: d) (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := a :: b :: a :: d } x' ∧
-      x'.pc = base + isize (.over : WordDialect.Instr 32) := by
-  obtain ⟨hatuf, hato, f0, f1, f2⟩ := xat_uf_ovf (L := L) (n := 2) (by decide) rfl hat
+      x'.pc = base + isize g (.over : WordDialect.Instr 32) := by
+  obtain ⟨hatuf, hato, f0, f1, f2⟩ := xat_uf_ovf (L := L) (n := need g 2) rfl hat
   have hk : 2 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
-  obtain ⟨x1', hs1', hr1', hpc1', _, _⟩ := ovfD_pass hg hr1 hLd hfit hpc1 hato
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
+  obtain ⟨x1', hs1', hr1', hpc1', _, _⟩ := ovfG_pass hg hr1 hLd hfit hpc1 hato
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1' (j := 1) (v := a)
     (by simp [hd]) (rd := r0) (by simp) (disp := 4) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, _⟩ := push_pair hg hr2 r0 (by decide) hfit
     ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), trivial⟩
   rw [hv2, hd] at hr3
-  exact ⟨x3, ((hs1.trans hs1').trans hs2).trans hs3, hr3, by simp [isize, ufSize]; omega⟩
+  exact ⟨x3, ((hs1.trans hs1').trans hs2).trans hs3, hr3, by simp [isize]; omega⟩
 
-theorem sim_over_ovf (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off .over)) {b a : W}
+theorem sim_over_ovf (hn : g.noOvf = false) (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
+    (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g .over)) {b a : W}
     {d : List W} (hd : s.dstack = b :: a :: d) (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) :
     RExec code x .overflow := by
-  obtain ⟨hatuf, hato, _⟩ := xat_uf_ovf (L := L) (n := 2) (by decide) rfl hat
-  obtain ⟨x1, hs1, hr1, hpc1, _, _⟩ := uf_pass hg hs hL (by decide) (by decide) (by simp [hd]) hpc hatuf
-  exact RExec.of_steps hs1 (ovfD_trap hg hr1 hLd h hpc1 hato)
+  obtain ⟨hatuf, hato, _⟩ := xat_uf_ovf (L := L) (n := need g 2) rfl hat
+  obtain ⟨x1, hs1, hr1, hpc1, _, _⟩ := uf_pass hg hs hL (by decide) (by simp [hd]) hpc hatuf
+  exact RExec.of_steps hs1 (ovfG_trap hn hg hr1 hLd h hpc1 hato)
 
 theorem sim_rot_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
-    (hat : RAt code base (lowerInstr L base off .rot)) {cc b a : W} {d : List W}
+    (hat : RAt code base (lowerInstr L base off g .rot)) {cc b a : W} {d : List W}
     (hd : s.dstack = cc :: b :: a :: d) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := a :: cc :: b :: d } x' ∧
-      x'.pc = base + isize (.rot : WordDialect.Instr 32) := by
-  have hat' : RAt code base (uf L 3 base ++ [.load r0 Reg.r4 0, .load r1 Reg.r4 4,
+      x'.pc = base + isize g (.rot : WordDialect.Instr 32) := by
+  have hat' : RAt code base (uf L (need g 3) base ++ [.load r0 Reg.r4 0, .load r1 Reg.r4 4,
       .load r2 Reg.r4 8, .store Reg.r4 0 r2, .store Reg.r4 4 r0, .store Reg.r4 8 r1]) := hat
   obtain ⟨hatuf, hatr⟩ := rat_append.mp hat'
-  have hufl : (uf L 3 base).length = 3 := by simp [uf]
+  have hufl := uf_length L (need g 3) base
   rw [hufl] at hatr
   obtain ⟨f0, f1, f2, f3, f4, f5, _⟩ := hatr
   have hk : 3 ≤ s.dstack.length := by simp [hd]
-  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) (by decide) hk hpc hatuf
+  obtain ⟨x1, hs1, hr1, hpc1, hm1, _⟩ := uf_pass hg hs hL (by decide) hk hpc hatuf
   obtain ⟨x2, hs2, hr2, hpc2, hv2, _, _⟩ := ld_step (code := code) hr1 (j := 0) (v := cc)
     (by simp [hd]) (rd := r0) (by simp) (disp := 0) (by simp) (fetch_cast f0 (by omega))
   obtain ⟨x3, hs3, hr3, hpc3, hv3, ho3, _⟩ := ld_step (code := code) hr2 (j := 1) (v := b)
@@ -284,7 +286,7 @@ theorem sim_rot_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) 
     simp [hd, hv4, hreg5, hreg6, hax4, hcx4]
   rw [e] at hr7'
   exact ⟨x7, (((((hs1.trans hs2).trans hs3).trans hs4).trans hs5).trans hs6).trans hs7, hr7',
-    by simp [isize, ufSize]; omega⟩
+    by simp [isize]; omega⟩
 
 end Ops
 

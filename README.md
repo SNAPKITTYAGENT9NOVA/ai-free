@@ -273,7 +273,7 @@ Builds memory from an image, defines the initial state, and extracts a final dat
 
 ### 9. [Depth.lean](formal/WordDialect/Depth.lean) — checked depth certificates
 
-A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. Upper bounds come in two kinds, both checked against a stack capacity: a `Bound` per instruction (`boundOk`), and a frame certificate (`frameOk`) that tracks depth relative to the entry of the word being executed, with each word's net stack effect, so a recursive word does not spoil the bounds of its callers. Each is backed by an invariant (`UbSound`), and they combine by `min` (`upperTable_sound`). The analyses that propose certificates (`analyse`, `analyseBound`, `analyseFrames`) are untrusted; their results are used only when the checkers accept them. The Cortex-M0 backend uses both to leave out underflow and overflow guards (stops 180 and 187).
+A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. Upper bounds come in two kinds, both checked against a stack capacity: a `Bound` per instruction (`boundOk`), and a frame certificate (`frameOk`) that tracks depth relative to the entry of the word being executed, with each word's net stack effect, so a recursive word does not spoil the bounds of its callers. Each is backed by an invariant (`UbSound`), and they combine by `min` (`upperTable_sound`). The analyses that propose certificates (`analyse`, `analyseBound`, `analyseFrames`) are untrusted; their results are used only when the checkers accept them. The three microcontroller backends (RV32, Cortex-M3, Cortex-M0) use both to leave out underflow and overflow guards (stops 135, 157 and 180).
 
 ### 10. [WordDialect.lean](formal/WordDialect.lean) — the public doorway
 
@@ -815,7 +815,7 @@ The RV32IM model: the instructions of stop 112 on 32-bit registers, with `lw`/`s
 
 ### 135. [Lower.lean](backend/rv32/RV32/Lower.lean) — lower 32-bit words
 
-Lowers `Prog 32`. The register roles and code sizes are those of stop 113; every cell is four bytes, so addresses use `slli 2` and stack offsets are multiples of four, and the shift mask tests `amount <u 32`.
+Lowers `Prog 32`. The register roles and code sizes are those of stop 113; every cell is four bytes, so addresses use `slli 2` and stack offsets are multiples of four, and the shift mask tests `amount <u 32`. As on the Cortex-M0 (stop 180), the layout carries a lower-bound certificate and an upper bound (stop 9), and each instruction's `Facts` leave out the underflow and overflow guards they show cannot fire; the guard lemmas, the simulation, `binary_correct` take `certOk` and `UbSound` accordingly.
 
 ### 136. [Emit.lean](backend/rv32/RV32/Emit.lean) — a runtime without an operating system
 
@@ -907,7 +907,7 @@ The Thumb-2 (ARMv7-M) model on `r0 … r12` and `lr`. Condition flags are not mo
 
 ### 157. [Lower.lean](backend/cortexm/CM/Lower.lean) — the RV32 track on ARM rails
 
-Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The rotations use `ror`: `rotr` is one `ror`, `rotl` is `ror` by the negated amount, which is shorter than the two shifts and an `or` of RISC-V.
+Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The rotations use `ror`: `rotr` is one `ror`, `rotl` is `ror` by the negated amount, which is shorter than the two shifts and an `or` of RISC-V. Guards are left out where the depth certificates show they cannot fire, as on RV32 and the Cortex-M0, so `binary_correct` and `boot_correct` take `certOk` and `UbSound`.
 
 ### 158. [Emit.lean](backend/cortexm/CM/Emit.lean) — a vector table, a UART and a breakpoint
 
@@ -1279,9 +1279,10 @@ them, and otherwise fall back to the certificates that claim nothing (`certTable
 `boundTable_ok`).
 
 A backend that drops a guard where a certificate shows it cannot fire keeps its correctness
-theorem with the checks as extra hypotheses. The Cortex-M0 backend does this
-(`CM0/Lower.lean`: `need`, `ovf`). Guards are three model instructions each (an overflow guard's
-constant takes several more Thumb instructions) and were most of the code:
+theorem with the checks as extra hypotheses. The three microcontroller backends do this
+(`RV32/Lower.lean`, `CM/Lower.lean`, `CM0/Lower.lean`: `need`, `ovf`). Guards are three model
+instructions each (an overflow guard's constant takes several more machine instructions) and
+were most of the code. On the Cortex-M0:
 
 | Forth file | `.text` bytes, every guard | underflow guards removed | and overflow guards (per-word) | saved | overflow guards left |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -1297,6 +1298,20 @@ constant takes several more Thumb instructions) and were most of the code:
 the guards.) The guards that remain are those an underflow can actually reach, and the overflow
 guards inside the bodies of recursive words that grow the stack (`fib.fs`, `sum.fs`), so the traps
 the IR semantics predicts, and exit 6 on a full stack, still happen; `cm0c check` exercises them.
+
+The other two targets keep the same guards and shrink alike (`.text` bytes, every guard → with
+the certificates):
+
+| Forth file | Cortex-M3 (`cmc`, `thumbv7m`) | RV32 (`rv32c`, `rv32im`) |
+| --- | ---: | ---: |
+| `double.fs` | 40082 → 15982 (60%) | 43212 → 19112 (56%) |
+| `core.fs` | 5686 → 2686 (53%) | 5776 → 2776 (52%) |
+| `leave.fs` | 9778 → 4818 (51%) | 10272 → 5312 (48%) |
+| `while.fs` | 3676 → 1916 (48%) | 3704 → 1944 (48%) |
+| `fib.fs` | 1234 → 954 (23%) | 1080 → 800 (26%) |
+
+Every driver has `stats` (the guards left out) and `--no-opt` (every guard kept), and `check`
+runs the capacity edge cases (`Harness32.checkCapacity32`) on each target.
 
 ### `formal/WordDialect.lean` and `formal/Audit.lean`
 
@@ -2214,11 +2229,12 @@ Things to keep in mind when reading the theorems:
   `push`/`pop` exist (`RegsOk`), the program has fewer than `2^32` instructions (WebAssembly) or
   `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), or `36 · length < 2^32` (Cortex-M0, whose division sequences are longer), and the register file and memory image fit the runtime layout
   (WebAssembly).
-* **Optimisations take a checked certificate, not a trusted analysis.** The Cortex-M0 lowering
-  drops an underflow or overflow guard only where a stack-depth certificate or bound says it
-  cannot fire; its theorems assume `certOk` and `UbSound` for them, which the driver obtains from
-  decidable checks (`certTable_ok`, `upperTable_sound`). The analyses that propose them are outside the trusted base: if a result fails its check,
-  the driver uses the certificate that claims nothing and keeps those guards.
+* **Optimisations take a checked certificate, not a trusted analysis.** The microcontroller
+  lowerings (RV32, Cortex-M3, Cortex-M0) drop an underflow or overflow guard only where a
+  stack-depth certificate or bound says it cannot fire; their theorems assume `certOk` and
+  `UbSound` for them, which the drivers obtain from decidable checks (`certTable_ok`,
+  `upperTable_sound`). The analyses that propose them are outside the trusted base: if a result
+  fails its check, the driver uses the certificate that claims nothing and keeps those guards.
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
   `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap

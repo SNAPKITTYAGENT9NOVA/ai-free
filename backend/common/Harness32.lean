@@ -261,6 +261,51 @@ def checkAll32 (run : Runner32) (count : Nat) : IO Bool := do
   let ovf ← checkOverflow32 run
   return ok && fz && ovf
 
+/-! ## Guard elimination
+
+The microcontroller profiles leave out stack guards that the checked certificates of
+`WordDialect.Depth` show cannot fire. These checks exercise the boundary: a data stack of
+`capacity` words filled exactly by straight-line code (every overflow guard removed; the run
+halts), the same after a call to a word with net effect -1, and one word more in each case, or a
+recursion that grows the stack (the guard that must fire is kept; exit 6). -/
+
+def checkCapacity32 (run : Runner32) (capacity : Nat) : IO Bool := do
+  let fill : Sample32 :=
+    { name := "cap_fill", prog := List.replicate capacity (.word 1) ++ [.halt], mem := [] }
+  let ok1 ← check32 run fill
+  -- the word at `w` pushes two words and drops three: net effect -1
+  let afterCall (extra : Nat) : List (WordDialect.Instr 32) :=
+    let w := 2 + (capacity + extra) + 1
+    [.word 7, .call w] ++ List.replicate (capacity + extra) (.word 1) ++ [.halt] ++
+      [.word 1, .word 2, .drop, .drop, .drop, .ret]
+  let ok2 ← check32 run { name := "cap_fill_after_call", prog := afterCall 0, mem := [] }
+  let mut ok := ok1 && ok2
+  for (name, prog) in [("cap_over_word", List.replicate capacity (.word 1) ++ [.word 1, .halt]),
+                       ("cap_over_dup", List.replicate capacity (.word 1) ++ [.dup, .halt]),
+                       ("cap_over_after_call", afterCall 1),
+                       -- recursion that grows the data stack by two words a level
+                       ("ovf_recursive_push2", [.call 2, .halt, .word 1, .word 2, .call 2, .ret])] do
+    match ← run { name, prog, mem := [] } with
+    | .ok (.trap 6) => IO.println s!"PASS  {name}  overflow exit 6"
+    | .ok got => IO.println s!"FAIL  {name}  expected overflow exit 6, got {repr got}"; ok := false
+    | .error e => IO.println s!"ERROR {name}: {e}"; ok := false
+  return ok
+
+/-- How many guards the certificates `lo` (lower bounds) and `hi` (upper bounds) leave out of
+program `p`, against a data stack of `dCap` words. -/
+def guardStats (s : Sample32) (lo hi : Nat → Nat) (dCap : Nat) : String :=
+  let p := s.prog
+  let grows : WordDialect.Instr 32 → Bool
+    | .word _ | .ptr _ | .push _ | .dup | .over | .fromr | .rfetch => true
+    | _ => false
+  let idx := p.zipIdx
+  let uf := idx.filter fun (i, _) => 0 < i.pops
+  let ufKept := uf.filter fun (i, k) => lo k < i.pops
+  let ov := idx.filter fun (i, _) => grows i
+  let ovKept := ov.filter fun (_, k) => !(hi k + 1 ≤ dCap)
+  let frames := if frameOk p dCap (analyseFrames p dCap) then "accepted" else "rejected"
+  s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length} (frame certificate {frames})"
+
 /-! ## Images for real boards
 
 `image` turns a program into files for a real board: the ELF, an Intel HEX file (what a

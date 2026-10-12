@@ -168,6 +168,13 @@ structure Runtime where
   /-- System clock the UART divisor is computed from: the 8 MHz crystal of the EK-LM3S6965. -/
   clockHz : Nat := 8000000
   baud : Nat := 115200
+  /-- The stack-depth certificate the code is lowered with (`WordDialect.Depth`); the driver
+  passes `safeCert` of the program. The default claims nothing and keeps every guard. -/
+  cert : Nat → Nat := fun _ => 0
+  /-- The upper bound on the data-stack depth the code is lowered with; the driver passes
+  `upperTable` of the program against `dCap` (`WordDialect.Depth`). An overflow guard is left out
+  where `ub k + 1 ≤ dCap`; the default (`2^32` everywhere) shows no room, so every guard stays. -/
+  ub : Nat → Nat := fun _ => 2 ^ 32
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -175,11 +182,15 @@ def Runtime.rBase (r : Runtime) : Nat := r.rEnd - 4 * r.rcap
 
 def Runtime.aBase (r : Runtime) : Nat := r.aEnd - 4 * r.acap
 
+/-- The data stack's capacity in words. -/
+def Runtime.dCap (r : Runtime) : Nat := (r.dEnd - r.dBase) / 4
+
 /-- The lowering's view of the runtime: the constants the guards and bounds checks use. -/
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := BitVec.ofNat 32 r.dEnd, memSize := r.memImage.length,
     dLim := BitVec.ofNat 32 (r.dBase + 4), rGap := BitVec.ofNat 32 (4 * r.rcap - 8),
-    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4) }
+    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4), cert := r.cert,
+    ub := r.ub, dCap := r.dCap }
 
 /-- Assembler directives and the vector table: initial stack pointer and reset vector. -/
 def vectors (r : Runtime) : String :=
