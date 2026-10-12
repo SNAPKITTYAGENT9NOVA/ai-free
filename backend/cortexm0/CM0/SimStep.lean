@@ -53,10 +53,13 @@ theorem shape3 {l : List W} (h : 3 ≤ l.length) : ∃ cc y v d, l = cc :: y :: 
       | nil => simp at h
       | cons v d => exact ⟨cc, y, v, d, rfl⟩
 
-theorem lowerInstr_uf (L : Layout) (base : Nat) (off : Nat → Nat) (i : WordDialect.Instr 32)
+theorem lowerInstr_uf (L : Layout) (base : Nat) (off : Nat → Nat) (g : Nat) (i : WordDialect.Instr 32)
     (h : 0 < i.pops) :
-    ∃ rest, lowerInstr L base off i = uf L i.pops base ++ rest ∧ i.pops ≤ 3 := by
-  cases i <;> first | exact ⟨_, rfl, by simp [Instr.pops]⟩ | exact absurd h (by simp [Instr.pops])
+    ∃ rest, lowerInstr L base off g i = uf L (need g i.pops) base ++ rest ∧ i.pops ≤ 3 := by
+  cases i <;> first
+    | exact ⟨_, rfl, by simp [Instr.pops]⟩
+    | exact ⟨_, List.append_assoc _ _ _, by simp [Instr.pops]⟩
+    | exact absurd h (by simp [Instr.pops])
 
 theorem Rel0.setPc {c : Cfg} {p : Prog 32} {s : State 32} {x : M} (h : Rel0 c p s x) (n : Nat) :
     Rel0 c p { s with pc := n } x :=
@@ -78,14 +81,15 @@ theorem sim_trapped {code : List (Instr Nat)} {t : Trap} (h : RExec code x (.tra
     Sim c p code x (.trapped t) := h
 
 theorem rel_fall {i : WordDialect.Instr 32} (hi : p[s.pc]? = some i) {s' : State 32}
-    {x' : M} (h0 : Rel0 c p s' x') (hpc : x'.pc = offs p s.pc + isize i) :
+    {x' : M} (h0 : Rel0 c p s' x') (hpc : x'.pc = offs c.cert p s.pc + isize (c.cert s.pc) i) :
     Rel c p { s' with pc := s.pc + 1 } x' :=
-  ⟨h0.setPc _, by rw [hpc, offs_succ hi]⟩
+  ⟨h0.setPc _, by rw [hpc, offs_succ c.cert hi]⟩
 
 theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
     (hLd : L.dLim = ofN (c.dBase + 4)) (hLr : L.rGap = ofN (4 * c.rcap - 8))
     (hLa : L.aEnd = ofN c.aEnd) (hLal : L.aLim = ofN (c.aBase + 4))
-    (hsz : ∀ k, offs p k < 2 ^ 32) (hs : Rel c p s x)
+    (hLc : L.cert = c.cert) (hsz : ∀ k, offs c.cert p k < 2 ^ 32) (hs : Rel c p s x)
+    (hgd : c.cert s.pc ≤ s.dstack.length)
     {i : WordDialect.Instr 32} (hi : p[s.pc]? = some i)
     (hreg : ∀ r, (i = .push r ∨ i = .pop r) → r < c.nregs) :
     Sim c p (lowerProg L p) x (WordDialect.exec i s) ∨
@@ -93,14 +97,16 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
   have nfD : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd → ¬ Fits c s := fun h hf => h hf.1
   have nfR : ¬ s.rstack.length + 2 ≤ c.rcap → ¬ Fits c s := fun h hf => h hf.2.1
   have nfA : ¬ c.aBase + 4 * (s.astack.length + 1) ≤ c.aEnd → ¬ Fits c s := fun h hf => h hf.2.2
-  have hpc : x.pc = offs p s.pc := hs.2
+  have hpc : x.pc = offs c.cert p s.pc := hs.2
   have hs0 : Rel0 c p s x := hs.1
   have hat := lowerProg_at L p s.pc i hi
+  rw [hLc] at hat
   by_cases hk : s.dstack.length < i.pops
   · rw [exec_underflow i s hk]
-    obtain ⟨rest, hlow, h3⟩ := lowerInstr_uf L (offs p s.pc) (offs p) i (by omega)
+    obtain ⟨rest, hlow, h3⟩ := lowerInstr_uf L (offs c.cert p s.pc) (offs c.cert p) (c.cert s.pc) i
+      (by omega)
     rw [hlow] at hat
-    exact .inl <| sim_trapped (sim_uf_trap hg hs0 hL (by omega) h3 hk hpc hat)
+    exact .inl <| sim_trapped (sim_uf_trap hg hs0 hL (by omega) h3 hgd hk hpc hat)
   · have hk' : i.pops ≤ s.dstack.length := by omega
     cases i with
     | word w =>
@@ -238,8 +244,9 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
         simp only [hc', Bool.false_eq_true, if_false] at hpc'
         exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
     | call t =>
-      have hret : offs p s.pc + isize (.call t : WordDialect.Instr 32) = offs p (s.pc + 1) := by
-        rw [offs_succ hi]
+      have hret : offs c.cert p s.pc + isize (c.cert s.pc) (.call t : WordDialect.Instr 32) =
+          offs c.cert p (s.pc + 1) := by
+        rw [offs_succ c.cert hi]
       by_cases hf : s.rstack.length + 2 ≤ c.rcap
       rotate_left
       · exact .inr ⟨nfR hf, sim_call_ovf hg hs0 hpc hLr hat hf⟩

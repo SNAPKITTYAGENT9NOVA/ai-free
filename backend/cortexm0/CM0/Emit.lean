@@ -167,6 +167,9 @@ structure Runtime where
   port 0. The defaults are the BBC micro:bit V1's (TX P0.24, RX P0.25). -/
   txPin : Nat := 24
   rxPsel : Nat := 25
+  /-- The stack-depth certificate the code is lowered with (`WordDialect.Depth`); the driver
+  passes `safeCert` of the program. The default claims nothing and keeps every guard. -/
+  cert : Nat → Nat := fun _ => 0
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -178,7 +181,7 @@ def Runtime.aBase (r : Runtime) : Nat := r.aEnd - 4 * r.acap
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := BitVec.ofNat 32 r.dEnd, memSize := r.memImage.length,
     dLim := BitVec.ofNat 32 (r.dBase + 4), rGap := BitVec.ofNat 32 (4 * r.rcap - 8),
-    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4) }
+    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4), cert := r.cert }
 
 /-- The `.data` image: IR memory, the register file (`nregs + 1` words) and the two-word
 status block `exitblk`, in the order `epilogue` lays them out. The image is linked into

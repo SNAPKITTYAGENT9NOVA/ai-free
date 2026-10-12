@@ -31,7 +31,8 @@ For a real board, `cm0c image` writes the ELF, an Intel HEX file (copy it onto t
 
 Usage: `cm0c check [fuzzCount]`, `cm0c image <file.fs> [memWords] [--board …]`,
 `cm0c verify <file.fs> <serial.log> [memWords]`, `cm0c emit <sample>`, `cm0c forth <file.fs> [memWords]`,
-`cm0c emit-forth <file.fs> [memWords]`.
+`cm0c emit-forth <file.fs> [memWords]`; `--no-opt` with any of them lowers without the
+stack-depth certificate, keeping every underflow guard.
 -/
 
 open WordDialect
@@ -63,12 +64,19 @@ def microbitV1 : Board := { name := "microbit-v1", txPin := 24, rxPsel := 25 }
 (`PSEL` 40 = port 1, pin 8). Not modelled by the emulator; for real boards. -/
 def microbitV2 : Board := { name := "microbit-v2", txPin := 6, rxPsel := 40 }
 
-def runtimeFor (s : Sample32) (b : Board := microbitV1) : CM0.Emit.Runtime :=
+/-- The runtime for one program. With `opt` the lowering uses the stack-depth certificate
+`safeCert` (`WordDialect.Depth`): the analysis result if `certOk` accepts it, else the empty
+certificate. Either way `certOk` holds (`certTable_ok`), which is all the correctness theorem
+needs, so the analysis itself is not trusted. The table is computed once per runtime. -/
+def runtimeFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : CM0.Emit.Runtime :=
+  let tbl := if opt then certTable s.prog else #[]
   { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
-    nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel }
+    nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel,
+    cert := fun k => tbl.getD k 0 }
 
-def asmFor (s : Sample32) (b : Board := microbitV1) : String :=
-  CM0.Emit.program (runtimeFor s b) (CM0.lowerProg (runtimeFor s b).layout s.prog)
+def asmFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : String :=
+  let r := runtimeFor s b opt
+  CM0.Emit.program r (CM0.lowerProg r.layout s.prog)
 
 /-- The vector table and code in flash from address 0 (where a Cortex-M reads its initial stack
 pointer and reset vector); `.data` in the first 1 KiB of SRAM, loaded into flash after the code
@@ -115,8 +123,8 @@ def runAsm (name asm : String) : IO (Except String String) := do
     let _ ← child.wait
     return .ok out
 
-def runNative : Runner32 := fun s => do
-  match ← runAsm s.name (asmFor s) with
+def runNative (opt : Bool := true) : Runner32 := fun s => do
+  match ← runAsm s.name (asmFor s microbitV1 opt) with
   | .error e => return .error e
   | .ok out => return parseTranscript s out
 
@@ -136,16 +144,19 @@ def parseMem (rest : List String) : Option Nat :=
   | [m] => m.toNat?
   | _ => none
 
-def main (args : List String) : IO UInt32 := do
+def main (args0 : List String) : IO UInt32 := do
+  -- `--no-opt` keeps every underflow guard (the lowering without a depth certificate).
+  let opt := !args0.contains "--no-opt"
+  let args := args0.filter (· != "--no-opt")
   match args with
   | ["emit", name] =>
     match allSamples32.find? (·.name == name) with
-    | some s => IO.println (asmFor s); return 0
+    | some s => IO.println (asmFor s microbitV1 opt); return 0
     | none => IO.eprintln "unknown sample"; return 1
   | "forth" :: path :: rest =>
     match parseMem rest with
     | none => IO.eprintln "usage: cm0c forth <file.fs> [memWords]"; return 2
-    | some m => return (if ← check32 runNative (← forthFileSample32 path m) then 0 else 1)
+    | some m => return (if ← check32 (runNative opt) (← forthFileSample32 path m) then 0 else 1)
   | "emit-forth" :: path :: rest =>
     match parseMem rest with
     | none => IO.eprintln "usage: cm0c emit-forth <file.fs> [memWords]"; return 2
@@ -153,7 +164,7 @@ def main (args : List String) : IO UInt32 := do
       let s ← forthFileSample32 path m
       match s.buildError with
       | some e => IO.eprintln e; return 1
-      | none => IO.println (asmFor s); return 0
+      | none => IO.println (asmFor s microbitV1 opt); return 0
   | "image" :: path :: rest =>
     let (b, rest) := takeBoard rest
     match parseMem rest with
@@ -162,7 +173,7 @@ def main (args : List String) : IO UInt32 := do
       let board := b.getD microbitV1
       let s ← forthFileSample32 path m
       if let some e := s.buildError then IO.eprintln e; return 1
-      match ← buildElf s!"{s.name}-{board.name}" (asmFor s board) with
+      match ← buildElf s!"{s.name}-{board.name}" (asmFor s board opt) with
       | .error e => IO.eprintln e; return 1
       | .ok elf => writeImage s elf s!"{s.name}-{board.name}"
   | "verify" :: path :: log :: rest =>
@@ -171,6 +182,6 @@ def main (args : List String) : IO UInt32 := do
     | some m => verifyLog (← forthFileSample32 path m) log
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
-    let ok ← checkAll32 runNative count
+    let ok ← checkAll32 (runNative opt) count
     return (if ok then 0 else 1)
-  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords]"; return 2
+  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords]  (any command: --no-opt keeps every guard)"; return 2
