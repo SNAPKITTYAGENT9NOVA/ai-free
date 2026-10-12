@@ -63,13 +63,21 @@ the device addresses are those of the `virt` board, and the stacks hold 4096 wor
 ## Done: Cortex-M profile
 
 `backend/cortexm` lowers the 32-bit IR to Thumb-2 (ARMv7-M) and proves it end to end
-(`CM.Emit.binary_correct`), with a bare-metal runtime (vector table, UART output, semihosting
-exit). The image boots from flash: the reset handler's copy of `.data` to SRAM is proved
+(`CM.Emit.binary_correct`), with a bare-metal runtime (vector table, UART output, end of run on
+the UART). The image boots from flash: the reset handler's copy of `.data` to SRAM is proved
 (`CM/Boot.lean`, `boot_correct`). `cmc` runs it on an emulated Stellaris LM3S6965 Cortex-M3
-(`qemu-system-arm -M lm3s6965evb`); CI runs it. Choices a later change may revisit: the stop
-uses semihosting (a board without a debugger needs another end-of-run signal), the UART
-initialisation leaves the baud rate at its reset value, and the cell address uses `lsl` and
-`add` rather than Thumb-2's indexed `ldr`.
+(`qemu-system-arm -M lm3s6965evb`); CI runs it. Choices a later change may revisit: the cell
+address uses `lsl` and `add` rather than Thumb-2's indexed `ldr`.
+
+## Done: board runtime
+
+The Cortex-M3 and Cortex-M0 runtimes set up the clock and UART as a real board needs (crystal,
+UART clock and pins, 115200 8N1) and end a run on the UART (`EXIT` and the status, then `wfi`)
+instead of semihosting, so no debugger is needed. `cmc image` / `cm0c image` write the ELF, an
+Intel HEX file and the UART transcript a correct run prints; `cmc verify` / `cm0c verify` check a
+serial log captured from a board. `docs/HARDWARE.md` is the runbook. **Not yet run on real
+silicon**: the board set-up follows the vendors' documentation and is exercised only on the
+emulators, which ignore clocks and baud rates.
 
 ## Done: Cortex-M0 profile
 
@@ -80,6 +88,16 @@ end, from the flash image (`CM0.Emit.boot_correct`). ARMv6-M has no divide instr
 (`qemu-system-arm -M microbit`); CI runs it. Choices a later change may revisit: every branch is
 a `bl` (simple, at a cost in code size), constants are built from bytes rather than loaded from
 literal pools, and the stacks hold 1024 words each to fit the 16 KiB of SRAM.
+
+## Done: underflow-guard elimination (Cortex-M0)
+
+`formal/WordDialect/Depth.lean`: a stack-depth certificate, checked by `certOk`, holds at every
+reachable state (`DepthInv.steps`). The Cortex-M0 lowering drops each underflow guard the
+certificate covers; `binary_correct` and `boot_correct` assume `certOk`, which `cm0c` checks
+(`certTable`), falling back to keeping every guard. Code is about a third smaller. Choices a
+later change may revisit: only the Cortex-M0 backend uses it; overflow guards are all kept (a
+maximum-depth bound would remove most of them on programs without unbounded recursion); call
+return points claim depth 0, so a guard right after a call stays.
 
 ## 1. Forth: double-cell storage and arithmetic
 

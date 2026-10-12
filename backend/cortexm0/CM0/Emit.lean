@@ -19,12 +19,13 @@ RAM with `copyCode` (proved in `CM0/Boot.lean`), runs the prologue, then jumps o
 pool to the lowered code. The rest of the runtime (`epilogue`) is hand-written assembly. It
 * implements `exitHalt` as: write `depth`, the data stack, IR memory and the virtual register
   file to the UART (the nRF51 UART at `uartBase`, waiting for `EVENTS_TXDRDY` after each byte),
-  one word per line as eight hexadecimal digits, then stop with status 0,
-* implements `exitTrap t` as stopping with status `code t`, and `exitOvf` (stack overflow) with
+  one word per line as eight hexadecimal digits, then end with status 0,
+* implements `exitTrap t` as ending with status `code t`, and `exitOvf` (stack overflow) with
   status 6.
 
-The machine is stopped through semihosting (`bkpt 0xab`, operation `SYS_EXIT_EXTENDED`); on a
-board running without a debugger, that one stub is replaced by whatever signals the end of a run.
+A run ends on the UART, the same way on the emulator and on a board, with no debugger: after the
+dump (if any) the runtime prints a line `EXIT` and the status, stores the status at `exitblk`, and
+sleeps. Before printing it starts the crystal and sets up the UART as a board needs (`uartInit`).
 -/
 
 namespace WordDialect
@@ -150,7 +151,7 @@ def body (code : List (Instr Nat)) : String :=
 
 /-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack placement (`rcap`
 entries ending at `rEnd`, the stack `sp` points into), IR memory image, register-file size,
-auxiliary-stack placement (`acap` words ending at `aEnd`), and the UART address. The three
+auxiliary-stack placement (`acap` words ending at `aEnd`), the UART address and its pins. The three
 stacks are sections the linker places at fixed addresses (`cm0c` uses a linker script). -/
 structure Runtime where
   dEnd : Nat
@@ -162,6 +163,13 @@ structure Runtime where
   aEnd : Nat
   acap : Nat
   uartBase : Nat := 0x40002000
+  /-- The UART pins as the nRF `PSEL` registers take them, and the TX pin's number in GPIO
+  port 0. The defaults are the BBC micro:bit V1's (TX P0.24, RX P0.25). -/
+  txPin : Nat := 24
+  rxPsel : Nat := 25
+  /-- The stack-depth certificate the code is lowered with (`WordDialect.Depth`); the driver
+  passes `safeCert` of the program. The default claims nothing and keeps every guard. -/
+  cert : Nat → Nat := fun _ => 0
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -173,10 +181,10 @@ def Runtime.aBase (r : Runtime) : Nat := r.aEnd - 4 * r.acap
 def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := BitVec.ofNat 32 r.dEnd, memSize := r.memImage.length,
     dLim := BitVec.ofNat 32 (r.dBase + 4), rGap := BitVec.ofNat 32 (4 * r.rcap - 8),
-    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4) }
+    aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4), cert := r.cert }
 
 /-- The `.data` image: IR memory, the register file (`nregs + 1` words) and the two-word
-semihosting parameter block, in the order `epilogue` lays them out. The image is linked into
+status block `exitblk`, in the order `epilogue` lays them out. The image is linked into
 flash and copied to RAM at reset. -/
 def dataImage (r : Runtime) : List Nat := r.memImage ++ List.replicate (r.nregs + 3) 0
 
@@ -214,11 +222,36 @@ def prologue (r : Runtime) : String :=
   s!"\t{la "r5" "regfile"}\n\t{li "r4" r.dEnd}\n\t{li "r6" r.aEnd}\n" ++
   "\tb .L0\n\t.ltorg\n"
 
-/-- Output and exit routines, entered only from `exitHalt`, `exitTrap` and `exitOvf`, so they
-may use any register. `putc` writes `r0` to the UART; `putw` writes `r6` as eight hexadecimal
-digits and a newline; `putws` writes the `r5` words at address `r4`. `.Lexit` stops the machine
-through semihosting with status `r1`. -/
+/-- Bring up the UART as a board needs it (the emulator needs none of it): start the 16 MHz
+crystal (`TASKS_HFCLKSTART`, waiting a bounded time for `EVENTS_HFCLKSTARTED`, since the
+internal RC oscillator is too loose for a serial line), make the TX pin an output that idles
+high, select the pins, set 115200 baud (`BAUDRATE = 0x01D7E000`), enable the UART and start
+its transmitter. Uses `r0 … r3`. -/
+def uartInit (r : Runtime) : String :=
+  "\t.thumb_func\nuart_init:\n" ++
+  s!"\t{la "r2" "0x40000000"}\n\tmovs r3, #1\n\tstr r3, [r2]\n" ++
+  s!"\t{la "r1" "0x100000"}\n\t{la "r0" "0x100"}\n" ++
+  "9:\tldr r3, [r2, r0]\n\tcmp r3, #0\n\tbne 8f\n\tsubs r1, #1\n\tbne 9b\n8:\n" ++
+  s!"\t{la "r2" "0x50000000"}\n\t{la "r0" "0x508"}\n\t{la "r3" (hex (2 ^ r.txPin))}\n\tstr r3, [r2, r0]\n" ++
+  s!"\t{la "r0" (hex (0x700 + 4 * r.txPin))}\n\tmovs r3, #1\n\tstr r3, [r2, r0]\n" ++
+  s!"\t{la "r2" (hex r.uartBase)}\n" ++
+  s!"\t{la "r0" "0x50C"}\n\t{la "r3" (hex r.txPin)}\n\tstr r3, [r2, r0]\n" ++
+  s!"\t{la "r0" "0x514"}\n\t{la "r3" (hex r.rxPsel)}\n\tstr r3, [r2, r0]\n" ++
+  s!"\t{la "r0" "0x524"}\n\t{la "r3" "0x01D7E000"}\n\tstr r3, [r2, r0]\n" ++
+  s!"\t{la "r0" "0x500"}\n\tmovs r3, #4\n\tstr r3, [r2, r0]\n" ++
+  "\tmovs r3, #1\n\tstr r3, [r2, #8]\n\tbx lr\n"
+
+/-- Output and end-of-run routines, entered only from `exitHalt`, `exitTrap` and `exitOvf`, so
+they may use any register. `putc` writes `r0` to the UART; `putw` writes `r6` as eight
+hexadecimal digits and a newline; `putws` writes the `r5` words at address `r4`.
+
+The end of a run (`.Lexit` with the status in `r1`, entered with the UART not yet set up;
+`.Lfinish` with the status in `r6` and the UART set up) needs no debugger: the status goes to
+the two words at `exitblk` (the status and the marker `0xE0D0F1A1`, for a debugger that wants
+to read it), then the UART gets the line `EXIT` and the status as a word line, and the core
+sleeps (`wfi`) for good. -/
 def devices (r : Runtime) : String :=
+  uartInit r ++
   "\t.thumb_func\nputc:\n" ++
   s!"\t{la "r2" (hex r.uartBase)}\n\t{la "r1" "0x51C"}\n\tstr r0, [r2, r1]\n\t{la "r1" "0x11C"}\n" ++
   "1:\tldr r3, [r2, r1]\n\tcmp r3, #0\n\tbeq 1b\n\tmovs r3, #0\n\tstr r3, [r2, r1]\n\tbx lr\n" ++
@@ -229,13 +262,13 @@ def devices (r : Runtime) : String :=
   "\t.thumb_func\nputws:\n\tmov r9, lr\n" ++
   "5:\tcmp r5, #0\n\tbeq 6f\n\tldr r6, [r4]\n\tadds r4, #4\n\tbl putw\n\tsubs r5, #1\n\tb 5b\n" ++
   "6:\tbx r9\n" ++
-  s!".Lexit:\n\t{la "r0" "exitblk"}\n\t{la "r2" "0x20026"}\n" ++
-  "\tstr r2, [r0]\n\tstr r1, [r0, #4]\n\tmov r1, r0\n\tmovs r0, #0x20\n\tbkpt 0xab\n7:\tb 7b\n"
+  ".Lexit:\n\tmov r6, r1\n\tbl uart_init\n" ++
+  s!".Lfinish:\n\t{la "r0" "exitblk"}\n\tstr r6, [r0]\n\t{la "r1" "0xE0D0F1A1"}\n\tstr r1, [r0, #4]\n" ++
+  String.join ("EXIT\n".toList.map fun ch => s!"\tmovs r0, #{ch.toNat}\n\tbl putc\n") ++
+  "\tbl putw\n7:\twfi\n\tb 7b\n"
 
-/-- Turn on the UART (`ENABLE = 4`) and its transmitter (`TASKS_STARTTX`). -/
-def uartOn (r : Runtime) : String :=
-  s!"\t{la "r2" (hex r.uartBase)}\n\t{la "r1" "0x500"}\n\tmovs r3, #4\n\tstr r3, [r2, r1]\n" ++
-  "\tmovs r3, #1\n\tstr r3, [r2, #8]\n"
+/-- Set up the UART for the halt dump. -/
+def uartOn (_r : Runtime) : String := "\tbl uart_init\n"
 
 def epilogue (r : Runtime) : String :=
   let m := r.memImage.length
@@ -245,7 +278,7 @@ def epilogue (r : Runtime) : String :=
   "\tbl putw\n\tbl putws\n" ++
   s!"\tmov r4, r8\n\t{li "r5" m}\n\tbl putws\n" ++
   s!"\tmov r4, r11\n\t{li "r5" r.nregs}\n\tbl putws\n" ++
-  "\tmovs r1, #0\n\tb .Lexit\n" ++
+  "\tmovs r6, #0\n\tb .Lfinish\n" ++
   String.join ((List.range 6).map fun k => s!".Ltrap{k + 1}:\n\tmovs r1, #{k + 1}\n\tb .Lexit\n") ++
   devices r ++ "\t.ltorg\n" ++
   "\t.data\n\t.balign 4\nirmem:\n" ++

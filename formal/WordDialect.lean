@@ -6,3 +6,4 @@ import WordDialect.Invariants
 import WordDialect.Exec
 import WordDialect.Rules
 import WordDialect.Init
+import WordDialect.Depth

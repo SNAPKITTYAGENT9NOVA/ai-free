@@ -33,6 +33,8 @@ structure Cfg where
   rcap : Nat
   aEnd : Nat
   aBase : Nat
+  /-- The depth certificate the code was lowered with (`Layout.cert`). -/
+  cert : Nat → Nat := fun _ => 0
 
 structure Geom (c : Cfg) : Prop where
   dEnd_lt : c.dEnd < 2 ^ 32
@@ -95,7 +97,7 @@ def MemRel (c : Cfg) (mem : Memory 32) (m : Memory 32) : Prop :=
   ∀ a, a < c.M → mem.read? (ofN (c.mb + 4 * a)) = some (m.cell (ofN a))
 
 def RsRel (c : Cfg) (p : Prog 32) (mem : Memory 32) (rs : List Nat) : Prop :=
-  ∀ i a, rs[i]? = some a → mem.read? (ofN (c.sp0 - 4 * rs.length + 4 * i)) = some (ofN (offs p a))
+  ∀ i a, rs[i]? = some a → mem.read? (ofN (c.sp0 - 4 * rs.length + 4 * i)) = some (ofN (offs c.cert p a))
 
 /-- The ARMv6-M memory's addressable set covers every region. -/
 def RegionsValid (c : Cfg) (v : W → Bool) : Prop :=
@@ -125,7 +127,7 @@ structure Rel0 (c : Cfg) (p : Prog 32) (s : State 32) (x : M) : Prop where
 
 /-- Full relation: everything in `Rel0`, and the ARMv6-M pc is the start of the IR pc's code. -/
 def Rel (c : Cfg) (p : Prog 32) (s : State 32) (x : M) : Prop :=
-  Rel0 c p s x ∧ x.pc = offs p s.pc
+  Rel0 c p s x ∧ x.pc = offs c.cert p s.pc
 
 /-- `Rel0` does not look at scratch registers or the pc. -/
 theorem Rel0.congr {c : Cfg} {p : Prog 32} {s : State 32} {x x' : M} (h : Rel0 c p s x)

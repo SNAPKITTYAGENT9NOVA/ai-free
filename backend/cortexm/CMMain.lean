@@ -13,7 +13,8 @@ For each program it
 3. runs the image on the emulated Stellaris LM3S6965 evaluation board, a Cortex-M3 with 256 KiB
    of flash and 64 KiB of SRAM (`qemu-system-arm -M lm3s6965evb`). It takes the initial stack
    pointer and reset vector from the vector table, copies `.data` from flash to SRAM, prints
-   through UART0 and stops through semihosting. The emulated flash ignores writes, so a program
+   through UART0 and ends the run there (an `EXIT` line and the status, then `wfi`; the harness
+   reads up to that line and stops the emulator). The emulated flash ignores writes, so a program
    that ran on the flash copy of `.data` instead of the RAM copy would fail the comparison,
 4. runs the same IR program under the Lean semantics at width 32 (`WordDialect.run`), and
 5. compares the exit status and the dumped data stack, IR memory and virtual registers.
@@ -23,7 +24,11 @@ samples and generated programs narrowed to 32-bit words, 32-bit edge cases, the 
 and overflow programs, and Forth source files compiled at width 32. `check` also runs the
 hand-written data-processing programs of `CM.DataOps`.
 
-Usage: `cmc check [fuzzCount]`, `cmc emit <sample>`, `cmc forth <file.fs> [memWords]`,
+For a real board, `cmc image` writes the ELF, an Intel HEX file and the UART transcript a correct
+run prints; `cmc verify` checks a serial log captured from the board (`docs/HARDWARE.md`).
+
+Usage: `cmc check [fuzzCount]`, `cmc image <file.fs> [memWords]`,
+`cmc verify <file.fs> <serial.log> [memWords]`, `cmc emit <sample>`, `cmc forth <file.fs> [memWords]`,
 `cmc emit-forth <file.fs> [memWords]`.
 -/
 
@@ -64,8 +69,8 @@ def linkerScript : String :=
 
 def workDir : String := "/tmp/cmc"
 
-/-- Assemble, link and run one assembly file; the UART output and the exit status. -/
-def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
+/-- Assemble and link one assembly file; the ELF's path. -/
+def buildElf (name asm : String) : IO (Except String String) := do
   IO.FS.createDirAll workDir
   let base := s!"{workDir}/{name}"
   IO.FS.writeFile (base ++ ".s") asm
@@ -77,21 +82,28 @@ def runAsm (name asm : String) : IO (Except String (String × UInt32)) := do
   let l ← IO.Process.output
     { cmd := "ld.lld", args := #["-T", workDir ++ "/link.ld", "-o", base, base ++ ".o"] }
   if l.exitCode != 0 then return .error s!"ld.lld failed: {l.stderr}"
-  let child ← IO.Process.spawn
-    { cmd := "qemu-system-arm",
-      args := #["-machine", "lm3s6965evb", "-kernel", base, "-display", "none", "-serial", "stdio",
-        "-monitor", "none", "-semihosting-config", "enable=on,target=native"],
-      stdout := .piped, stderr := .null, stdin := .null }
-  let out ← readAll child.stdout ByteArray.empty
-  let code ← child.wait
-  match String.fromUTF8? out with
-  | some t => return .ok (t, code)
-  | none => return .error "UART output is not text"
+  return .ok base
+
+/-- Build, run on the emulated board, and read its UART up to the end of the run (the `EXIT`
+line and the status). The emulator is then stopped: the board itself sleeps for good. -/
+def runAsm (name asm : String) : IO (Except String String) := do
+  match ← buildElf name asm with
+  | .error e => return .error e
+  | .ok elf =>
+    let child ← IO.Process.spawn
+      { cmd := "qemu-system-arm",
+        args := #["-machine", "lm3s6965evb", "-kernel", elf, "-display", "none", "-serial", "stdio",
+          "-monitor", "none"],
+        stdout := .piped, stderr := .null, stdin := .null }
+    let out ← readUntilExit child.stdout
+    child.kill
+    let _ ← child.wait
+    return .ok out
 
 def runNative : Runner32 := fun s => do
   match ← runAsm s.name (asmFor s) with
   | .error e => return .error e
-  | .ok (out, code) => return (if code != 0 then .ok (.trap code.toNat) else parseHexDump s out)
+  | .ok out => return parseTranscript s out
 
 /-! ## Hand-written Cortex-M programs (`CM.DataOps`) -/
 
@@ -106,7 +118,7 @@ def isaAsm (code : List (CM.Instr Nat)) : String :=
   CM.Emit.body code ++ s!".Lhalt:\n\t{CM.Emit.la "r12" "rbuf"}\n" ++
   String.join (isaRegs.zipIdx.map fun (x, k) => s!"\tstr {CM.Emit.regName x}, [r12, #{4 * k}]\n") ++
   CM.Emit.uartOn r ++ s!"\t{CM.Emit.la "r7" "rbuf"}\n\tmovs r9, #12\n\tbl putws\n" ++
-  "\tmovs r1, #0\n\tb .Lexit\n" ++ CM.Emit.devices r ++
+  "\tmovs r1, #0\n\tb .Lfinish\n" ++ CM.Emit.devices r ++
   "\t.data\n\t.balign 4\nrbuf:\n\t.zero 48\nexitblk:\n\t.word 0, 0\n"
 
 def checkIsaProg (name : String) (code : List (CM.Instr Nat)) : IO Bool := do
@@ -114,14 +126,15 @@ def checkIsaProg (name : String) (code : List (CM.Instr Nat)) : IO Bool := do
     (·.map BitVec.toNat)
   let got ← runAsm name (isaAsm code)
   match model, got with
-  | some exp, .ok (out, 0) =>
-    match hexWords out with
-    | some g =>
+  | some exp, .ok out =>
+    let ls := transcriptLines out
+    let i := ls.findIdx (· == exitMarker)
+    match hexWords (String.intercalate "\n" (ls.take i)), hexWords (ls.getD (i + 1) "") with
+    | some g, some [0] =>
       if exp == g then IO.println s!"PASS  {name}  {g}"; return true
       else IO.println s!"FAIL  {name}\n  lean:   {exp}\n  target: {g}"; return false
-    | none => IO.println s!"ERROR {name}: malformed output {out}"; return false
+    | _, _ => IO.println s!"ERROR {name}: malformed output {out}"; return false
   | none, _ => IO.println s!"ERROR {name}: the model did not halt"; return false
-  | _, .ok (_, c) => IO.println s!"ERROR {name}: exit {c}"; return false
   | _, .error e => IO.println s!"ERROR {name}: {e}"; return false
 
 /-- A pseudo-random program over `r0 … r11`: initialise all twelve (some to small values, so
@@ -185,9 +198,22 @@ def main (args : List String) : IO UInt32 := do
       match s.buildError with
       | some e => IO.eprintln e; return 1
       | none => IO.println (asmFor s); return 0
+  | "image" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: cmc image <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample32 path m
+      if let some e := s.buildError then IO.eprintln e; return 1
+      match ← buildElf s.name (asmFor s) with
+      | .error e => IO.eprintln e; return 1
+      | .ok elf => writeImage s elf s.name
+  | "verify" :: path :: log :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: cmc verify <file.fs> <serial.log> [memWords]"; return 2
+    | some m => verifyLog (← forthFileSample32 path m) log
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let ok ← checkAll32 runNative count
     let isa ← checkIsa 100
     return (if ok && isa then 0 else 1)
-  | _ => IO.eprintln "usage: cmc check [fuzzCount] | cmc emit <sample> | cmc forth <file.fs> [memWords] | cmc emit-forth <file.fs> [memWords]"; return 2
+  | _ => IO.eprintln "usage: cmc check [fuzzCount] | cmc emit <sample> | cmc forth <file.fs> [memWords] | cmc emit-forth <file.fs> [memWords] | cmc image <file.fs> [memWords] | cmc verify <file.fs> <serial.log> [memWords]"; return 2

@@ -38,7 +38,7 @@ Scope and trust boundary:
 * `exitHalt` / `exitTrap t` stand for the runtime stubs that dump state and stop the machine;
   they are terminal here. `exitOvf` is the stub for a stack-overflow guard (status 6); it has no
   IR counterpart, since IR stacks are unbounded. There is no operating system: the stubs talk to
-  a UART and stop the machine through semihosting (`CM.Emit`).
+  a UART and end the run there (`CM.Emit`).
 
 That the model matches the hardware is the stated assumption of this backend; `cmc` tests it by
 running the emitted code on an emulated Cortex-M3 board (`qemu-system-arm -M lm3s6965evb`).
