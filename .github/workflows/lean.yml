@@ -33,7 +33,7 @@ jobs:
       - name: Forth source files (WebAssembly)
         run: for f in examples/forth/*.fs; do .lake/build/bin/wasmw forth "$f" || exit 1; done
       - name: Install AArch64/RISC-V toolchain and emulators (user mode, the bare RV32 board and the Cortex-M boards)
-        run: sudo apt-get update && sudo apt-get install -y clang lld qemu-user qemu-system-misc qemu-system-arm
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm qemu-user qemu-system-misc qemu-system-arm
       - name: AArch64 execution check (qemu)
         run: .lake/build/bin/a64c check 300
       - name: Forth source files (AArch64)

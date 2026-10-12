@@ -35,6 +35,9 @@ Serial settings: **115200 baud, 8 data bits, no parity, 1 stop bit (8N1), no flo
 
 ## Build an image
 
+`image` needs `clang`, `ld.lld` and `llvm-objcopy` on the path (on Debian or Ubuntu:
+`apt-get install clang lld llvm`).
+
 ```sh
 lake build
 cd /tmp
