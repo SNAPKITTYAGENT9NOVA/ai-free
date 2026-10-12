@@ -66,8 +66,8 @@ theorem uf_pass_pos {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List 
 `g` words: with enough operands it falls through, to `base + ufSize (need g k)` (at once when the
 certificate made the guard empty). -/
 theorem uf_pass {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base g k : Nat} (hg : Geom c) (hs : Rel0 c p s x) (hL : L.dEnd = ofN c.dEnd)
-    (hk3 : k ≤ 3) (hk : k ≤ s.dstack.length) (hpc : x.pc = base)
+    {L : Layout} {base k : Nat} {g : Facts} (hg : Geom c) (hs : Rel0 c p s x)
+    (hL : L.dEnd = ofN c.dEnd) (hk3 : k ≤ 3) (hk : k ≤ s.dstack.length) (hpc : x.pc = base)
     (hat : RAt code base (uf L (need g k) base)) :
     ∃ x1, RSteps code x x1 ∧ Rel0 c p s x1 ∧ x1.pc = base + ufSize (need g k) ∧ x1.mem = x.mem ∧
       (∀ r, r ≠ r0 → x1.regs r = x.regs r) := by
@@ -79,10 +79,10 @@ theorem uf_pass {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Ins
     exact ⟨x1, a, b, by rw [hpc1, ufSize_pos hn], d, e⟩
 
 /-- Too few operands: the guard exits with `stackUnderflow`. It is there, because the depth
-certificate `g` is a true lower bound (`hgd`) and the stack holds fewer than `k` words. -/
+certificate's bound `g.lo` is a true lower bound (`hgd`) and the stack holds fewer than `k` words. -/
 theorem uf_trap {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base g k : Nat} (hg : Geom c) (hs : Rel0 c p s x) (hL : L.dEnd = ofN c.dEnd)
-    (hk0 : 0 < k) (hk3 : k ≤ 3) (hgd : g ≤ s.dstack.length) (hk : s.dstack.length < k)
+    {L : Layout} {base k : Nat} {g : Facts} (hg : Geom c) (hs : Rel0 c p s x)
+    (hL : L.dEnd = ofN c.dEnd) (hk0 : 0 < k) (hk3 : k ≤ 3) (hgd : g.lo ≤ s.dstack.length) (hk : s.dstack.length < k)
     (hpc : x.pc = base) (hat : RAt code base (uf L (need g k) base)) :
     RExec code x (.trapped .stackUnderflow) := by
   rw [need_of_lt (by omega)] at hat
@@ -149,6 +149,29 @@ theorem ovfD_trap (hg : Geom c) (hs : Rel0 c p s x) (hLd : L.dLim = ofN (c.dBase
   have hholds : Cond.eval .uge (xa.regs r4) (xa.regs r0) = false := by
     rw [hra r4 (by decide), hta, ovfD_cond hg hs hLd]; simpa using h
   exact RExec.of_steps hsa (ovf_trap hj he hpca hholds)
+
+/-- The data-stack guard where the facts keep it: with room for one more word, it falls through
+to `base + ovfSize g` (at once when the bound left the guard out). -/
+theorem ovfG_pass {g : Facts} (hg : Geom c) (hs : Rel0 c p s x) (hLd : L.dLim = ofN (c.dBase + 4))
+    (hfit : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) (hpc : x.pc = base)
+    (hat : RAt code base (ovf L g base)) :
+    ∃ x1, RSteps code x x1 ∧ Rel0 c p s x1 ∧ x1.pc = base + ovfSize g ∧ x1.mem = x.mem ∧
+      (∀ r, r ≠ r0 → x1.regs r = x.regs r) := by
+  unfold ovf at hat
+  unfold ovfSize
+  cases hn : g.noOvf
+  · simp only [hn, Bool.false_eq_true, if_false] at hat ⊢
+    exact ovfD_pass hg hs hLd hfit hpc hat
+  · exact ⟨x, .refl, hs, by simp [hpc], rfl, fun _ _ => rfl⟩
+
+/-- Data stack full: the guard is there (the bound did not claim room) and exits with
+`overflow`. -/
+theorem ovfG_trap {g : Facts} (hn : g.noOvf = false) (hg : Geom c) (hs : Rel0 c p s x)
+    (hLd : L.dLim = ofN (c.dBase + 4)) (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd)
+    (hpc : x.pc = base) (hat : RAt code base (ovf L g base)) : RExec code x .overflow := by
+  unfold ovf at hat
+  simp only [hn, Bool.false_eq_true, if_false] at hat
+  exact ovfD_trap hg hs hLd h hpc hat
 
 /-- The return-stack guard's comparison, in terms of return-stack depth. -/
 theorem ovfR_cond (hg : Geom c) (hs : Rel0 c p s x) (hLr : L.rGap = ofN (4 * c.rcap - 8)) :

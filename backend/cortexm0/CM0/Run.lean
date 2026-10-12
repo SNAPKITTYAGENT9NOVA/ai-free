@@ -63,10 +63,10 @@ theorem rstep_of_fetch {code : List (Instr Nat)} {m : M} {i : Instr Nat}
   simp [step, h]
 
 /-- Prefix sums: `offs` of a cons. -/
-theorem offs_cons (cf : Nat → Nat) (i : WordDialect.Instr 32) (is : Prog 32) (k : Nat) :
+theorem offs_cons (cf : Nat → Facts) (i : WordDialect.Instr 32) (is : Prog 32) (k : Nat) :
     offs cf (i :: is) (k + 1) = isize (cf 0) i + offs (fun j => cf (j + 1)) is k := rfl
 
-theorem offs_zero (cf : Nat → Nat) (p : Prog 32) : offs cf p 0 = 0 := by cases p <;> rfl
+theorem offs_zero (cf : Nat → Facts) (p : Prog 32) : offs cf p 0 = 0 := by cases p <;> rfl
 
 theorem rat_embed (pre seg post : List (Instr Nat)) : RAt (pre ++ seg ++ post) pre.length seg := by
   induction seg generalizing pre with
@@ -77,9 +77,9 @@ theorem rat_embed (pre seg post : List (Instr Nat)) : RAt (pre ++ seg ++ post) p
     simpa [List.append_assoc] using this
 
 /-- Where the lowered code of IR instruction `k` sits: at index `pre.length + offs cf ps k`, with
-the guards for certificate depth `cf k`. -/
+the guards for the facts `cf k`. -/
 theorem lowerGo_at (L : Layout) (off : Nat → Nat) :
-    ∀ (ps : Prog 32) (cf : Nat → Nat) (pre : List (Instr Nat)) (k : Nat) (i : WordDialect.Instr 32),
+    ∀ (ps : Prog 32) (cf : Nat → Facts) (pre : List (Instr Nat)) (k : Nat) (i : WordDialect.Instr 32),
       ps[k]? = some i →
       RAt (pre ++ lowerGo L off cf pre.length ps) (pre.length + offs cf ps k)
         (lowerInstr L (pre.length + offs cf ps k) off (cf k) i) := by
@@ -109,13 +109,13 @@ theorem lowerGo_at (L : Layout) (off : Nat → Nat) :
 
 theorem lowerProg_at (L : Layout) (p : Prog 32) (k : Nat) (i : WordDialect.Instr 32)
     (h : p[k]? = some i) :
-    RAt (lowerProg L p) (offs L.cert p k) (lowerInstr L (offs L.cert p k) (offs L.cert p) (L.cert k) i) := by
-  have := lowerGo_at L (offs L.cert p) p L.cert [] k i h
+    RAt (lowerProg L p) (offs L.facts p k) (lowerInstr L (offs L.facts p k) (offs L.facts p) (L.facts k) i) := by
+  have := lowerGo_at L (offs L.facts p) p L.facts [] k i h
   simpa [lowerProg] using this
 
 /-- The final stub (bad-pc trap) sits at `offs cf p p.length`. -/
 theorem lowerGo_stub (L : Layout) (off : Nat → Nat) :
-    ∀ (ps : Prog 32) (cf : Nat → Nat) (pre : List (Instr Nat)),
+    ∀ (ps : Prog 32) (cf : Nat → Facts) (pre : List (Instr Nat)),
       RAt (pre ++ lowerGo L off cf pre.length ps) (pre.length + offs cf ps ps.length)
         [.exitTrap .badPc] := by
   intro ps
@@ -138,8 +138,8 @@ theorem lowerGo_stub (L : Layout) (off : Nat → Nat) :
     simpa [List.append_assoc] using this
 
 theorem lowerProg_stub (L : Layout) (p : Prog 32) :
-    RAt (lowerProg L p) (offs L.cert p p.length) [.exitTrap .badPc] := by
-  have := lowerGo_stub L (offs L.cert p) p L.cert []
+    RAt (lowerProg L p) (offs L.facts p p.length) [.exitTrap .badPc] := by
+  have := lowerGo_stub L (offs L.facts p) p L.facts []
   simpa [lowerProg] using this
 
 end CM0

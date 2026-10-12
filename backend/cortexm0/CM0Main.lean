@@ -32,7 +32,8 @@ For a real board, `cm0c image` writes the ELF, an Intel HEX file (copy it onto t
 Usage: `cm0c check [fuzzCount]`, `cm0c image <file.fs> [memWords] [--board …]`,
 `cm0c verify <file.fs> <serial.log> [memWords]`, `cm0c emit <sample>`, `cm0c forth <file.fs> [memWords]`,
 `cm0c emit-forth <file.fs> [memWords]`; `--no-opt` with any of them lowers without the
-stack-depth certificate, keeping every underflow guard.
+stack-depth certificate and bound, keeping every guard; `cm0c stats <file.fs>` prints how many
+guards the two leave out.
 -/
 
 open WordDialect
@@ -67,12 +68,16 @@ def microbitV2 : Board := { name := "microbit-v2", txPin := 6, rxPsel := 40 }
 /-- The runtime for one program. With `opt` the lowering uses the stack-depth certificate
 `safeCert` (`WordDialect.Depth`): the analysis result if `certOk` accepts it, else the empty
 certificate. Either way `certOk` holds (`certTable_ok`), which is all the correctness theorem
-needs, so the analysis itself is not trusted. The table is computed once per runtime. -/
+needs, so the analysis itself is not trusted. The table is computed once per runtime. Likewise
+the upper bound `boundTable` (checked by `boundOk` against the data stack's capacity, else
+`Bound.top`, which claims no room) decides which overflow guards are left out. -/
 def runtimeFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : CM0.Emit.Runtime :=
   let tbl := if opt then certTable s.prog else #[]
-  { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
-    nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel,
-    cert := fun k => tbl.getD k 0 }
+  let r : CM0.Emit.Runtime :=
+    { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
+      nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel,
+      cert := fun k => tbl.getD k 0 }
+  if opt then { r with ub := boundTable s.prog r.dCap } else r
 
 def asmFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : String :=
   let r := runtimeFor s b opt
@@ -128,6 +133,23 @@ def runNative (opt : Bool := true) : Runner32 := fun s => do
   | .error e => return .error e
   | .ok out => return parseTranscript s out
 
+/-- The data stack filled exactly to capacity by straight-line code, where the upper bound removes
+every overflow guard, and one word more, where the bound must keep the last guard (exit 6). -/
+def checkCapacity (opt : Bool) : IO Bool := do
+  let fill : Sample32 :=
+    { name := "cap_fill", prog := List.replicate capacity (.word 1) ++ [.halt], mem := [] }
+  let ok1 ← check32 (runNative opt) fill
+  let mut ok := ok1
+  for (name, tail) in [("cap_over_word", [WordDialect.Instr.word 1]),
+                       ("cap_over_dup", [WordDialect.Instr.dup])] do
+    let s : Sample32 :=
+      { name, prog := List.replicate capacity (.word 1) ++ tail ++ [.halt], mem := [] }
+    match ← runNative opt s with
+    | .ok (.trap 6) => IO.println s!"PASS  {name}  overflow exit 6"
+    | .ok got => IO.println s!"FAIL  {name}  expected overflow exit 6, got {repr got}"; ok := false
+    | .error e => IO.println s!"ERROR {name}: {e}"; ok := false
+  return ok
+
 /-! ## Driver -/
 
 /-- `--board microbit-v1|microbit-v2` anywhere in the arguments, and the rest. -/
@@ -145,7 +167,7 @@ def parseMem (rest : List String) : Option Nat :=
   | _ => none
 
 def main (args0 : List String) : IO UInt32 := do
-  -- `--no-opt` keeps every underflow guard (the lowering without a depth certificate).
+  -- `--no-opt` keeps every guard (the lowering without depth certificates).
   let opt := !args0.contains "--no-opt"
   let args := args0.filter (· != "--no-opt")
   match args with
@@ -180,8 +202,28 @@ def main (args0 : List String) : IO UInt32 := do
     match parseMem rest with
     | none => IO.eprintln "usage: cm0c verify <file.fs> <serial.log> [memWords]"; return 2
     | some m => verifyLog (← forthFileSample32 path m) log
+  | "stats" :: path :: rest =>
+    match parseMem rest with
+    | none => IO.eprintln "usage: cm0c stats <file.fs> [memWords]"; return 2
+    | some m =>
+      let s ← forthFileSample32 path m
+      if let some e := s.buildError then IO.eprintln e; return 1
+      let p := s.prog
+      let lo := safeCert p
+      let hi := boundTable p (runtimeFor s).dCap
+      let grows : WordDialect.Instr 32 → Bool
+        | .word _ | .ptr _ | .push _ | .dup | .over | .fromr | .rfetch => true
+        | _ => false
+      let idx := p.zipIdx
+      let uf := idx.filter fun (i, _) => 0 < i.pops
+      let ufKept := uf.filter fun (i, k) => lo k < i.pops
+      let ov := idx.filter fun (i, _) => grows i
+      let ovKept := ov.filter fun (_, k) => !(hi.bound k + 1 ≤ capacity)
+      IO.println s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length}; max depth bound {(idx.map fun (_, k) => hi.bound k).foldl max 0}, at ret {hi.ret}"
+      return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let ok ← checkAll32 (runNative opt) count
-    return (if ok then 0 else 1)
-  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords]  (any command: --no-opt keeps every guard)"; return 2
+    let okc ← checkCapacity opt
+    return (if ok && okc then 0 else 1)
+  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords] | cm0c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2

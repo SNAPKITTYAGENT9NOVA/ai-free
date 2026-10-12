@@ -14,7 +14,7 @@ namespace CM0
 
 open Reg
 
-theorem offs_succ (cf : Nat → Nat) {p : Prog 32} {k : Nat} {i : WordDialect.Instr 32}
+theorem offs_succ (cf : Nat → Facts) {p : Prog 32} {k : Nat} {i : WordDialect.Instr 32}
     (h : p[k]? = some i) : offs cf p (k + 1) = offs cf p k + isize (cf k) i := by
   induction p generalizing cf k with
   | nil => simp at h
@@ -28,7 +28,7 @@ theorem offs_succ (cf : Nat → Nat) {p : Prog 32} {k : Nat} {i : WordDialect.In
 section Ctl
 
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Nat}
+  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts}
 
 theorem sim_jmp_ok (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
     (hat : RAt code base (lowerInstr L base off g (.jmp t))) :
@@ -83,7 +83,7 @@ theorem sim_halt (hs : Rel0 c p s x) (hpc : x.pc = base)
 (`sp`). -/
 theorem sim_call_core (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
     (hat : RAt code base [.call (off t)])
-    (hret : base + 1 = offs c.cert p (s.pc + 1)) (hfitR : s.rstack.length + 2 ≤ c.rcap) :
+    (hret : base + 1 = offs c.facts p (s.pc + 1)) (hfitR : s.rstack.length + 2 ≤ c.rcap) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with rstack := (s.pc + 1) :: s.rstack } x' ∧
       x'.pc = off t := by
   obtain ⟨f0, _⟩ := hat
@@ -176,8 +176,8 @@ theorem sim_call_core (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t :
 
 theorem sim_ret_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base)
     (hat : RAt code base (lowerInstr L base off g .ret)) {a : Nat} {rs : List Nat}
-    (hr : s.rstack = a :: rs) (hsz : offs c.cert p a < 2 ^ 32) :
-    ∃ x', RSteps code x x' ∧ Rel0 c p { s with rstack := rs } x' ∧ x'.pc = offs c.cert p a := by
+    (hr : s.rstack = a :: rs) (hsz : offs c.facts p a < 2 ^ 32) :
+    ∃ x', RSteps code x x' ∧ Rel0 c p { s with rstack := rs } x' ∧ x'.pc = offs c.facts p a := by
   have hat' : RAt code base [.bcc .ne sp r9 (base + 2), .exitTrap .returnUnderflow, .ret] := hat
   obtain ⟨f0, f1, f3, _⟩ := hat'
   have hcapR := hs.capR
@@ -199,14 +199,14 @@ theorem sim_ret_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base)
   rw [hr] at hread
   simp only [List.length_cons, Nat.mul_zero, Nat.add_zero] at hread
   have hst3 : step code { x1 with pc := base + 2 } = .next { (({ x1 with pc := base + 2 } : M).setReg
-      sp (ofN (c.sp0 - 4 * rs.length))) with pc := offs c.cert p a } := by
+      sp (ofN (c.sp0 - 4 * rs.length))) with pc := offs c.facts p a } := by
     rw [rstep_of_fetch (m := { x1 with pc := base + 2 }) f3]
     have hx1r : x1.regs sp = ofN (c.sp0 - 4 * (rs.length + 1)) := hrsp
     have hx1m : x1.mem = x.mem := rfl
     have hadd : ofN (c.sp0 - 4 * (rs.length + 1)) + 4#32 = ofN (c.sp0 - 4 * rs.length) := by
       show ofN _ + ofN 4 = _
       rw [ofN_add]; congr 1; omega
-    have hv : (ofN (offs c.cert p a)).toNat = offs c.cert p a := by
+    have hv : (ofN (offs c.facts p a)).toNat = offs c.facts p a := by
       simp [ofN, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hsz]
     simp only [exec]
     rw [hx1m, hx1r, hread]
@@ -247,7 +247,7 @@ theorem sim_ret_trap (hs : Rel0 c p s x) (hpc : x.pc = base)
 /-- `call t`: the return-stack guard, then the model's `call`. -/
 theorem sim_call_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {t : Nat}
     (hLr : L.rGap = ofN (4 * c.rcap - 8)) (hat : RAt code base (lowerInstr L base off g (.call t)))
-    (hret : base + isize g (.call t : WordDialect.Instr 32) = offs c.cert p (s.pc + 1))
+    (hret : base + isize g (.call t : WordDialect.Instr 32) = offs c.facts p (s.pc + 1))
     (hfitR : s.rstack.length + 2 ≤ c.rcap) :
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with rstack := (s.pc + 1) :: s.rstack } x' ∧
       x'.pc = off t := by

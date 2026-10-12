@@ -129,7 +129,7 @@ flowchart TB
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
 | 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, `cm0c check`, Forth example files |
 | 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: seven (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M3, Cortex-M0, and WebAssembly), proved against their models |
-| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Started: underflow-guard elimination from a checked stack-depth certificate (Cortex-M0), about a third smaller code |
+| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Started: underflow- and overflow-guard elimination from checked stack-depth certificates (Cortex-M0), code up to 72% smaller |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
 ## Next phase: close out the Lean work, then port
@@ -190,8 +190,14 @@ Porting:
   redundant, and its end-to-end theorems (`binary_correct`, `boot_correct`) take `certOk` as one
   more hypothesis. The analysis that proposes certificates is untrusted. `cm0c` images are about a
   third smaller (`double.fs`: 40408 → 24616 bytes of code).
-* Next candidates: the same certificate for the other backends, overflow-guard elimination
-  from a bound on the maximum depth, and the same flash boot for the RV32 profile.
+* **Overflow-guard elimination: done.** `Depth.lean` adds upper bounds (`Bound`, checked by
+  `boundOk` against the target's stack capacity, kept by `BoundInv.step`). The Cortex-M0 lowering
+  also leaves out each data-stack overflow guard where the bound shows room, with `boundOk` as
+  one more hypothesis of `binary_correct` and `boot_correct`. With both certificates `double.fs`
+  goes from 40408 to 11488 bytes of code (72% smaller).
+* Next candidates: the certificates for the other backends, context-sensitive return bounds
+  (so one recursive word does not saturate every return point), auxiliary- and return-stack
+  bounds, and the same flash boot for the RV32 profile.
 
 ## The strategic opportunity
 

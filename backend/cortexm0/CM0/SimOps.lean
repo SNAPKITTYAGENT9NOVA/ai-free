@@ -16,8 +16,8 @@ open Reg
 
 /-- Operand-count trap: any lowering that starts with `uf n` exits with `stackUnderflow`. -/
 theorem sim_uf_trap {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base g n : Nat} {rest : List (Instr Nat)} (hg : Geom c) (hs : Rel0 c p s x)
-    (hL : L.dEnd = ofN c.dEnd) (hn : 0 < n) (hn3 : n ≤ 3) (hgd : g ≤ s.dstack.length)
+    {L : Layout} {base n : Nat} {g : Facts} {rest : List (Instr Nat)} (hg : Geom c) (hs : Rel0 c p s x)
+    (hL : L.dEnd = ofN c.dEnd) (hn : 0 < n) (hn3 : n ≤ 3) (hgd : g.lo ≤ s.dstack.length)
     (hk : s.dstack.length < n) (hpc : x.pc = base) (hat : RAt code base (uf L (need g n) base ++ rest)) :
     RExec code x (.trapped .stackUnderflow) :=
   uf_trap hg hs hL hn hn3 hgd hk hpc (rat_append.mp hat).1
@@ -27,7 +27,7 @@ macro "mid_tac" : tactic =>
              simp [rseq, exec, M.arith, M.mov, M.setReg, M.adv, ha, hb, MidSpec]))
 
 theorem sim_bin_instr {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base : Nat} {off : Nat → Nat} {g : Nat} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd)
+    {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd)
     (hs : Rel0 c p s x) (hpc : x.pc = base) (i : WordDialect.Instr 32) (mid : List (Instr Nat))
     (rr : Reg) (hrr : rr = r0 ∨ rr = r1 ∨ rr = r2 ∨ rr = r3) (f : W → W → W)
     (hmid : MidSpec mid rr f) (hstr : ∀ j ∈ mid, j.straightR = true)
@@ -43,10 +43,10 @@ theorem sim_bin_instr {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : Lis
   exact ⟨x', h1, h2, by rw [h3, hsize]; omega⟩
 
 theorem sim_uf2_trap {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base : Nat} {off : Nat → Nat} {g : Nat} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd)
+    {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd)
     (hs : Rel0 c p s x) (hpc : x.pc = base) (i : WordDialect.Instr 32) (rest : List (Instr Nat))
     (hlow : lowerInstr L base off g i = uf L (need g 2) base ++ rest)
-    (hat : RAt code base (lowerInstr L base off g i)) (hgd : g ≤ s.dstack.length)
+    (hat : RAt code base (lowerInstr L base off g i)) (hgd : g.lo ≤ s.dstack.length)
     (hk : s.dstack.length < 2) : RExec code x (.trapped .stackUnderflow) := by
   rw [hlow] at hat
   exact sim_uf_trap hg hs hL (by decide) (by decide) hgd hk hpc hat
@@ -155,7 +155,7 @@ theorem midspec_rotr : MidSpec [.ror r0 r1] r0 Word.rotr := by
 
 section Ops
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)} {L : Layout}
-  {base : Nat} {off : Nat → Nat} {g : Nat}
+  {base : Nat} {off : Nat → Nat} {g : Facts}
 
 theorem sim_add_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
     (hat : RAt code base (lowerInstr L base off g .add)) {b a : W} {d : List W}

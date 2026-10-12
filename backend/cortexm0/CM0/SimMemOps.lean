@@ -16,7 +16,7 @@ open Reg
 section Ops
 
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Nat}
+  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts}
 
 theorem ult_memSize {a : W} {n : Nat} (hn : n < 2 ^ 32) :
     a.ult (BitVec.ofNat 32 n) = decide (a.toNat < n) := by
@@ -70,22 +70,22 @@ theorem sim_push_ok (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : N
     ∃ x', RSteps code x x' ∧ Rel0 c p { s with dstack := s.regs r :: s.dstack } x' ∧
       x'.pc = base + isize g (.push r : WordDialect.Instr 32) := by
   obtain ⟨hato, f0, f1, f2⟩ := xat_ovf3 (L := L) (by exact hat)
-  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfD_pass hg hs hLd hfit hpc hato
+  obtain ⟨x0, hs0, hr0, hpc0, _, _⟩ := ovfG_pass hg hs hLd hfit hpc hato
   have hst : step code x0 = .next (x0.mov r0 (s.regs r)) := by
     rw [rstep_of_fetch (by rw [hpc0]; exact f0), ld_reg hr0 hr r0 rfl]
   have hr1 : Rel0 c p s (x0.mov r0 (s.regs r)) := mov_rel0 hr0 r0 (scratch_ne r0 (by simp)) _
-  have hpc1 : (x0.mov r0 (s.regs r)).pc = base + 3 + 1 := by simp [M.mov, M.setReg, M.adv, hpc0]
+  have hpc1 : (x0.mov r0 (s.regs r)).pc = base + ovfSize g + 1 := by simp [M.mov, M.setReg, M.adv, hpc0]
   obtain ⟨x2, hs2, hr2, hpc2, _⟩ := push_pair hg hr1 r0 (by decide) hfit
     ⟨fetch_cast f1 (by omega), fetch_cast f2 (by omega), trivial⟩
   have hv : (x0.mov r0 (s.regs r)).regs r0 = s.regs r := by simp [M.mov, M.setReg, M.adv]
   rw [hv] at hr2
   exact ⟨x2, (hs0.trans (RSteps.single hst)).trans hs2, hr2, by simp [isize]; omega⟩
 
-theorem sim_push_ovf (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
+theorem sim_push_ovf (hn : g.noOvf = false) (hg : Geom c) (hs : Rel0 c p s x) (hpc : x.pc = base) {r : Nat}
     (hLd : L.dLim = ofN (c.dBase + 4)) (hat : RAt code base (lowerInstr L base off g (.push r)))
     (h : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd) : RExec code x .overflow := by
   obtain ⟨hato, _⟩ := xat_ovf3 (L := L) (by exact hat)
-  exact ovfD_trap hg hs hLd h hpc hato
+  exact ovfG_trap hn hg hs hLd h hpc hato
 
 theorem sim_pop_ok (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x) (hpc : x.pc = base)
     {r : Nat} (hr : r < c.nregs) (hat : RAt code base (lowerInstr L base off g (.pop r)))

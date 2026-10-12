@@ -35,8 +35,9 @@ flash only (`copy_holds`, `boot_correct`).
 
 `binary_correct`: under those loader facts, after the prologue the lowered code reaches the IR
 outcome from `State.init` on the memory image, or exits with `overflow`. Its other hypotheses are
-only about the program, including `certOk` for the runtime's stack-depth certificate (the
-lowering leaves out the underflow guards it covers).
+only about the program, including `certOk` for the runtime's stack-depth certificate and
+`boundOk` for its upper bound (the lowering leaves out the underflow and overflow guards they
+cover).
 -/
 
 namespace WordDialect
@@ -54,7 +55,7 @@ structure Loader where
 def cfgOf (r : Runtime) (ld : Loader) : Cfg :=
   { dEnd := r.dEnd, dBase := r.dBase, rf := ld.rf, nregs := r.nregs, mb := ld.mb,
     M := r.memImage.length, sp0 := r.rEnd, rcap := r.rcap, aEnd := r.aEnd, aBase := r.aBase,
-    cert := r.cert }
+    cert := r.cert, ub := r.ub }
 
 /-- What the loader guarantees about the machine state `x0` at `_start`. -/
 structure Loader.Holds (r : Runtime) (ld : Loader) (x0 : M) : Prop where
@@ -80,12 +81,13 @@ theorem prologue_run (r : Runtime) (ld : Loader) (x0 : M) :
       .next { entryState r ld x0 with pc := x0.pc + 8 } := by
   simp [prologueCode, entryState, rseq, exec, M.mov, M.setReg, M.adv]
 
-theorem isize_le (g : Nat) (i : WordDialect.Instr 32) : isize g i ≤ 36 := by
+theorem isize_le (g : Facts) (i : WordDialect.Instr 32) : isize g i ≤ 36 := by
   have hu : ∀ k, ufSize (need g k) ≤ 3 := fun k => by unfold ufSize; split <;> omega
+  have hv : ovfSize g ≤ 3 := by unfold ovfSize; split <;> omega
   have h1 := hu 1; have h2 := hu 2; have h3 := hu 3
   cases i <;> simp only [isize] <;> omega
 
-theorem offs_le (cf : Nat → Nat) : ∀ (p : Prog 32) (k : Nat), offs cf p k ≤ 36 * p.length
+theorem offs_le (cf : Nat → Facts) : ∀ (p : Prog 32) (k : Nat), offs cf p k ≤ 36 * p.length
   | [], k => by cases k <;> simp [offs]
   | i :: l, 0 => by simp [offs]
   | i :: l, k + 1 => by
@@ -95,15 +97,15 @@ theorem offs_le (cf : Nat → Nat) : ∀ (p : Prog 32) (k : Nat), offs cf p k �
     omega
 
 /-- Code indices are bounded by the program length. -/
-theorem offs_lt (cf : Nat → Nat) {p : Prog 32} (h : 36 * p.length < 2 ^ 32) (k : Nat) :
+theorem offs_lt (cf : Nat → Facts) {p : Prog 32} (h : 36 * p.length < 2 ^ 32) (k : Nat) :
     offs cf p k < 2 ^ 32 :=
   Nat.lt_of_le_of_lt (offs_le cf p k) h
 
 theorem layout_ok (r : Runtime) (ld : Loader) :
-    r.layout.cert = (cfgOf r ld).cert ∧ r.layout.dEnd = ofN (cfgOf r ld).dEnd ∧ r.layout.memSize = (cfgOf r ld).M ∧
+    r.layout.facts = (cfgOf r ld).facts ∧ r.layout.dEnd = ofN (cfgOf r ld).dEnd ∧ r.layout.memSize = (cfgOf r ld).M ∧
       r.layout.dLim = ofN ((cfgOf r ld).dBase + 4) ∧ r.layout.rGap = ofN (4 * (cfgOf r ld).rcap - 8) ∧
       r.layout.aEnd = ofN (cfgOf r ld).aEnd ∧ r.layout.aLim = ofN ((cfgOf r ld).aBase + 4) :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨funext fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- After the prologue, the machine is related to the IR's initial state. -/
 theorem entry_rel (r : Runtime) (ld : Loader) {x0 : M} (h : ld.Holds r x0) (p : Prog 32) :
@@ -131,15 +133,16 @@ theorem entry_rel (r : Runtime) (ld : Loader) {x0 : M} (h : ld.Holds r x0) (p : 
 the outcome the IR reaches from `State.init` on the memory image, or exits with `overflow` (exit
 code 6). Program hypotheses: code indices fit in 32 bits and register indices are in range. -/
 theorem binary_correct (r : Runtime) (ld : Loader) (p : Prog 32) (hlen : 36 * p.length < 2 ^ 32)
-    (hreg : RegsOk (cfgOf r ld) p) (hok : certOk p r.cert = true) {o : Outcome 32}
+    (hreg : RegsOk (cfgOf r ld) p) (hok : certOk p r.cert = true)
+    (hbok : boundOk p r.dCap r.ub = true) {o : Outcome 32}
     (hx : Exec p (State.init (Memory.ofImage r.memImage)) o) {x0 : M} (h : ld.Holds r x0) :
     rseq (prologueCode r ld) x0 = .next { entryState r ld x0 with pc := x0.pc + 8 } ∧
       (Final (cfgOf r ld) p (lowerProg r.layout p) (entryState r ld x0) o ∨
         RExec (lowerProg r.layout p) (entryState r ld x0) .overflow) := by
   obtain ⟨hLc, hL, hMs, hLd, hLr, hLa, hLal⟩ := layout_ok r ld
   exact ⟨prologue_run r ld x0,
-    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr hLa hLal hLc hok (offs_lt _ hlen) hreg hx
-      (entry_rel r ld h p) (DepthInv.init (certOk_entry hok) _)⟩
+    lowerProg_correct_or_overflow h.geom hL hMs hLd hLr hLa hLal hLc hok hbok (offs_lt _ hlen) hreg
+      hx (entry_rel r ld h p) (DepthInv.init (certOk_entry hok) _) (BoundInv.init _ _)⟩
 
 end Emit
 end CM0
