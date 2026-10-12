@@ -25,11 +25,11 @@ Hypotheses of both (all explicit):
                       at least two;
 * `L` matches `c`     data-stack end and limit, return-stack gap, auxiliary-stack end and limit,
                       and IR memory size;
-* `hLf`, `hok`, `hbok` the code was lowered with the configuration's facts: its lower-bound
-                      certificate passes `certOk` and its upper bound passes `boundOk` against the
-                      data stack's capacity (`WordDialect/Depth.lean`); the runs carry `DepthInv`
-                      and `BoundInv`, so every underflow or overflow guard the lowering left out
-                      would have passed;
+* `hLf`, `hok`, `I`   the code was lowered with the configuration's facts: its lower-bound
+                      certificate passes `certOk`, and its upper bound `c.ub` is implied by an
+                      invariant `I` kept by every step within the data stack's capacity (`hIs`,
+                      `hIb`; `WordDialect.UbSound`); the runs carry `DepthInv` and `I`, so every
+                      underflow or overflow guard the lowering left out would have passed;
 * `hsz`               code indices fit in 32 bits;
 * `RegsOk`            every `push r`/`pop r` names a register inside the register file.
 -/
@@ -70,9 +70,9 @@ theorem step_sim {c : Cfg} {p : Prog 32} {L : Layout} (hg : Geom c)
     (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 4))
     (hLr : L.rGap = ofN (4 * c.rcap - 8)) (hLa : L.aEnd = ofN c.aEnd)
     (hLal : L.aLim = ofN (c.aBase + 4)) (hLf : L.facts = c.facts) (hok : certOk p c.cert = true)
-    (hbok : boundOk p c.dCap c.ub = true)
     (hsz : ∀ k, offs c.facts p k < 2 ^ 32) (hreg : RegsOk c p)
-    {s : State 32} {x : M} (hs : Rel c p s x) (hdi : DepthInv c.cert s) (hbi : BoundInv c.ub s) :
+    {s : State 32} {x : M} (hs : Rel c p s x) (hdi : DepthInv c.cert s)
+    (hub : s.dstack.length ≤ c.ub s.pc) :
     Sim c p (lowerProg L p) x (WordDialect.step p s) ∨
       (¬ Fits c s ∧ RExec (lowerProg L p) x .overflow) := by
   cases hi : p[s.pc]? with
@@ -91,7 +91,7 @@ theorem step_sim {c : Cfg} {p : Prog 32} {L : Layout} (hg : Geom c)
   | some i =>
     have hst : WordDialect.step p s = WordDialect.exec i s := by simp [WordDialect.step, hi]
     rw [hst]
-    exact sim_exec hg hL hMs hLd hLr hLa hLal hLf hsz hs hdi.depth hbi.depth hi (fun r hr => hreg s.pc i hi r hr)
+    exact sim_exec hg hL hMs hLd hLr hLa hLal hLf hsz hs hdi.depth hub hi (fun r hr => hreg s.pc i hi r hr)
 
 /-- Whole-program preservation, with no capacity hypothesis: the ARMv6-M code reaches the IR
 outcome, or exits with `overflow` because a stack was full. -/
@@ -99,32 +99,34 @@ theorem lowerProg_correct_or_overflow {c : Cfg} {p : Prog 32} {L : Layout} (hg :
     (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 4))
     (hLr : L.rGap = ofN (4 * c.rcap - 8)) (hLa : L.aEnd = ofN c.aEnd)
     (hLal : L.aLim = ofN (c.aBase + 4)) (hLf : L.facts = c.facts) (hok : certOk p c.cert = true)
-    (hbok : boundOk p c.dCap c.ub = true)
+    {I : State 32 → Prop}
+    (hIs : ∀ s s', I s → s.dstack.length ≤ c.dCap → WordDialect.step p s = .next s' → I s')
+    (hIb : ∀ s, I s → s.dstack.length ≤ c.ub s.pc)
     (hsz : ∀ k, offs c.facts p k < 2 ^ 32) (hreg : RegsOk c p)
     {s : State 32} {o : Outcome 32} (h : Exec p s o) :
-    ∀ {x : M}, Rel c p s x → DepthInv c.cert s → BoundInv c.ub s →
+    ∀ {x : M}, Rel c p s x → DepthInv c.cert s → I s →
       Final c p (lowerProg L p) x o ∨ RExec (lowerProg L p) x .overflow := by
   induction h with
   | @halt s s' hst =>
     intro x hs hdi hbi
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with this | ⟨_, h6⟩
     · exact .inl this
     · exact .inr h6
   | @trap s t hst =>
     intro x hs hdi hbi
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with this | ⟨_, h6⟩
     · exact .inl this
     · exact .inr h6
   | @next s s' o hst _ ih =>
     intro x hs hdi hbi
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with ⟨x1, hsteps, hrel⟩ | ⟨_, h6⟩
-    · rcases ih hrel (DepthInv.step hok hdi hst) (BoundInv.step hbok hbi (cap_of_rel hs) hst) with hih | h6
+    · rcases ih hrel (DepthInv.step hok hdi hst) (hIs s _ hbi (cap_of_rel hs) hst) with hih | h6
       · left
         cases o with
         | next _ => exact hih.elim
@@ -141,32 +143,34 @@ theorem lowerProg_correct {c : Cfg} {p : Prog 32} {L : Layout} (hg : Geom c)
     (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M) (hLd : L.dLim = ofN (c.dBase + 4))
     (hLr : L.rGap = ofN (4 * c.rcap - 8)) (hLa : L.aEnd = ofN c.aEnd)
     (hLal : L.aLim = ofN (c.aBase + 4)) (hLf : L.facts = c.facts) (hok : certOk p c.cert = true)
-    (hbok : boundOk p c.dCap c.ub = true)
+    {I : State 32 → Prop}
+    (hIs : ∀ s s', I s → s.dstack.length ≤ c.dCap → WordDialect.step p s = .next s' → I s')
+    (hIb : ∀ s, I s → s.dstack.length ≤ c.ub s.pc)
     (hsz : ∀ k, offs c.facts p k < 2 ^ 32) (hreg : RegsOk c p)
     {s : State 32} {o : Outcome 32} (h : Exec p s o) :
-    ∀ {x : M}, Rel c p s x → DepthInv c.cert s → BoundInv c.ub s → (∀ s', Steps p s s' → Fits c s') →
+    ∀ {x : M}, Rel c p s x → DepthInv c.cert s → I s → (∀ s', Steps p s s' → Fits c s') →
       Final c p (lowerProg L p) x o := by
   induction h with
   | @halt s s' hst =>
     intro x hs hdi hbi hb
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with this | ⟨hnf, _⟩
     · exact this
     · exact absurd (hb s .refl) hnf
   | @trap s t hst =>
     intro x hs hdi hbi hb
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with this | ⟨hnf, _⟩
     · exact this
     · exact absurd (hb s .refl) hnf
   | @next s s' o hst _ ih =>
     intro x hs hdi hbi hb
-    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hbok hsz hreg hs hdi hbi
+    have := step_sim hg hL hMs hLd hLr hLa hLal hLf hok hsz hreg hs hdi (hIb s hbi)
     rw [hst] at this
     rcases this with ⟨x1, hsteps, hrel⟩ | ⟨hnf, _⟩
-    · have hih := ih hrel (DepthInv.step hok hdi hst) (BoundInv.step hbok hbi (cap_of_rel hs) hst) (fun s'' hss => hb s'' (Steps.cons hst hss))
+    · have hih := ih hrel (DepthInv.step hok hdi hst) (hIs s _ hbi (cap_of_rel hs) hst) (fun s'' hss => hb s'' (Steps.cons hst hss))
       cases o with
       | next _ => exact hih.elim
       | halted r5 =>

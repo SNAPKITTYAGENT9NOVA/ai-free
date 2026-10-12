@@ -89,7 +89,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
     (hLd : L.dLim = ofN (c.dBase + 4)) (hLr : L.rGap = ofN (4 * c.rcap - 8))
     (hLa : L.aEnd = ofN c.aEnd) (hLal : L.aLim = ofN (c.aBase + 4))
     (hLf : L.facts = c.facts) (hsz : ∀ k, offs c.facts p k < 2 ^ 32) (hs : Rel c p s x)
-    (hgd : c.cert s.pc ≤ s.dstack.length) (hub : s.dstack.length ≤ c.ub.bound s.pc)
+    (hgd : c.cert s.pc ≤ s.dstack.length) (hub : s.dstack.length ≤ c.ub s.pc)
     {i : WordDialect.Instr 32} (hi : p[s.pc]? = some i)
     (hreg : ∀ r, (i = .push r ∨ i = .pop r) → r < c.nregs) :
     Sim c p (lowerProg L p) x (WordDialect.exec i s) ∨

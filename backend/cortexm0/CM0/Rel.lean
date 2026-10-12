@@ -36,14 +36,14 @@ structure Cfg where
   /-- The depth certificate the code was lowered with (`Layout.cert`). -/
   cert : Nat → Nat := fun _ => 0
   /-- The upper bound on the data-stack depth the code was lowered with (`Layout.ub`). -/
-  ub : Bound := Bound.top 0
+  ub : Nat → Nat := fun _ => 2 ^ 32
 
 /-- The data stack's capacity in words. -/
 def Cfg.dCap (c : Cfg) : Nat := (c.dEnd - c.dBase) / 4
 
 /-- The facts the code was lowered with (`Layout.facts`). -/
 def Cfg.facts (c : Cfg) (k : Nat) : Facts :=
-  { lo := c.cert k, noOvf := decide (c.ub.bound k + 1 ≤ c.dCap) }
+  { lo := c.cert k, noOvf := decide (c.ub k + 1 ≤ c.dCap) }
 
 structure Geom (c : Cfg) : Prop where
   dEnd_lt : c.dEnd < 2 ^ 32

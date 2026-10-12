@@ -69,15 +69,18 @@ def microbitV2 : Board := { name := "microbit-v2", txPin := 6, rxPsel := 40 }
 `safeCert` (`WordDialect.Depth`): the analysis result if `certOk` accepts it, else the empty
 certificate. Either way `certOk` holds (`certTable_ok`), which is all the correctness theorem
 needs, so the analysis itself is not trusted. The table is computed once per runtime. Likewise
-the upper bound `boundTable` (checked by `boundOk` against the data stack's capacity, else
-`Bound.top`, which claims no room) decides which overflow guards are left out. -/
+the upper bounds `upperTable` (the least of the checked context-insensitive bound and the checked
+per-word frame bound; `upperTable_sound`) decide which overflow guards are left out. -/
 def runtimeFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : CM0.Emit.Runtime :=
   let tbl := if opt then certTable s.prog else #[]
   let r : CM0.Emit.Runtime :=
     { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
       nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel,
       cert := fun k => tbl.getD k 0 }
-  if opt then { r with ub := boundTable s.prog r.dCap } else r
+  if opt then
+    let up := upperTable s.prog r.dCap
+    { r with ub := fun k => upperAt up r.dCap k }
+  else r
 
 def asmFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : String :=
   let r := runtimeFor s b opt
@@ -139,11 +142,22 @@ def checkCapacity (opt : Bool) : IO Bool := do
   let fill : Sample32 :=
     { name := "cap_fill", prog := List.replicate capacity (.word 1) ++ [.halt], mem := [] }
   let ok1 ← check32 (runNative opt) fill
-  let mut ok := ok1
-  for (name, tail) in [("cap_over_word", [WordDialect.Instr.word 1]),
-                       ("cap_over_dup", [WordDialect.Instr.dup])] do
-    let s : Sample32 :=
-      { name, prog := List.replicate capacity (.word 1) ++ tail ++ [.halt], mem := [] }
+  -- After a call to a word with net effect -1 (it pushes two words and drops three), the frame
+  -- certificate knows the depth exactly: filling to capacity removes every guard, one more keeps
+  -- the last.
+  let afterCall (extra : Nat) : List (WordDialect.Instr 32) :=
+    let w := 2 + (capacity + extra) + 1
+    [.word 7, .call w] ++ List.replicate (capacity + extra) (.word 1) ++ [.halt] ++
+      [.word 1, .word 2, .drop, .drop, .drop, .ret]
+  let ok2 ← check32 (runNative opt)
+    { name := "cap_fill_after_call", prog := afterCall 0, mem := [] }
+  let mut ok := ok1 && ok2
+  for (name, prog) in [("cap_over_word", List.replicate capacity (.word 1) ++ [.word 1, .halt]),
+                       ("cap_over_dup", List.replicate capacity (.word 1) ++ [.dup, .halt]),
+                       ("cap_over_after_call", afterCall 1),
+                       -- recursion that grows the data stack by two words a level
+                       ("ovf_recursive_push2", [.call 2, .halt, .word 1, .word 2, .call 2, .ret])] do
+    let s : Sample32 := { name, prog, mem := [] }
     match ← runNative opt s with
     | .ok (.trap 6) => IO.println s!"PASS  {name}  overflow exit 6"
     | .ok got => IO.println s!"FAIL  {name}  expected overflow exit 6, got {repr got}"; ok := false
@@ -209,8 +223,9 @@ def main (args0 : List String) : IO UInt32 := do
       let s ← forthFileSample32 path m
       if let some e := s.buildError then IO.eprintln e; return 1
       let p := s.prog
-      let lo := safeCert p
-      let hi := boundTable p (runtimeFor s).dCap
+      let r := runtimeFor s
+      let lo := r.cert
+      let hi := r.ub
       let grows : WordDialect.Instr 32 → Bool
         | .word _ | .ptr _ | .push _ | .dup | .over | .fromr | .rfetch => true
         | _ => false
@@ -218,8 +233,9 @@ def main (args0 : List String) : IO UInt32 := do
       let uf := idx.filter fun (i, _) => 0 < i.pops
       let ufKept := uf.filter fun (i, k) => lo k < i.pops
       let ov := idx.filter fun (i, _) => grows i
-      let ovKept := ov.filter fun (_, k) => !(hi.bound k + 1 ≤ capacity)
-      IO.println s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length}; max depth bound {(idx.map fun (_, k) => hi.bound k).foldl max 0}, at ret {hi.ret}"
+      let ovKept := ov.filter fun (_, k) => !(hi k + 1 ≤ r.dCap)
+      let frames := if frameOk p r.dCap (analyseFrames p r.dCap) then "accepted" else "rejected"
+      IO.println s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length} (frame certificate {frames})"
       return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200

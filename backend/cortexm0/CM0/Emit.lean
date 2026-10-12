@@ -170,11 +170,10 @@ structure Runtime where
   /-- The stack-depth certificate the code is lowered with (`WordDialect.Depth`); the driver
   passes `safeCert` of the program. The default claims nothing and keeps every guard. -/
   cert : Nat → Nat := fun _ => 0
-  /-- The upper bound on the data-stack depth the code is lowered with (`WordDialect.Bound`); the
-  driver passes `boundTable` of the program against `dCap`. An overflow guard is left out where
-  `ub.bound k + 1 ≤ dCap`; the default bound (`2^32` everywhere) shows no room, so every guard
-  stays. -/
-  ub : Bound := ⟨fun _ => 2 ^ 32, 2 ^ 32⟩
+  /-- The upper bound on the data-stack depth the code is lowered with; the driver passes
+  `upperTable` of the program against `dCap` (`WordDialect.Depth`). An overflow guard is left out
+  where `ub k + 1 ≤ dCap`; the default (`2^32` everywhere) shows no room, so every guard stays. -/
+  ub : Nat → Nat := fun _ => 2 ^ 32
 
 def Runtime.dBase (r : Runtime) : Nat := r.dEnd - 4 * r.capacity
 
@@ -190,7 +189,7 @@ def Runtime.layout (r : Runtime) : Layout :=
   { dEnd := BitVec.ofNat 32 r.dEnd, memSize := r.memImage.length,
     dLim := BitVec.ofNat 32 (r.dBase + 4), rGap := BitVec.ofNat 32 (4 * r.rcap - 8),
     aEnd := BitVec.ofNat 32 r.aEnd, aLim := BitVec.ofNat 32 (r.aBase + 4), cert := r.cert,
-    ub := r.ub.bound, dCap := r.dCap }
+    ub := r.ub, dCap := r.dCap }
 
 /-- The `.data` image: IR memory, the register file (`nregs + 1` words) and the two-word
 status block `exitblk`, in the order `epilogue` lays them out. The image is linked into
