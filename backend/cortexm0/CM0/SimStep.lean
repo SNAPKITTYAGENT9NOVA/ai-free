@@ -53,7 +53,7 @@ theorem shape3 {l : List W} (h : 3 ≤ l.length) : ∃ cc y v d, l = cc :: y :: 
       | nil => simp at h
       | cons v d => exact ⟨cc, y, v, d, rfl⟩
 
-theorem lowerInstr_uf (L : Layout) (base : Nat) (off : Nat → Nat) (g : Nat) (i : WordDialect.Instr 32)
+theorem lowerInstr_uf (L : Layout) (base : Nat) (off : Nat → Nat) (g : Facts) (i : WordDialect.Instr 32)
     (h : 0 < i.pops) :
     ∃ rest, lowerInstr L base off g i = uf L (need g i.pops) base ++ rest ∧ i.pops ≤ 3 := by
   cases i <;> first
@@ -81,15 +81,15 @@ theorem sim_trapped {code : List (Instr Nat)} {t : Trap} (h : RExec code x (.tra
     Sim c p code x (.trapped t) := h
 
 theorem rel_fall {i : WordDialect.Instr 32} (hi : p[s.pc]? = some i) {s' : State 32}
-    {x' : M} (h0 : Rel0 c p s' x') (hpc : x'.pc = offs c.cert p s.pc + isize (c.cert s.pc) i) :
+    {x' : M} (h0 : Rel0 c p s' x') (hpc : x'.pc = offs c.facts p s.pc + isize (c.facts s.pc) i) :
     Rel c p { s' with pc := s.pc + 1 } x' :=
-  ⟨h0.setPc _, by rw [hpc, offs_succ c.cert hi]⟩
+  ⟨h0.setPc _, by rw [hpc, offs_succ c.facts hi]⟩
 
 theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M)
     (hLd : L.dLim = ofN (c.dBase + 4)) (hLr : L.rGap = ofN (4 * c.rcap - 8))
     (hLa : L.aEnd = ofN c.aEnd) (hLal : L.aLim = ofN (c.aBase + 4))
-    (hLc : L.cert = c.cert) (hsz : ∀ k, offs c.cert p k < 2 ^ 32) (hs : Rel c p s x)
-    (hgd : c.cert s.pc ≤ s.dstack.length)
+    (hLf : L.facts = c.facts) (hsz : ∀ k, offs c.facts p k < 2 ^ 32) (hs : Rel c p s x)
+    (hgd : c.cert s.pc ≤ s.dstack.length) (hub : s.dstack.length ≤ c.ub.bound s.pc)
     {i : WordDialect.Instr 32} (hi : p[s.pc]? = some i)
     (hreg : ∀ r, (i = .push r ∨ i = .pop r) → r < c.nregs) :
     Sim c p (lowerProg L p) x (WordDialect.exec i s) ∨
@@ -97,13 +97,23 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
   have nfD : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd → ¬ Fits c s := fun h hf => h hf.1
   have nfR : ¬ s.rstack.length + 2 ≤ c.rcap → ¬ Fits c s := fun h hf => h hf.2.1
   have nfA : ¬ c.aBase + 4 * (s.astack.length + 1) ≤ c.aEnd → ¬ Fits c s := fun h hf => h hf.2.2
-  have hpc : x.pc = offs c.cert p s.pc := hs.2
+  have hpc : x.pc = offs c.facts p s.pc := hs.2
   have hs0 : Rel0 c p s x := hs.1
   have hat := lowerProg_at L p s.pc i hi
-  rw [hLc] at hat
+  rw [hLf] at hat
+  -- Where the stack may be full, the overflow guard is there: the bound left it out only where
+  -- one more word fits.
+  have hnov : ¬ c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd → (c.facts s.pc).noOvf = false := by
+    intro hf
+    cases h : (c.facts s.pc).noOvf
+    · rfl
+    · exfalso; apply hf
+      simp only [Cfg.facts, decide_eq_true_eq] at h
+      unfold Cfg.dCap at h
+      omega
   by_cases hk : s.dstack.length < i.pops
   · rw [exec_underflow i s hk]
-    obtain ⟨rest, hlow, h3⟩ := lowerInstr_uf L (offs c.cert p s.pc) (offs c.cert p) (c.cert s.pc) i
+    obtain ⟨rest, hlow, h3⟩ := lowerInstr_uf L (offs c.facts p s.pc) (offs c.facts p) (c.facts s.pc) i
       (by omega)
     rw [hlow] at hat
     exact .inl <| sim_trapped (sim_uf_trap hg hs0 hL (by omega) h3 hgd hk hpc hat)
@@ -112,14 +122,14 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
     | word w =>
       by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
       rotate_left
-      · exact .inr ⟨nfD hf, sim_word_ovf hg hs0 hpc w hLd hat hf⟩
+      · exact .inr ⟨nfD hf, sim_word_ovf (hnov hf) hg hs0 hpc w hLd hat hf⟩
       obtain ⟨x', hst, h0, hpc'⟩ := sim_word_ok hg hs0 hpc w hLd hat hf
       rw [exec_word]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
     | ptr q =>
       by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
       rotate_left
-      · exact .inr ⟨nfD hf, sim_ptr_ovf hg hs0 hpc q hLd hat hf⟩
+      · exact .inr ⟨nfD hf, sim_ptr_ovf (hnov hf) hg hs0 hpc q hLd hat hf⟩
       obtain ⟨x', hst, h0, hpc'⟩ := sim_ptr_ok hg hs0 hpc q hLd hat hf
       rw [exec_ptr]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
@@ -244,9 +254,9 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
         simp only [hc', Bool.false_eq_true, if_false] at hpc'
         exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
     | call t =>
-      have hret : offs c.cert p s.pc + isize (c.cert s.pc) (.call t : WordDialect.Instr 32) =
-          offs c.cert p (s.pc + 1) := by
-        rw [offs_succ c.cert hi]
+      have hret : offs c.facts p s.pc + isize (c.facts s.pc) (.call t : WordDialect.Instr 32) =
+          offs c.facts p (s.pc + 1) := by
+        rw [offs_succ c.facts hi]
       by_cases hf : s.rstack.length + 2 ≤ c.rcap
       rotate_left
       · exact .inr ⟨nfR hf, sim_call_ovf hg hs0 hpc hLr hat hf⟩
@@ -266,7 +276,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
     | push r =>
       by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
       rotate_left
-      · exact .inr ⟨nfD hf, sim_push_ovf hg hs0 hpc hLd hat hf⟩
+      · exact .inr ⟨nfD hf, sim_push_ovf (hnov hf) hg hs0 hpc hLd hat hf⟩
       obtain ⟨x', hst, h0, hpc'⟩ := sim_push_ok hg hs0 hpc (hreg r (Or.inl rfl)) hLd hat hf
       rw [exec_push]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
@@ -279,7 +289,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
       obtain ⟨a, d, hd⟩ := shape1 (by simpa [Instr.pops] using hk')
       by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
       rotate_left
-      · exact .inr ⟨nfD hf, sim_dup_ovf hg hL hs0 hpc hLd hat hd hf⟩
+      · exact .inr ⟨nfD hf, sim_dup_ovf (hnov hf) hg hL hs0 hpc hLd hat hd hf⟩
       obtain ⟨x', hst, h0, hpc'⟩ := sim_dup_ok hg hL hs0 hpc hLd hat hd hf
       rw [exec_dup hd]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
@@ -297,7 +307,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
       obtain ⟨b, a, d, hd⟩ := shape2 (by simpa [Instr.pops] using hk')
       by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
       rotate_left
-      · exact .inr ⟨nfD hf, sim_over_ovf hg hL hs0 hpc hLd hat hd hf⟩
+      · exact .inr ⟨nfD hf, sim_over_ovf (hnov hf) hg hL hs0 hpc hLd hat hd hf⟩
       obtain ⟨x', hst, h0, hpc'⟩ := sim_over_ok hg hL hs0 hpc hLd hat hd hf
       rw [exec_over hd]
       exact .inl <| sim_next ⟨x', hst, rel_fall hi h0 hpc'⟩
@@ -327,7 +337,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
       | cons a as =>
         by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
         rotate_left
-        · exact .inr ⟨nfD hf, sim_fromr_ovf hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
+        · exact .inr ⟨nfD hf, sim_fromr_ovf (hnov hf) hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
         obtain ⟨x', hst, h0, hpc'⟩ := sim_fromr_ok hg hLa hLd hs0 hpc hat ha hf
         have e : WordDialect.exec WordDialect.Instr.fromr s =
             .next { s with pc := s.pc + 1, dstack := a :: s.dstack, astack := as } := by
@@ -344,7 +354,7 @@ theorem sim_exec (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hMs : L.memSize = c.M
       | cons a as =>
         by_cases hf : c.dBase + 4 * (s.dstack.length + 1) ≤ c.dEnd
         rotate_left
-        · exact .inr ⟨nfD hf, sim_rfetch_ovf hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
+        · exact .inr ⟨nfD hf, sim_rfetch_ovf (hnov hf) hg hLa hLd hs0 hpc hat (by simp [ha]) hf⟩
         obtain ⟨x', hst, h0, hpc'⟩ := sim_rfetch_ok hg hLa hLd hs0 hpc hat ha hf
         have e : WordDialect.exec WordDialect.Instr.rfetch s = s.fall (a :: s.dstack) := by
           simp [WordDialect.exec, ha]

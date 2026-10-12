@@ -19,7 +19,7 @@ open Reg
 section Div
 
 variable {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Nat}
+  {L : Layout} {base : Nat} {off : Nat → Nat} {g : Facts}
 
 /-- `Rel0` ignores scratch registers. -/
 theorem rel0_scratch (hs : Rel0 c p s x) {x' : M} (hm : x'.mem = x.mem)

@@ -196,4 +196,153 @@ theorem certOk_entry {p : Prog n} {c : Nat → Nat} (h : certOk p c = true) : c 
 
 theorem safeCert_zero (p : Prog n) : safeCert p 0 = 0 := certOk_entry (safeCert_ok p)
 
+
+/-! ## Upper bounds
+
+The dual question: how deep can the data stack get? IR stacks are unbounded, so every backend
+guards each instruction that grows the data stack with an overflow check (exit 6 when the target's
+stack is full). A *bound* `b` claims an upper bound `b.bound k` on the depth at instruction `k`;
+where `b.bound k + 1` words fit, the check cannot fire and a backend may drop it.
+
+Unlike lower bounds, an upper bound has no trivial value in the IR, where recursion can grow the
+stack without limit. The target's capacity `cap` supplies one: a backend only runs while the
+depth is at most `cap` (its other guards see to that), so the checker reasons from
+`min (b.bound k) cap`, and a bound of `cap + 3` everywhere (`Bound.top`) always checks.
+
+Returns are handled context-insensitively: `b.ret` bounds the depth at every `ret`, and every
+return point (the instruction after a `call`) must allow `b.ret`.
+
+The rules `boundOk` checks, for each instruction `i` at `k`:
+* each successor `t` gets `min (b.bound k) cap - pops i + pushes i ≤ b.bound t`;
+* a `call` at `k` gets `b.ret ≤ b.bound (k + 1)`;
+* a `ret` at `k` gets `min (b.bound k) cap ≤ b.ret`.
+No rule is needed at the entry: the stack starts empty.
+-/
+
+theorem Instr.pushes_le (i : Instr n) : i.pushes ≤ 3 := by cases i <;> simp [Instr.pushes]
+
+/-- An upper-bound certificate: a bound per instruction, and one for every `ret`. -/
+structure Bound where
+  bound : Nat → Nat
+  ret : Nat
+
+/-- The bound that claims nothing beyond the capacity. -/
+def Bound.top (cap : Nat) : Bound := ⟨fun _ => cap + 3, cap + 3⟩
+
+/-- The checker for upper bounds against capacity `cap`. -/
+def boundOk (p : Prog n) (cap : Nat) (b : Bound) : Bool :=
+  p.zipIdx.all fun (i, k) =>
+    (i.succs k).all (fun t => decide (min (b.bound k) cap - i.pops + i.pushes ≤ b.bound t)) &&
+    (match i with
+     | .call _ => decide (b.ret ≤ b.bound (k + 1))
+     | .ret => decide (min (b.bound k) cap ≤ b.ret)
+     | _ => true)
+
+/-- The upper bounds hold in state `s`: at the current instruction, and every return address on
+the return stack allows `b.ret`. -/
+structure BoundInv (b : Bound) (s : State n) : Prop where
+  depth : s.dstack.length ≤ b.bound s.pc
+  rets : ∀ a ∈ s.rstack, b.ret ≤ b.bound a
+
+theorem boundOk_at {p : Prog n} {cap : Nat} {b : Bound} (h : boundOk p cap b = true) {k : Nat}
+    {i : Instr n} (hk : p[k]? = some i) :
+    (∀ t ∈ i.succs k, min (b.bound k) cap - i.pops + i.pushes ≤ b.bound t) ∧
+      (∀ t, i = .call t → b.ret ≤ b.bound (k + 1)) ∧
+      (i = .ret → min (b.bound k) cap ≤ b.ret) := by
+  simp only [boundOk, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  have hmem : (i, k) ∈ p.zipIdx := by
+    rw [List.mem_zipIdx_iff_getElem?]; simpa using hk
+  obtain ⟨hs, hc⟩ := h _ hmem
+  refine ⟨hs, ?_, ?_⟩
+  · rintro t rfl; simpa using hc
+  · rintro rfl; simpa using hc
+
+theorem boundOk_top (p : Prog n) (cap : Nat) : boundOk p cap (Bound.top cap) = true := by
+  simp only [boundOk, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq]
+  intro x _
+  refine ⟨fun _ _ => ?_, ?_⟩
+  · have := Instr.pushes_le x.1
+    simp only [Bound.top]
+    omega
+  · split <;> simp [Bound.top]
+
+theorem BoundInv.init (b : Bound) (mem : Memory n) : BoundInv b (State.init mem) where
+  depth := by simp [State.init]
+  rets := by simp [State.init]
+
+/-- **Soundness of the checker:** one step from a state within the capacity keeps the bounds. -/
+theorem BoundInv.step {p : Prog n} {cap : Nat} {b : Bound} (hok : boundOk p cap b = true)
+    {s s' : State n} (hi : BoundInv b s) (hcap : s.dstack.length ≤ cap)
+    (h : WordDialect.step p s = .next s') : BoundInv b s' := by
+  unfold WordDialect.step at h
+  split at h
+  · cases h
+  · rename_i i hk
+    obtain ⟨hsucc, hcall, hret⟩ := boundOk_at hok hk
+    have hdep := exec_depth i s s' h
+    have hd := hi.depth
+    have hm : s.dstack.length ≤ min (b.bound s.pc) cap := Nat.le_min.mpr ⟨hd, hcap⟩
+    rcases exec_flow i s s' h with ⟨hpc, hrs⟩ | ⟨t, rfl, hpc, hrs⟩ | ⟨rfl, hrs⟩
+    · refine ⟨?_, by rw [hrs]; exact hi.rets⟩
+      have := hsucc _ hpc
+      omega
+    · refine ⟨?_, ?_⟩
+      · have := hsucc t (by simp [Instr.succs])
+        simp only [Instr.pops, Instr.pushes] at this hdep
+        rw [hpc]; omega
+      · rw [hrs]; intro a ha
+        simp only [List.mem_cons] at ha
+        rcases ha with rfl | ha
+        · exact hcall t rfl
+        · exact hi.rets a ha
+    · have hr := hret rfl
+      simp only [Instr.pops, Instr.pushes] at hdep
+      refine ⟨?_, ?_⟩
+      · have := hi.rets s'.pc (by rw [hrs]; simp)
+        omega
+      · intro a ha; exact hi.rets a (by rw [hrs]; simp [ha])
+
+/-- An untrusted analysis for upper bounds: the least solution of the `boundOk` rules, by
+iteration from `0` (it exists, every value being at most `cap + 3`). Its result is used only
+when `boundOk` accepts it. -/
+def analyseBound (p : Prog n) (cap : Nat) : Array Nat × Nat := Id.run do
+  let len := p.length
+  let mut u : Array Nat := Array.replicate (len + 1) 0
+  let mut r := 0
+  for _ in List.range (4 * len + 2 * cap + 16) do
+    let mut changed := false
+    for (i, k) in p.zipIdx do
+      let m := min u[k]! cap
+      let out := m - i.pops + i.pushes
+      for t in i.succs k do
+        if t ≤ len && u[t]! < out then
+          u := u.set! t out
+          changed := true
+      match i with
+      | .call _ =>
+        if u[k + 1]! < r then
+          u := u.set! (k + 1) r
+          changed := true
+      | .ret =>
+        if r < m then
+          r := m
+          changed := true
+      | _ => pure ()
+    if !changed then break
+  return (u, r)
+
+/-- The checked bound: the analysis when `boundOk` accepts it (reading `cap + 3` outside its
+table), else `Bound.top`. -/
+def boundTable (p : Prog n) (cap : Nat) : Bound :=
+  let a := analyseBound p cap
+  let b : Bound := ⟨fun k => a.1.getD k (cap + 3), a.2⟩
+  if boundOk p cap b then b else Bound.top cap
+
+theorem boundTable_ok (p : Prog n) (cap : Nat) : boundOk p cap (boundTable p cap) = true := by
+  unfold boundTable
+  simp only []
+  split
+  · assumption
+  · exact boundOk_top p cap
+
 end WordDialect

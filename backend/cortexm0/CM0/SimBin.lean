@@ -28,7 +28,7 @@ theorem scratch_ne (r : Reg) (h : r = r0 ∨ r = r1 ∨ r = r2 ∨ r = r3) :
   rcases h with rfl | rfl | rfl | rfl <;> decide
 
 theorem sim_bin_ok {c : Cfg} {p : Prog 32} {s : State 32} {x : M} {code : List (Instr Nat)}
-    {L : Layout} {base g : Nat} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x)
+    {L : Layout} {base : Nat} {g : Facts} (hg : Geom c) (hL : L.dEnd = ofN c.dEnd) (hs : Rel0 c p s x)
     (hpc : x.pc = base) (mid : List (Instr Nat)) (rr : Reg)
     (hrr : rr = r0 ∨ rr = r1 ∨ rr = r2 ∨ rr = r3) (f : W → W → W)
     (hmid : MidSpec mid rr f) (hstr : ∀ i ∈ mid, i.straightR = true)

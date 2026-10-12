@@ -271,9 +271,9 @@ Defines finite continuing paths with `Steps`, terminating executions with `Exec`
 
 Builds memory from an image, defines the initial state, and extracts a final data stack from an outcome. It includes the direct IR version of `5 DUP +` and proves its result.
 
-### 9. [Depth.lean](formal/WordDialect/Depth.lean) — a checked depth certificate
+### 9. [Depth.lean](formal/WordDialect/Depth.lean) — checked depth certificates
 
-A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. The analysis that proposes one (`analyse`) is untrusted; `safeCert` uses it only when `certOk` accepts it. The Cortex-M0 backend uses the certificate to leave out underflow guards (stops 180 and 187).
+A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. A `Bound` claims upper bounds, checked by `boundOk` against a stack capacity; `BoundInv.step` keeps them through every step taken within that capacity. The analyses that propose them (`analyse`, `analyseBound`) are untrusted; `certTable` and `boundTable` use their results only when the checkers accept them. The Cortex-M0 backend uses both to leave out underflow and overflow guards (stops 180 and 187).
 
 ### 10. [WordDialect.lean](formal/WordDialect.lean) — the public doorway
 
@@ -1003,7 +1003,7 @@ The ARMv6-M model: registers `r0 … r10` and `sp`, which holds the return stack
 
 ### 180. [Lower.lean](backend/cortexm0/CM0/Lower.lean) — the Cortex-M3 track on a narrower gauge
 
-Lowers `Prog 32` with the structure of the Cortex-M3 lowering. The return stack is `sp`, so a return is `pop {pc}`; IR memory sits in the high register `r8`, which is added but never used as a load base; and `div`/`sdiv` become the division sequences `udivSeq`/`sdivSeq`. The layout carries a stack-depth certificate (stop 9): an instruction that pops `k` words where the certificate guarantees at least `k` gets no underflow guard (`need`), which is how most guards disappear.
+Lowers `Prog 32` with the structure of the Cortex-M3 lowering. The return stack is `sp`, so a return is `pop {pc}`; IR memory sits in the high register `r8`, which is added but never used as a load base; and `div`/`sdiv` become the division sequences `udivSeq`/`sdivSeq`. The layout carries a stack-depth certificate and an upper bound (stop 9), combined per instruction into `Facts`: an instruction that pops `k` words where the certificate guarantees at least `k` gets no underflow guard (`need`), and one that grows the data stack where the bound shows room for one more word gets no overflow guard (`ovf`). Together they remove most guards.
 
 ### 181. [Divide.lean](backend/cortexm0/CM0/Divide.lean) — division without a divider, proved
 
@@ -1031,7 +1031,7 @@ Loads, stores, scratch writes and stack-pointer adjustment.
 
 ### 187. [Guard.lean](backend/cortexm0/CM0/Guard.lean) — check room and operands
 
-The operand-count and stack-capacity guards; the return-stack guard compares with `sp`. `uf_pass` covers a guard the certificate removed (empty code, nothing to run); `uf_trap` needs the certificate's claim to hold, which is why a removed guard can never be the one that should have fired.
+The operand-count and stack-capacity guards; the return-stack guard compares with `sp`. `uf_pass` and `ovfG_pass` cover a guard a certificate removed (empty code, nothing to run); `uf_trap` and `ovfG_trap` need the guard to be there, which the certificates' claims establish, so a removed guard can never be the one that should have fired.
 
 ### 188. [SimBin.lean](backend/cortexm0/CM0/SimBin.lean) — one pattern, many operators
 
@@ -1071,7 +1071,7 @@ The auxiliary stack on `r6`.
 
 ### 197. [Correct.lean](backend/cortexm0/CM0/Correct.lean) — preserve the complete journey
 
-`lowerProg_correct_or_overflow` and `lowerProg_correct`. Both assume `certOk` for the certificate the code was lowered with and carry `DepthInv` through the run, so each step has the depth the omitted guards relied on.
+`lowerProg_correct_or_overflow` and `lowerProg_correct`. Both assume `certOk` and `boundOk` for the certificate and bound the code was lowered with and carry `DepthInv` and `BoundInv` through the run, so each step has the depth the omitted guards relied on.
 
 ### 198. [Init.lean](backend/cortexm0/CM0/Init.lean) — begin at the reset vector
 
@@ -1087,7 +1087,7 @@ Exports the Cortex-M0 model, lowering, division proofs, emitter, simulation modu
 
 ### 201. [CM0Main.lean](backend/cortexm0/CM0Main.lean) — ride the line on a micro:bit
 
-Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` (checked by `certOk`, otherwise empty); `--no-opt` keeps every guard.
+Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `boundTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6).
 
 # Part II: how each part works
 
@@ -1220,9 +1220,13 @@ specification's own example, Forth `5 DUP +`, run to the stack `[10]`.
 
 ### `WordDialect/Depth.lean`: stack-depth certificates
 
-Most underflow guards in compiled code can never fire: after `5 DUP`, `+` has its two
-operands. A *certificate* `c : Nat → Nat` records such facts, "at instruction `k` the data stack
-holds at least `c k` words", and `certOk p c` checks one locally, one instruction at a time:
+Most stack guards in compiled code can never fire: after `5 DUP`, `+` has its two operands,
+and a program that never holds more than a dozen words cannot fill a stack of 1024.
+`Depth.lean` records such facts as certificates that a decidable checker accepts or rejects, and
+proves the checkers sound.
+
+**Lower bounds.** A *certificate* `c : Nat → Nat` says "at instruction `k` the data stack holds
+at least `c k` words", and `certOk p c` checks one locally, one instruction at a time:
 
 * `c 0 = 0` (the program starts with an empty stack);
 * for every instruction `i` at `k` and every successor `t` it can continue to,
@@ -1232,30 +1236,49 @@ holds at least `c k` words", and `certOk p c` checks one locally, one instructio
 
 `DepthInv c s` says the claim holds in state `s` (`c s.pc ≤ depth`) and every address on the
 return stack claims nothing. `DepthInv.init` and `DepthInv.step` give `DepthInv.steps`: under a
-checked certificate the invariant holds at every reachable state. Nothing about the analysis
-that proposes a certificate is trusted. `analyse` is a fixpoint iteration (least depth along the
-paths from the entry, with unreachable code given `0`), and `certTable`/`safeCert` use its result
-only when `certOk` accepts it, falling back to the empty certificate, which `certOk` always
-accepts (`certTable_ok`, `safeCert_ok`).
+checked certificate the invariant holds at every reachable state.
 
-A backend that drops a guard for `k` operands where `k ≤ c pc` keeps its correctness theorem with
-one extra hypothesis, `certOk p cert`: the invariant guarantees the guard would have passed. The
-Cortex-M0 backend does this (`CM0/Lower.lean`, `need`). Guards are three instructions each and
-were most of the code, so `cm0c` images shrink by about a third:
+**Upper bounds.** In the IR the data stack is unbounded (a recursive word can grow it without
+limit), so an upper bound only makes sense against the target's capacity `cap`, which the
+target's remaining guards enforce. A `Bound` gives `b.bound k` for each instruction and `b.ret`
+for every `ret`; `boundOk p cap b` checks:
 
-| Forth file | `.text` bytes, every guard | with the certificate | saved | underflow guards left |
-| --- | ---: | ---: | ---: | ---: |
-| `core.fs` | 5660 | 3716 | 34% | 0 of 81 |
-| `double.fs` | 40408 | 24616 | 39% | 0 of 658 |
-| `leave.fs` | 9860 | 6260 | 36% | 11 of 161 |
-| `loops.fs` | 6036 | 4164 | 31% | 2 of 80 |
-| `while.fs` | 3952 | 2704 | 31% | 1 of 53 |
-| `words.fs` | 2092 | 1540 | 26% | 1 of 24 |
-| `fib.fs` | 1112 | 920 | 17% | 2 of 10 |
+* for every instruction `i` at `k` and every successor `t`,
+  `min (b.bound k) cap - pops i + pushes i ≤ b.bound t`;
+* every `call` at `k` allows a return at the deepest `ret`: `b.ret ≤ b.bound (k + 1)`;
+* every `ret` at `k`: `min (b.bound k) cap ≤ b.ret`.
 
-(`cm0c emit-forth`, with and without `--no-opt`, assembled for `thumbv6m`.) The guards that
-remain are those an underflow can actually reach, so the traps the IR semantics predicts still
-happen; `cm0c check` exercises them.
+`BoundInv b s` says `depth ≤ b.bound s.pc` and every return address on the return stack allows
+`b.ret`; `BoundInv.step` keeps it through any step from a state within the capacity. Returns are
+handled context-insensitively, so one recursive word saturates every return point at the
+capacity; code that is not under such a word keeps tight bounds. `Bound.top cap`
+(`cap + 3` everywhere) always checks and shows no room.
+
+Nothing about the analyses that propose certificates is trusted. `analyse` (least depth, with
+unreachable code given `0`) and `analyseBound` (least upper bound, by iteration from `0`) are
+fixpoint iterations; `certTable` and `boundTable` use their results only when the checker accepts
+them, and otherwise fall back to the certificates that claim nothing (`certTable_ok`,
+`boundTable_ok`).
+
+A backend that drops a guard where a certificate shows it cannot fire keeps its correctness
+theorem with the checks as extra hypotheses. The Cortex-M0 backend does this
+(`CM0/Lower.lean`: `need`, `ovf`). Guards are three model instructions each (an overflow guard's
+constant takes several more Thumb instructions) and were most of the code:
+
+| Forth file | `.text` bytes, every guard | underflow guards removed | and overflow guards | saved | overflow guards left |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `double.fs` | 40408 | 24616 | 11488 | 72% | 0 of 547 |
+| `core.fs` | 5660 | 3716 | 2420 | 57% | 15 of 69 |
+| `leave.fs` | 9860 | 6260 | 4364 | 56% | 19 of 98 |
+| `loops.fs` | 6036 | 4164 | 3012 | 50% | 14 of 62 |
+| `while.fs` | 3952 | 2704 | 2032 | 49% | 8 of 36 |
+| `words.fs` | 2092 | 1540 | 1108 | 47% | 0 of 18 |
+| `fib.fs` | 1112 | 920 | 776 | 30% | 1 of 7 |
+
+(`cm0c emit-forth`, with and without `--no-opt`, assembled for `thumbv6m`; `cm0c stats` counts
+the guards.) The guards that remain are those an underflow or overflow can actually reach, or
+that sit under a recursive word, so the traps the IR semantics predicts, and exit 6 on a full
+stack, still happen; `cm0c check` exercises them.
 
 ### `formal/WordDialect.lean` and `formal/Audit.lean`
 
@@ -2118,8 +2141,8 @@ It emits assembly, assembles it with `clang --target=thumbv6m-none-eabi -mcpu=co
 with `ld.lld` and a linker script, runs the image with `qemu-system-arm -M microbit -kernel`,
 reads the UART up to the `EXIT` line, and compares the status and dump with the Lean semantics at
 width 32 through `Harness32` (the same programs as `rv32c` and `cmc`). It lowers with the checked
-stack-depth certificate `certTable` (see `WordDialect/Depth.lean` above); `--no-opt` lowers with
-every guard, for comparison.
+stack-depth certificate `certTable` and upper bound `boundTable` (see `WordDialect/Depth.lean`
+above); `--no-opt` lowers with every guard, for comparison.
 
 ## Trust boundaries in one place
 
@@ -2174,10 +2197,10 @@ Things to keep in mind when reading the theorems:
   `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), or `36 · length < 2^32` (Cortex-M0, whose division sequences are longer), and the register file and memory image fit the runtime layout
   (WebAssembly).
 * **Optimisations take a checked certificate, not a trusted analysis.** The Cortex-M0 lowering
-  drops an underflow guard only where a stack-depth certificate says it cannot fire; its
-  theorems assume `certOk` for that certificate, a decidable check the driver runs. The analysis
-  that proposes the certificate is outside the trusted base: if its result fails the check, the
-  driver uses the empty certificate and keeps every guard.
+  drops an underflow or overflow guard only where a stack-depth certificate or bound says it
+  cannot fire; its theorems assume `certOk` and `boundOk` for them, decidable checks the driver
+  runs. The analyses that propose them are outside the trusted base: if a result fails its check,
+  the driver uses the certificate that claims nothing and keeps those guards.
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
   `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap
