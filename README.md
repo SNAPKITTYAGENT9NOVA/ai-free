@@ -1087,7 +1087,7 @@ Exports the Cortex-M0 model, lowering, division proofs, emitter, simulation modu
 
 ### 201. [CM0Main.lean](backend/cortexm0/CM0Main.lean) — ride the line on a micro:bit
 
-Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `boundTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6), the same after a call to a word with a known net effect, and a recursion that grows the stack (exit 6).
+Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `upperTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6), the same after a call to a word with a known net effect, and a recursion that grows the stack (exit 6). `cm0c image --board` builds for the micro:bit V1 or V2, or Microchip's SAM D21 Curiosity Nano (SERCOM5 serial, result LED, SW0 to run again; `docs/HARDWARE.md`).
 
 # Part II: how each part works
 
@@ -2300,13 +2300,14 @@ Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call
 
 ## Running on a real board
 
-`cm0c image prog.fs` (BBC micro:bit V1, or `--board microbit-v2`) and `cmc image prog.fs`
-(Stellaris EK-LM3S6965) write a flashable ELF and Intel HEX file plus the exact serial output a
-correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
+`cm0c image prog.fs` (BBC micro:bit V1, or `--board microbit-v2`, or Microchip's SAM D21
+Curiosity Nano with `--board samd21-cnano`) and `cmc image prog.fs` (Stellaris EK-LM3S6965) write
+a flashable ELF and Intel HEX file plus the exact serial output a correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
 `cm0c verify prog.fs serial.log` / `cmc verify prog.fs serial.log`. The runtimes need no debugger:
 a run ends with an `EXIT` line and the status on the UART. The runbook, including what a mismatch
 means, is [docs/HARDWARE.md](docs/HARDWARE.md). The board set-up has so far been exercised only on
-QEMU's models of these boards.
+QEMU's models of these boards; the SAM D21 has no QEMU model, so its start-up code is checked
+only by building and disassembling the image.
 
 ## Checking everything at once
 
