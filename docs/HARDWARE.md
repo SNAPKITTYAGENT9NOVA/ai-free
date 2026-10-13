@@ -140,6 +140,12 @@ connects to its USB serial port (the second of the two ports it creates).
 On another LM3S part or crystal, change `clockHz` in `CM.Emit.Runtime` (the UART divisor is
 computed from it).
 
+## Automating it
+
+`scripts/hil/run-board.sh` does the steps above in one command (build, open the port, program
+with OpenOCD, capture, verify), and `scripts/hil/run-all.sh` runs every example; with a Linux
+machine and boards attached they run as a CI job. See [HIL.md](HIL.md).
+
 ## What a mismatch means
 
 * **No output at all.** The board set-up is wrong for this board: clock, pins, or the serial

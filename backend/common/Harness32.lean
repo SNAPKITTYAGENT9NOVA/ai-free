@@ -330,7 +330,11 @@ def writeImage (s : Sample32) (elf : String) (stem : String) : IO UInt32 := do
 /-- Compare a serial log from a board with the Lean semantics. -/
 def verifyLog (s : Sample32) (logPath : String) : IO UInt32 := do
   if let some e := s.buildError then IO.eprintln e; return 1
-  let log ← IO.FS.readFile logPath
+  -- keep printable ASCII and newlines: a board can put glitch bytes (not UTF-8) on the line as
+  -- its UART comes up
+  let bytes ← IO.FS.readBinFile logPath
+  let log := String.mk (bytes.toList.filterMap fun b =>
+    if b == 10 || (32 ≤ b && b < 127) then some (Char.ofNat b.toNat) else none)
   let exp := expected32 s
   match parseTranscript s log with
   | .error e => IO.println s!"FAIL  {s.name}: {e}"; return 1
