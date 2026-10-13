@@ -1,11 +1,15 @@
 name: hardware
 # Runs every Forth example on real boards attached to a self-hosted runner (docs/HIL.md) and
-# checks each board's serial transcript against the Lean semantics. It runs on demand and on
-# pushes to master only: a self-hosted runner must never run code from pull requests.
+# checks each board's serial transcript against the Lean semantics. A self-hosted runner must
+# never run code from pull requests, so it never runs on them.
+#
+# For now it runs only when started from the Actions tab, so pushes do not queue a job that no
+# machine can take. Once the rig is registered (docs/HIL.md, step 5), add
+#   push:
+#     branches: [master]
+# under `on:` to check every change to master on the boards.
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
 jobs:
   samd21:
     runs-on: [self-hosted, linux, samd21]

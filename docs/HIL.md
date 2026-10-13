@@ -77,11 +77,13 @@ Boards: `samd21-cnano` (Microchip SAM D21 Curiosity Nano) and `microbit-v1`.
    Secrets and variables → Actions → Variables) to the board's `/dev/serial/by-id/…` path, and,
    with several boards, `SAMD21_ADAPTER_SERIAL`.
 
-6. Run the `hardware` workflow from the Actions tab (it also runs on every push to `master`).
+6. Run the `hardware` workflow from the Actions tab. Once it passes, make it run on every push to
+   `master` too: add `push: { branches: [master] }` under `on:` in
+   `.github/workflows/hardware.yml` (the file says where).
 
 ## Security
 
 A self-hosted runner executes whatever the workflow tells it to on the machine. The workflow
-therefore runs only on demand and on pushes to `master`, never on pull requests (where anyone
+therefore runs only on demand (and, once enabled, on pushes to `master`), never on pull requests (where anyone
 could change the workflow). Keep it that way, use a machine that holds nothing else of value, and
 keep the repository's Actions settings requiring approval for workflows from outside contributors.
