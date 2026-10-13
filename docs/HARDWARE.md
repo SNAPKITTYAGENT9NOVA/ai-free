@@ -85,6 +85,42 @@ only the V1.
    `verify` ignores carriage returns and anything before the first result line, so a log from
    a terminal program can be used as it is.
 
+## Microchip SAM D21 Curiosity Nano (`cm0c --board samd21-cnano`)
+
+Microchip's SAM D21 Curiosity Nano (DM320119) carries an `ATSAMD21G17D`, a Cortex-M0+ with
+128 KiB of flash and 16 KiB of SRAM, and an on-board debugger (nEDBG) that programs it and
+provides a virtual COM port over the same USB cable. The Cortex-M0+ runs `cm0c`'s ARMv6-M code
+unchanged, with the same memory layout as the micro:bit; only the start-up, output and end of
+run differ (`CM0.Emit`: `uartInitSamd21`, `putcSamd21`, `finishSamd21`, with the register
+addresses and fields of the SAM D21/DA1 data sheet, DS40001882G):
+
+| | |
+| --- | --- |
+| image | `cm0c image prog.fs --board samd21-cnano` |
+| clock | the internal 8 MHz oscillator, undivided (the board's 32 kHz crystal is not connected by default) |
+| serial | SERCOM5 as a USART, TX PA22 (pad 0), RX PB22 (pad 2): the debugger's virtual COM port, 115200 8N1 |
+| result LED | the yellow LED0 (PB10) lights when the run halts with status 0 |
+| run again | press SW0 (PB11): the chip resets and runs the program again, printing a fresh transcript |
+
+The debugger does not offer a drag-and-drop drive on this board (its user guide, DS70005409D,
+section 3.1.2), and it only forwards serial data while a terminal has the port open (DTR set), so:
+
+1. Connect the board by USB. The virtual COM port appears as `/dev/ttyACM0` (Linux),
+   `/dev/cu.usbmodem…` (macOS) or `COMn` (Windows).
+2. Open the port at 115200 8N1 and start saving the log (as for the micro:bit above).
+3. Program the `.hex` with **MPLAB X IPE** (free from Microchip): select the device
+   `ATSAMD21G17D` and the board's debugger as the tool, connect, load
+   `prog-samd21-cnano.hex`, and program. (Any CMSIS-DAP programmer for SAM D21 works too, for
+   example OpenOCD with `interface/cmsis-dap.cfg` and `target/at91samdXX.cfg`.)
+4. The program runs after programming. If the terminal was not yet open, press SW0 to run it
+   again; the LED shows the result at a glance.
+5. `cm0c verify /path/to/ai-free/examples/forth/fib.fs serial.log`.
+
+This board is not emulated, so its start-up code is checked here only by building and
+disassembling the image; the first runs on the board are its test. If nothing appears on the
+serial port, check that the terminal opened the right port (DTR set) and press SW0; if the LED
+lights but the log is garbled, the serial settings or the clock are the suspects.
+
 ## Stellaris EK-LM3S6965 (`cmc`)
 
 The image runs from the LM3S6965's 256 KiB flash and 64 KiB SRAM. The runtime switches the system

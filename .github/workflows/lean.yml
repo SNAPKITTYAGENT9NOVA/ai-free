@@ -77,6 +77,9 @@ jobs:
       - name: Board images (image, run on the emulated boards, verify the serial log)
         run: |
           mkdir -p /tmp/board && cd /tmp/board
+          # Microchip SAM D21 Curiosity Nano: not emulated; build every example's image (it must
+          # assemble, link into 128 KiB of flash and convert to Intel HEX)
+          for f in $GITHUB_WORKSPACE/examples/forth/*.fs; do $GITHUB_WORKSPACE/.lake/build/bin/cm0c image "$f" --board samd21-cnano || exit 1; done
           for t in cm0c cmc; do $GITHUB_WORKSPACE/.lake/build/bin/$t image $GITHUB_WORKSPACE/examples/forth/fib.fs || exit 1; done
           (timeout 10 qemu-system-arm -M microbit -kernel fib-microbit-v1.elf -display none -serial stdio -monitor none || true) > v1.log
           (timeout 10 qemu-system-arm -M lm3s6965evb -kernel fib.elf -display none -serial stdio -monitor none || true) > lm3s.log
