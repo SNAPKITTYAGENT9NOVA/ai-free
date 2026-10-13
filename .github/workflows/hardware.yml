@@ -1,0 +1,29 @@
+name: hardware
+# Runs every Forth example on real boards attached to a self-hosted runner (docs/HIL.md) and
+# checks each board's serial transcript against the Lean semantics. It runs on demand and on
+# pushes to master only: a self-hosted runner must never run code from pull requests.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+jobs:
+  samd21:
+    runs-on: [self-hosted, linux, samd21]
+    env:
+      HIL_TTY: ${{ vars.SAMD21_TTY }}
+      HIL_ADAPTER_SERIAL: ${{ vars.SAMD21_ADAPTER_SERIAL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make lake available
+        run: |
+          if [ ! -x "$HOME/.elan/bin/lake" ]; then
+            curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+            sh elan-init.sh -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build cm0c
+        run: lake build cm0c
+      - name: Every example on the SAM D21 Curiosity Nano
+        run: |
+          [ -n "$HIL_TTY" ] || { echo "set the repository variable SAMD21_TTY (docs/HIL.md)"; exit 1; }
+          scripts/hil/run-all.sh samd21-cnano "$HIL_TTY"

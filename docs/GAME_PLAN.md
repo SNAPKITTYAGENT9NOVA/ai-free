@@ -129,7 +129,7 @@ flowchart TB
 | 3 | Forth and BCPL translation | Tests whether distinct programming models share the IR correctly | Done and proved, plus Wolfram expressions and matrices |
 | 4 | Differential test harness | Detects mismatches between translation and execution | Done: `wordc check`, `wasmw check`, `a64c check`, `rv64c check`, `rv32c check`, `cmc check`, `cm0c check`, Forth example files |
 | 5 | One target emitter | Demonstrates that the IR can reach real hardware | Done: seven (x86-64, AArch64, RISC-V at 64 and 32 bits, Cortex-M3, Cortex-M0, and WebAssembly), proved against their models |
-| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Started: underflow- and overflow-guard elimination from checked stack-depth certificates (Cortex-M0), code up to 72% smaller |
+| 6 | Verified optimizations | Establishes that performance improvements preserve behavior | Started: underflow- and overflow-guard elimination from checked stack-depth certificates on the three microcontroller targets (RV32, Cortex-M3, Cortex-M0), code up to 72% smaller |
 | 7 | Matrix and GPU extensions | Expands into numerical computing and acceleration | Integer matrices done; GPU not started |
 
 ## Next phase: close out the Lean work, then port
@@ -201,8 +201,11 @@ Porting:
   backed by an invariant (`UbSound`); `upperTable` combines both kinds. Across the ten Forth
   examples, 2 of 947 data-stack overflow guards remain, both inside recursive words that grow
   the stack.
-* Next candidates: the certificates for the other backends, auxiliary- and return-stack bounds,
-  and the same flash boot for the RV32 profile.
+* **Guard elimination on RV32 and Cortex-M3: done.** Both profiles take the same `Facts`-driven
+  lowering and the same hypotheses (`certOk`, `UbSound`); `double.fs` shrinks by 60% on the
+  Cortex-M3 and 56% on RV32.
+* Next candidates: the certificates for the 64-bit backends (x86-64, AArch64, RISC-V) and
+  WebAssembly, auxiliary- and return-stack bounds, and the same flash boot for the RV32 profile.
 
 ## The strategic opportunity
 

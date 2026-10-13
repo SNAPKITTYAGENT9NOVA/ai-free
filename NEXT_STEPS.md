@@ -89,17 +89,19 @@ end, from the flash image (`CM0.Emit.boot_correct`). ARMv6-M has no divide instr
 a `bl` (simple, at a cost in code size), constants are built from bytes rather than loaded from
 literal pools, and the stacks hold 1024 words each to fit the 16 KiB of SRAM.
 
-## Done: stack-guard elimination (Cortex-M0)
+## Done: stack-guard elimination (RV32, Cortex-M3, Cortex-M0)
 
 `formal/WordDialect/Depth.lean`: a stack-depth certificate, checked by `certOk`, holds at every
-reachable state (`DepthInv.steps`); an upper bound, checked by `boundOk` against a capacity, holds
-through every step taken within it (`BoundInv.step`). The Cortex-M0 lowering drops each underflow
-guard the certificate covers and each data-stack overflow guard where the bound shows room;
-`binary_correct` and `boot_correct` assume both checks, which `cm0c` runs (`certTable`,
-`boundTable`), falling back to keeping the guards. Code is up to 72% smaller. Choices a later
+reachable state (`DepthInv.steps`); upper bounds, checked by `boundOk` and `frameOk` (per word)
+against a capacity, are backed by invariants kept through every step taken within it
+(`UbSound`). The three microcontroller lowerings drop each underflow guard the certificate covers
+and each data-stack overflow guard where the bound shows room; `binary_correct` (and
+`boot_correct` on the Cortex-M profiles) assume `certOk` and `UbSound`, which `rv32c`, `cmc` and
+`cm0c` obtain from checks (`certTable`, `upperTable`), falling back to keeping the guards. Code
+is up to 72% smaller. Choices a later
 change may revisit:
 
-- only the Cortex-M0 backend uses them;
+- the 64-bit backends and WebAssembly do not use them yet;
 - upper bounds are per word (frame certificates): a word is identified by its entry, so code
   shared between two words (one reached by a jump from another) makes `frameOk` reject the
   certificate, and the context-insensitive bound is used alone;

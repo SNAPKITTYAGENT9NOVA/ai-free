@@ -52,11 +52,13 @@ def rBase : Nat := 0x20002400
 def rcap : Nat := 1024
 def rEnd : Nat := rBase + 4 * rcap
 
-/-- A board's UART pins. -/
+/-- A board: its chip family, flash size, and (on nRF chips) its UART pins. -/
 structure Board where
   name : String
-  txPin : Nat
-  rxPsel : Nat
+  txPin : Nat := 0
+  rxPsel : Nat := 0
+  soc : CM0.Emit.Soc := .nrf
+  flashKiB : Nat := 256
 
 /-- The BBC micro:bit V1 (nRF51822, a Cortex-M0): TX P0.24, RX P0.25. The emulator models it. -/
 def microbitV1 : Board := { name := "microbit-v1", txPin := 24, rxPsel := 25 }
@@ -64,6 +66,12 @@ def microbitV1 : Board := { name := "microbit-v1", txPin := 24, rxPsel := 25 }
 /-- The BBC micro:bit V2 (nRF52833, a Cortex-M4F, which runs ARMv6-M code): TX P0.06, RX P1.08
 (`PSEL` 40 = port 1, pin 8). Not modelled by the emulator; for real boards. -/
 def microbitV2 : Board := { name := "microbit-v2", txPin := 6, rxPsel := 40 }
+
+/-- Microchip's SAM D21 Curiosity Nano (DM320119; `ATSAMD21G17D`, a Cortex-M0+ with 128 KiB of
+flash and 16 KiB of SRAM, the same SRAM layout as the micro:bit). The transcript goes to the
+on-board debugger's virtual COM port (SERCOM5 on PA22/PB22); the yellow LED lights when the run
+halts with status 0; pressing SW0 runs the program again. Not modelled by the emulator. -/
+def samd21Cnano : Board := { name := "samd21-cnano", soc := .samd21, flashKiB := 128 }
 
 /-- The runtime for one program. With `opt` the lowering uses the stack-depth certificate
 `safeCert` (`WordDialect.Depth`): the analysis result if `certOk` accepts it, else the empty
@@ -76,7 +84,7 @@ def runtimeFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : C
   let r : CM0.Emit.Runtime :=
     { dEnd := dEnd, capacity := capacity, rEnd := rEnd, rcap := rcap, memImage := s.mem,
       nregs := s.nregs, aEnd := aEnd, acap := acap, txPin := b.txPin, rxPsel := b.rxPsel,
-      cert := fun k => tbl.getD k 0 }
+      soc := b.soc, cert := fun k => tbl.getD k 0 }
   if opt then
     let up := upperTable s.prog r.dCap
     { r with ub := fun k => upperAt up r.dCap k }
@@ -89,8 +97,8 @@ def asmFor (s : Sample32) (b : Board := microbitV1) (opt : Bool := true) : Strin
 /-- The vector table and code in flash from address 0 (where a Cortex-M reads its initial stack
 pointer and reset vector); `.data` in the first 1 KiB of SRAM, loaded into flash after the code
 (`__data_load`); the stacks are uninitialised sections at fixed addresses. -/
-def linkerScript : String :=
-  "ENTRY(_start)\nMEMORY {\n  FLASH (rx) : ORIGIN = 0x0, LENGTH = 256K\n" ++
+def linkerScript (b : Board := microbitV1) : String :=
+  s!"ENTRY(_start)\nMEMORY \{\n  FLASH (rx) : ORIGIN = 0x0, LENGTH = {b.flashKiB}K\n" ++
   "  DATA (rw) : ORIGIN = 0x20000000, LENGTH = 1K\n  STACKS (rw) : ORIGIN = 0x20000400, LENGTH = 12K\n}\nSECTIONS {\n" ++
   "  .vectors : { *(.vectors) } > FLASH\n  .text : { *(.text*) } > FLASH\n" ++
   "  .data : { *(.data*) } > DATA AT > FLASH\n  __data_load = LOADADDR(.data);\n" ++
@@ -101,11 +109,11 @@ def linkerScript : String :=
 def workDir : String := "/tmp/cm0c"
 
 /-- Assemble and link one assembly file; the ELF's path. -/
-def buildElf (name asm : String) : IO (Except String String) := do
+def buildElf (name asm : String) (b : Board := microbitV1) : IO (Except String String) := do
   IO.FS.createDirAll workDir
   let base := s!"{workDir}/{name}"
   IO.FS.writeFile (base ++ ".s") asm
-  IO.FS.writeFile (workDir ++ "/link.ld") linkerScript
+  IO.FS.writeFile (workDir ++ "/link.ld") (linkerScript b)
   let asArgs := #["--target=thumbv6m-none-eabi", "-mcpu=cortex-m0", "-c", "-o", base ++ ".o",
     base ++ ".s"]
   let a ← IO.Process.output { cmd := "clang", args := asArgs }
@@ -136,40 +144,13 @@ def runNative (opt : Bool := true) : Runner32 := fun s => do
   | .error e => return .error e
   | .ok out => return parseTranscript s out
 
-/-- The data stack filled exactly to capacity by straight-line code, where the upper bound removes
-every overflow guard, and one word more, where the bound must keep the last guard (exit 6). -/
-def checkCapacity (opt : Bool) : IO Bool := do
-  let fill : Sample32 :=
-    { name := "cap_fill", prog := List.replicate capacity (.word 1) ++ [.halt], mem := [] }
-  let ok1 ← check32 (runNative opt) fill
-  -- After a call to a word with net effect -1 (it pushes two words and drops three), the frame
-  -- certificate knows the depth exactly: filling to capacity removes every guard, one more keeps
-  -- the last.
-  let afterCall (extra : Nat) : List (WordDialect.Instr 32) :=
-    let w := 2 + (capacity + extra) + 1
-    [.word 7, .call w] ++ List.replicate (capacity + extra) (.word 1) ++ [.halt] ++
-      [.word 1, .word 2, .drop, .drop, .drop, .ret]
-  let ok2 ← check32 (runNative opt)
-    { name := "cap_fill_after_call", prog := afterCall 0, mem := [] }
-  let mut ok := ok1 && ok2
-  for (name, prog) in [("cap_over_word", List.replicate capacity (.word 1) ++ [.word 1, .halt]),
-                       ("cap_over_dup", List.replicate capacity (.word 1) ++ [.dup, .halt]),
-                       ("cap_over_after_call", afterCall 1),
-                       -- recursion that grows the data stack by two words a level
-                       ("ovf_recursive_push2", [.call 2, .halt, .word 1, .word 2, .call 2, .ret])] do
-    let s : Sample32 := { name, prog, mem := [] }
-    match ← runNative opt s with
-    | .ok (.trap 6) => IO.println s!"PASS  {name}  overflow exit 6"
-    | .ok got => IO.println s!"FAIL  {name}  expected overflow exit 6, got {repr got}"; ok := false
-    | .error e => IO.println s!"ERROR {name}: {e}"; ok := false
-  return ok
-
 /-! ## Driver -/
 
-/-- `--board microbit-v1|microbit-v2` anywhere in the arguments, and the rest. -/
+/-- `--board microbit-v1|microbit-v2|samd21-cnano` anywhere in the arguments, and the rest. -/
 def takeBoard : List String → Option Board × List String
   | "--board" :: "microbit-v1" :: rest => (some microbitV1, rest)
   | "--board" :: "microbit-v2" :: rest => (some microbitV2, rest)
+  | "--board" :: "samd21-cnano" :: rest => (some samd21Cnano, rest)
   | "--board" :: _ :: rest => (none, "--board?" :: rest)
   | a :: rest => let (b, r) := takeBoard rest; (b, a :: r)
   | [] => (none, [])
@@ -204,12 +185,12 @@ def main (args0 : List String) : IO UInt32 := do
   | "image" :: path :: rest =>
     let (b, rest) := takeBoard rest
     match parseMem rest with
-    | none => IO.eprintln "usage: cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2]"; return 2
+    | none => IO.eprintln "usage: cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2|samd21-cnano]"; return 2
     | some m =>
       let board := b.getD microbitV1
       let s ← forthFileSample32 path m
       if let some e := s.buildError then IO.eprintln e; return 1
-      match ← buildElf s!"{s.name}-{board.name}" (asmFor s board opt) with
+      match ← buildElf s!"{s.name}-{board.name}" (asmFor s board opt) board with
       | .error e => IO.eprintln e; return 1
       | .ok elf => writeImage s elf s!"{s.name}-{board.name}"
   | "verify" :: path :: log :: rest =>
@@ -222,24 +203,12 @@ def main (args0 : List String) : IO UInt32 := do
     | some m =>
       let s ← forthFileSample32 path m
       if let some e := s.buildError then IO.eprintln e; return 1
-      let p := s.prog
       let r := runtimeFor s
-      let lo := r.cert
-      let hi := r.ub
-      let grows : WordDialect.Instr 32 → Bool
-        | .word _ | .ptr _ | .push _ | .dup | .over | .fromr | .rfetch => true
-        | _ => false
-      let idx := p.zipIdx
-      let uf := idx.filter fun (i, _) => 0 < i.pops
-      let ufKept := uf.filter fun (i, k) => lo k < i.pops
-      let ov := idx.filter fun (i, _) => grows i
-      let ovKept := ov.filter fun (_, k) => !(hi k + 1 ≤ r.dCap)
-      let frames := if frameOk p r.dCap (analyseFrames p r.dCap) then "accepted" else "rejected"
-      IO.println s!"{s.name}: {p.length} instructions; underflow guards {uf.length} → {ufKept.length}; data-stack overflow guards {ov.length} → {ovKept.length} (frame certificate {frames})"
+      IO.println (guardStats s r.cert r.ub r.dCap)
       return 0
   | "check" :: rest =>
     let count := match rest with | [n] => n.toNat! | _ => 200
     let ok ← checkAll32 (runNative opt) count
-    let okc ← checkCapacity opt
+    let okc ← checkCapacity32 (runNative opt) capacity
     return (if ok && okc then 0 else 1)
-  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2] | cm0c verify <file.fs> <serial.log> [memWords] | cm0c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2
+  | _ => IO.eprintln "usage: cm0c check [fuzzCount] | cm0c emit <sample> | cm0c forth <file.fs> [memWords] | cm0c emit-forth <file.fs> [memWords] | cm0c image <file.fs> [memWords] [--board microbit-v1|microbit-v2|samd21-cnano] | cm0c verify <file.fs> <serial.log> [memWords] | cm0c stats <file.fs> [memWords]  (any command: --no-opt keeps every guard)"; return 2

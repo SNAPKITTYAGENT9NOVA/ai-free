@@ -149,6 +149,17 @@ def instr (k : Nat) (i : Instr Nat) : String := instrP "" k i
 def body (code : List (Instr Nat)) : String :=
   String.intercalate "\n" (code.zipIdx.map fun (i, k) => s!"{lbl k}:\n\t{instr k i}") ++ "\n"
 
+/-- The chip family the runtime's device code is written for. The lowered program and its proofs
+do not depend on it; only the hand-written set-up, output and end-of-run code does. -/
+inductive Soc where
+  /-- Nordic nRF51/nRF52 (BBC micro:bit): the UART at `uartBase`. -/
+  | nrf
+  /-- Microchip SAM D21 (SAM D21 Curiosity Nano, `ATSAMD21G17D`): SERCOM5 as a USART on
+  PA22 (TX, pad 0) and PB22 (RX, pad 2), the debugger's virtual COM port; the yellow LED on PB10;
+  the switch SW0 on PB11. -/
+  | samd21
+  deriving DecidableEq, Repr
+
 /-- Data-stack placement (`capacity` words ending at `dEnd`), return-stack placement (`rcap`
 entries ending at `rEnd`, the stack `sp` points into), IR memory image, register-file size,
 auxiliary-stack placement (`acap` words ending at `aEnd`), the UART address and its pins. The three
@@ -167,6 +178,8 @@ structure Runtime where
   port 0. The defaults are the BBC micro:bit V1's (TX P0.24, RX P0.25). -/
   txPin : Nat := 24
   rxPsel : Nat := 25
+  /-- The chip family of the board (see `Soc`). -/
+  soc : Soc := .nrf
   /-- The stack-depth certificate the code is lowered with (`WordDialect.Depth`); the driver
   passes `safeCert` of the program. The default claims nothing and keeps every guard. -/
   cert : Nat → Nat := fun _ => 0
@@ -249,6 +262,60 @@ def uartInit (r : Runtime) : String :=
   s!"\t{la "r0" "0x500"}\n\tmovs r3, #4\n\tstr r3, [r2, r0]\n" ++
   "\tmovs r3, #1\n\tstr r3, [r2, #8]\n\tbx lr\n"
 
+/-- SAM D21 bring-up (register addresses and fields from the SAM D21/DA1 data sheet,
+DS40001882G): run the CPU and GCLK generator 0 from the 8 MHz internal oscillator undivided
+(`SYSCTRL.OSC8M.PRESC := 0`; at reset it is divided by 8, too slow for 115200 baud), clock
+SERCOM5 (`PM.APBCMASK` bit 7, `GCLK.CLKCTRL := CLKEN | GEN0 | ID 0x19`), hand PA22 and PB22 to
+peripheral function D (SERCOM5 pads 0 and 2), and make SERCOM5 a USART with the internal clock,
+LSB first, TX on pad 0, RX on pad 2, 16x oversampling, 8 data bits, no parity, one stop bit,
+`BAUD = 65536 · (1 - 16 · 115200 / 8000000) = 50436`. Waits are bounded. Uses `r0 … r3`. -/
+def uartInitSamd21 : String :=
+  "\t.thumb_func\nuart_init:\n" ++
+  -- SYSCTRL.OSC8M (0x40000820): clear PRESC (bits 9:8)
+  s!"\t{la "r2" "0x40000800"}\n\tldr r3, [r2, #0x20]\n\t{la "r1" "0x300"}\n\tbics r3, r1\n\tstr r3, [r2, #0x20]\n" ++
+  -- PM.APBCMASK (0x40000420): SERCOM5 clock on
+  s!"\t{la "r2" "0x40000400"}\n\tldr r3, [r2, #0x20]\n\tmovs r1, #0x80\n\torrs r3, r1\n\tstr r3, [r2, #0x20]\n" ++
+  -- GCLK.CLKCTRL (0x40000C02, 16 bits): SERCOM5_CORE from generator 0; wait for STATUS.SYNCBUSY
+  s!"\t{la "r2" "0x40000C00"}\n\t{la "r3" "0x4019"}\n\tstrh r3, [r2, #2]\n" ++
+  s!"\t{la "r1" "0x100000"}\n9:\tldrb r3, [r2, #1]\n\tlsls r3, r3, #24\n\tbpl 8f\n\tsubs r1, #1\n\tbne 9b\n8:\n" ++
+  -- PORT group A (0x41004400): PA22 -> function D (PMUX11 low nibble, PINCFG22.PMUXEN)
+  s!"\t{la "r2" "0x41004400"}\n" ++
+  "\tmovs r1, #0x3B\n\tldrb r3, [r2, r1]\n\tmovs r0, #0x0F\n\tbics r3, r0\n\tmovs r0, #3\n\torrs r3, r0\n\tstrb r3, [r2, r1]\n" ++
+  "\tmovs r1, #0x56\n\tldrb r3, [r2, r1]\n\tmovs r0, #1\n\torrs r3, r0\n\tstrb r3, [r2, r1]\n" ++
+  -- PORT group B (0x41004480): PB22 -> function D
+  "\tadds r2, #0x80\n" ++
+  "\tmovs r1, #0x3B\n\tldrb r3, [r2, r1]\n\tmovs r0, #0x0F\n\tbics r3, r0\n\tmovs r0, #3\n\torrs r3, r0\n\tstrb r3, [r2, r1]\n" ++
+  "\tmovs r1, #0x56\n\tldrb r3, [r2, r1]\n\tmovs r0, #1\n\torrs r3, r0\n\tstrb r3, [r2, r1]\n" ++
+  -- SERCOM5 (0x42001C00): CTRLA, CTRLB (wait SYNCBUSY), BAUD, then ENABLE (wait SYNCBUSY)
+  s!"\t{la "r2" "0x42001C00"}\n\t{la "r3" "0x40200004"}\n\tstr r3, [r2]\n" ++
+  s!"\t{la "r3" "0x00030000"}\n\tstr r3, [r2, #4]\n" ++
+  s!"\t{la "r1" "0x100000"}\n7:\tldr r3, [r2, #0x1C]\n\tcmp r3, #0\n\tbeq 6f\n\tsubs r1, #1\n\tbne 7b\n6:\n" ++
+  s!"\t{la "r3" "50436"}\n\tstrh r3, [r2, #0x0C]\n" ++
+  s!"\t{la "r3" "0x40200006"}\n\tstr r3, [r2]\n" ++
+  s!"\t{la "r1" "0x100000"}\n5:\tldr r3, [r2, #0x1C]\n\tcmp r3, #0\n\tbeq 4f\n\tsubs r1, #1\n\tbne 5b\n4:\n" ++
+  "\tbx lr\n"
+
+/-- SAM D21 `putc`: wait for `INTFLAG.DRE`, write `DATA`, then wait for `INTFLAG.TXC`, so the
+last byte is on the wire before the run ends. -/
+def putcSamd21 : String :=
+  "\t.thumb_func\nputc:\n" ++
+  s!"\t{la "r2" "0x42001C00"}\n" ++
+  "1:\tldrb r3, [r2, #0x18]\n\tlsls r3, r3, #31\n\tbeq 1b\n\tstrh r0, [r2, #0x28]\n" ++
+  "2:\tldrb r3, [r2, #0x18]\n\tlsls r3, r3, #30\n\tbpl 2b\n\tbx lr\n"
+
+/-- SAM D21 end of run, after the transcript, with the status in `r6`: light the yellow LED
+(PB10, active low) when the status is 0, then wait for the switch SW0 (PB11, input with the
+internal pull-up) to be released and pressed, and reset the chip (`AIRCR.SYSRESETREQ`), so each
+press runs the program again and prints a fresh transcript. -/
+def finishSamd21 : String :=
+  s!"\t{la "r2" "0x41004480"}\n\tcmp r6, #0\n\tbne 1f\n" ++
+  s!"\t{la "r3" "0x400"}\n\tstr r3, [r2, #0x08]\n\tstr r3, [r2, #0x14]\n1:\n" ++
+  "\tmovs r1, #0x4B\n\tmovs r3, #6\n\tstrb r3, [r2, r1]\n" ++
+  s!"\t{la "r3" "0x800"}\n\tstr r3, [r2, #0x18]\n" ++
+  "2:\tldr r0, [r2, #0x20]\n\ttst r0, r3\n\tbeq 2b\n" ++
+  "3:\tldr r0, [r2, #0x20]\n\ttst r0, r3\n\tbne 3b\n" ++
+  s!"\t{la "r1" "0xE000ED0C"}\n\t{la "r0" "0x05FA0004"}\n\tstr r0, [r1]\n4:\tb 4b\n"
+
 /-- Output and end-of-run routines, entered only from `exitHalt`, `exitTrap` and `exitOvf`, so
 they may use any register. `putc` writes `r0` to the UART; `putw` writes `r6` as eight
 hexadecimal digits and a newline; `putws` writes the `r5` words at address `r4`.
@@ -259,10 +326,13 @@ the two words at `exitblk` (the status and the marker `0xE0D0F1A1`, for a debugg
 to read it), then the UART gets the line `EXIT` and the status as a word line, and the core
 sleeps (`wfi`) for good. -/
 def devices (r : Runtime) : String :=
-  uartInit r ++
-  "\t.thumb_func\nputc:\n" ++
-  s!"\t{la "r2" (hex r.uartBase)}\n\t{la "r1" "0x51C"}\n\tstr r0, [r2, r1]\n\t{la "r1" "0x11C"}\n" ++
-  "1:\tldr r3, [r2, r1]\n\tcmp r3, #0\n\tbeq 1b\n\tmovs r3, #0\n\tstr r3, [r2, r1]\n\tbx lr\n" ++
+  (match r.soc with
+   | .nrf =>
+     uartInit r ++
+     "\t.thumb_func\nputc:\n" ++
+     s!"\t{la "r2" (hex r.uartBase)}\n\t{la "r1" "0x51C"}\n\tstr r0, [r2, r1]\n\t{la "r1" "0x11C"}\n" ++
+     "1:\tldr r3, [r2, r1]\n\tcmp r3, #0\n\tbeq 1b\n\tmovs r3, #0\n\tstr r3, [r2, r1]\n\tbx lr\n"
+   | .samd21 => uartInitSamd21 ++ putcSamd21) ++
   "\t.thumb_func\nputw:\n\tmov r10, lr\n\tmovs r7, #28\n" ++
   "2:\tmov r0, r6\n\tlsrs r0, r7\n\tmovs r1, #15\n\tands r0, r1\n\tcmp r0, #10\n\tbhs 3f\n" ++
   "\tadds r0, #48\n\tb 4f\n3:\tadds r0, #87\n4:\tbl putc\n" ++
@@ -273,7 +343,10 @@ def devices (r : Runtime) : String :=
   ".Lexit:\n\tmov r6, r1\n\tbl uart_init\n" ++
   s!".Lfinish:\n\t{la "r0" "exitblk"}\n\tstr r6, [r0]\n\t{la "r1" "0xE0D0F1A1"}\n\tstr r1, [r0, #4]\n" ++
   String.join ("EXIT\n".toList.map fun ch => s!"\tmovs r0, #{ch.toNat}\n\tbl putc\n") ++
-  "\tbl putw\n7:\twfi\n\tb 7b\n"
+  "\tbl putw\n" ++
+  (match r.soc with
+   | .nrf => "7:\twfi\n\tb 7b\n"
+   | .samd21 => finishSamd21)
 
 /-- Set up the UART for the halt dump. -/
 def uartOn (_r : Runtime) : String := "\tbl uart_init\n"

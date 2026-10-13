@@ -8,7 +8,7 @@ Think of this repository as a railway atlas. The source frontends are departure 
 
 This README is the project's single guide. [Part I](#part-i-the-atlas) is a guided journey through that atlas: every Lean file receives an individual stop, with a link, a description, and a reason to open it. You can follow the whole route or jump directly to the part that interests you: writing Forth, understanding compiler correctness, exploring matrix multiplication, inspecting native assembly, or studying WebAssembly dispatch.
 
-**Inventory note:** the source tree contains **201 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/SNAPKITTYWEST/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 23 files of the Cortex-M profile (`backend/cortexm`), the 23 files of the Cortex-M0 profile (`backend/cortexm0`), the 32-bit harness `backend/common/Harness32.lean` and the stack-depth certificates `WordDialect/Depth.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
+**Inventory note:** the source tree contains **201 `.lean` files**, and the numbered atlas below gives each one its own stop, including library entry files, executable entry points, and the audit. The original survey of `master`, commit [`93d6d84`](https://github.com/snapkittyagent9nova/ai-free/tree/93d6d84fe80d3b7f333e31324b35ba27a964b9cc), counted 81; `Forth/LoopProps.lean`, `Forth/Grammar.lean`, `Forth/Double.lean`, `Forth/DoubleMath.lean`, `Forth/DoubleCorrect.lean`, the 23 files of the AArch64 backend (`backend/arm64`) the 22 files of the RISC-V backend (`backend/riscv64`) the 22 files of the RV32 microcontroller profile (`backend/rv32`), the 23 files of the Cortex-M profile (`backend/cortexm`), the 23 files of the Cortex-M0 profile (`backend/cortexm0`), the 32-bit harness `backend/common/Harness32.lean` and the stack-depth certificates `WordDialect/Depth.lean` have been added since. CI runs [`scripts/check_inventory.sh`](scripts/check_inventory.sh), which fails when a Lean file has no stop or a stop links to a missing file, so the inventory stays complete. [Part II](#part-ii-how-each-part-works) is the technical companion to the atlas: what each library defines and proves, with diagrams of the pipeline, each backend's design and the trust boundaries. The project's direction, and where it stands against each part, is in the [game plan](docs/GAME_PLAN.md).
 
 ## Contents
 
@@ -273,7 +273,7 @@ Builds memory from an image, defines the initial state, and extracts a final dat
 
 ### 9. [Depth.lean](formal/WordDialect/Depth.lean) — checked depth certificates
 
-A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. Upper bounds come in two kinds, both checked against a stack capacity: a `Bound` per instruction (`boundOk`), and a frame certificate (`frameOk`) that tracks depth relative to the entry of the word being executed, with each word's net stack effect, so a recursive word does not spoil the bounds of its callers. Each is backed by an invariant (`UbSound`), and they combine by `min` (`upperTable_sound`). The analyses that propose certificates (`analyse`, `analyseBound`, `analyseFrames`) are untrusted; their results are used only when the checkers accept them. The Cortex-M0 backend uses both to leave out underflow and overflow guards (stops 180 and 187).
+A certificate `c : Nat → Nat` claims a lower bound on the data-stack depth at each instruction. `certOk` checks it locally: the entry claims nothing, each successor's claim is at most what the instruction leaves behind, and every return point claims nothing. `DepthInv.steps` proves that a checked certificate holds at every reachable state. Upper bounds come in two kinds, both checked against a stack capacity: a `Bound` per instruction (`boundOk`), and a frame certificate (`frameOk`) that tracks depth relative to the entry of the word being executed, with each word's net stack effect, so a recursive word does not spoil the bounds of its callers. Each is backed by an invariant (`UbSound`), and they combine by `min` (`upperTable_sound`). The analyses that propose certificates (`analyse`, `analyseBound`, `analyseFrames`) are untrusted; their results are used only when the checkers accept them. The three microcontroller backends (RV32, Cortex-M3, Cortex-M0) use both to leave out underflow and overflow guards (stops 135, 157 and 180).
 
 ### 10. [WordDialect.lean](formal/WordDialect.lean) — the public doorway
 
@@ -815,7 +815,7 @@ The RV32IM model: the instructions of stop 112 on 32-bit registers, with `lw`/`s
 
 ### 135. [Lower.lean](backend/rv32/RV32/Lower.lean) — lower 32-bit words
 
-Lowers `Prog 32`. The register roles and code sizes are those of stop 113; every cell is four bytes, so addresses use `slli 2` and stack offsets are multiples of four, and the shift mask tests `amount <u 32`.
+Lowers `Prog 32`. The register roles and code sizes are those of stop 113; every cell is four bytes, so addresses use `slli 2` and stack offsets are multiples of four, and the shift mask tests `amount <u 32`. As on the Cortex-M0 (stop 180), the layout carries a lower-bound certificate and an upper bound (stop 9), and each instruction's `Facts` leave out the underflow and overflow guards they show cannot fire; the guard lemmas, the simulation, `binary_correct` take `certOk` and `UbSound` accordingly.
 
 ### 136. [Emit.lean](backend/rv32/RV32/Emit.lean) — a runtime without an operating system
 
@@ -907,7 +907,7 @@ The Thumb-2 (ARMv7-M) model on `r0 … r12` and `lr`. Condition flags are not mo
 
 ### 157. [Lower.lean](backend/cortexm/CM/Lower.lean) — the RV32 track on ARM rails
 
-Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The rotations use `ror`: `rotr` is one `ror`, `rotl` is `ror` by the negated amount, which is shorter than the two shifts and an `or` of RISC-V.
+Lowers `Prog 32` with the structure of the RV32 lowering, on `r0 … r9`. The rotations use `ror`: `rotr` is one `ror`, `rotl` is `ror` by the negated amount, which is shorter than the two shifts and an `or` of RISC-V. Guards are left out where the depth certificates show they cannot fire, as on RV32 and the Cortex-M0, so `binary_correct` and `boot_correct` take `certOk` and `UbSound`.
 
 ### 158. [Emit.lean](backend/cortexm/CM/Emit.lean) — a vector table, a UART and a breakpoint
 
@@ -1087,7 +1087,7 @@ Exports the Cortex-M0 model, lowering, division proofs, emitter, simulation modu
 
 ### 201. [CM0Main.lean](backend/cortexm0/CM0Main.lean) — ride the line on a micro:bit
 
-Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `boundTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6), the same after a call to a word with a known net effect, and a recursion that grows the stack (exit 6).
+Implements `cm0c`: emit assembly, assemble with `clang --target=thumbv6m-none-eabi -mcpu=cortex-m0`, link with `ld.lld` (code and the `.data` image in flash, `.data` and three stacks of 1024 words in the 16 KiB of SRAM), run on the emulated micro:bit, and compare with the Lean semantics at width 32 through `Harness32`. It lowers with `certTable` and `upperTable` (each checked, otherwise claiming nothing); `--no-opt` keeps every guard, and `cm0c stats` counts the guards left out. `cm0c check` adds the capacity edge cases: straight-line code that fills the data stack exactly (every overflow guard removed) and one word more (the last guard kept, exit 6), the same after a call to a word with a known net effect, and a recursion that grows the stack (exit 6). `cm0c image --board` builds for the micro:bit V1 or V2, or Microchip's SAM D21 Curiosity Nano (SERCOM5 serial, result LED, SW0 to run again; `docs/HARDWARE.md`).
 
 # Part II: how each part works
 
@@ -1279,9 +1279,10 @@ them, and otherwise fall back to the certificates that claim nothing (`certTable
 `boundTable_ok`).
 
 A backend that drops a guard where a certificate shows it cannot fire keeps its correctness
-theorem with the checks as extra hypotheses. The Cortex-M0 backend does this
-(`CM0/Lower.lean`: `need`, `ovf`). Guards are three model instructions each (an overflow guard's
-constant takes several more Thumb instructions) and were most of the code:
+theorem with the checks as extra hypotheses. The three microcontroller backends do this
+(`RV32/Lower.lean`, `CM/Lower.lean`, `CM0/Lower.lean`: `need`, `ovf`). Guards are three model
+instructions each (an overflow guard's constant takes several more machine instructions) and
+were most of the code. On the Cortex-M0:
 
 | Forth file | `.text` bytes, every guard | underflow guards removed | and overflow guards (per-word) | saved | overflow guards left |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -1297,6 +1298,20 @@ constant takes several more Thumb instructions) and were most of the code:
 the guards.) The guards that remain are those an underflow can actually reach, and the overflow
 guards inside the bodies of recursive words that grow the stack (`fib.fs`, `sum.fs`), so the traps
 the IR semantics predicts, and exit 6 on a full stack, still happen; `cm0c check` exercises them.
+
+The other two targets keep the same guards and shrink alike (`.text` bytes, every guard → with
+the certificates):
+
+| Forth file | Cortex-M3 (`cmc`, `thumbv7m`) | RV32 (`rv32c`, `rv32im`) |
+| --- | ---: | ---: |
+| `double.fs` | 40082 → 15982 (60%) | 43212 → 19112 (56%) |
+| `core.fs` | 5686 → 2686 (53%) | 5776 → 2776 (52%) |
+| `leave.fs` | 9778 → 4818 (51%) | 10272 → 5312 (48%) |
+| `while.fs` | 3676 → 1916 (48%) | 3704 → 1944 (48%) |
+| `fib.fs` | 1234 → 954 (23%) | 1080 → 800 (26%) |
+
+Every driver has `stats` (the guards left out) and `--no-opt` (every guard kept), and `check`
+runs the capacity edge cases (`Harness32.checkCapacity32`) on each target.
 
 ### `formal/WordDialect.lean` and `formal/Audit.lean`
 
@@ -2214,11 +2229,12 @@ Things to keep in mind when reading the theorems:
   `push`/`pop` exist (`RegsOk`), the program has fewer than `2^32` instructions (WebAssembly) or
   `17 · length < 2^64` (x86-64, AArch64 and RISC-V) or `17 · length < 2^32` (RV32 and Cortex-M), or `36 · length < 2^32` (Cortex-M0, whose division sequences are longer), and the register file and memory image fit the runtime layout
   (WebAssembly).
-* **Optimisations take a checked certificate, not a trusted analysis.** The Cortex-M0 lowering
-  drops an underflow or overflow guard only where a stack-depth certificate or bound says it
-  cannot fire; its theorems assume `certOk` and `UbSound` for them, which the driver obtains from
-  decidable checks (`certTable_ok`, `upperTable_sound`). The analyses that propose them are outside the trusted base: if a result fails its check,
-  the driver uses the certificate that claims nothing and keeps those guards.
+* **Optimisations take a checked certificate, not a trusted analysis.** The microcontroller
+  lowerings (RV32, Cortex-M3, Cortex-M0) drop an underflow or overflow guard only where a
+  stack-depth certificate or bound says it cannot fire; their theorems assume `certOk` and
+  `UbSound` for them, which the drivers obtain from decidable checks (`certTable_ok`,
+  `upperTable_sound`). The analyses that propose them are outside the trusted base: if a result
+  fails its check, the driver uses the certificate that claims nothing and keeps those guards.
 * **The emitted text is generated from the verified instruction lists.** `Wasm.Emit`,
   `X86.Emit`, `A64.Emit`, `RV.Emit`, `RV32.Emit`, `CM.Emit` and `CM0.Emit` print exactly what the lowering produced, so there is no second hand-written copy of
   the code to drift. The hand-written parts are the small runtimes (prologue, dump routine, trap
@@ -2231,12 +2247,12 @@ Things to keep in mind when reading the theorems:
 Install Git and [elan](https://github.com/leanprover/elan), then make `lean` and `lake` available on your path. The repository pins `leanprover/lean4:v4.34.1`; elan selects that toolchain. The Lake package is named `UniversalWord`, and its manifest lists no external package dependencies.
 
 ```sh
-git clone https://github.com/SNAPKITTYWEST/ai-free.git
+git clone https://github.com/snapkittyagent9nova/ai-free.git
 cd ai-free
 lake build
 ```
 
-The default build includes the semantic and frontend libraries, shared harness, the seven backend libraries, and the `wordc`, `wasmw`, `a64c`, `rv64c`, `rv32c`, `cmc` and `cm0c` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 and RISC-V execution use `clang` and `ld.lld` to build the binary and `qemu-aarch64` / `qemu-riscv64` (Debian/Ubuntu package `qemu-user`) to run it; on a matching Linux machine the binaries run directly. The RV32 microcontroller profile uses the same `clang` and `ld.lld` and runs on the emulated `virt` board, `qemu-system-riscv32` (package `qemu-system-misc`); the Cortex-M profiles run on emulated Cortex-M3 and Cortex-M0 boards, `qemu-system-arm` (package `qemu-system-arm`).
+The default build includes the semantic and frontend libraries, shared harness, the seven backend libraries, and the `wordc`, `wasmw`, `a64c`, `rv64c`, `rv32c`, `cmc` and `cm0c` executables. Native execution uses x86-64 Linux with GNU `as` and `ld`. WebAssembly execution uses [Wasmtime](https://github.com/bytecodealliance/wasmtime/releases); the workflow selects version `30.0.2`. AArch64 and RISC-V execution use `clang` and `ld.lld` to build the binary and `qemu-aarch64` / `qemu-riscv64` (Debian/Ubuntu package `qemu-user`) to run it; on a matching Linux machine the binaries run directly. The RV32 microcontroller profile uses the same `clang` and `ld.lld` and runs on the emulated `virt` board, `qemu-system-riscv32` (package `qemu-system-misc`); the Cortex-M profiles run on emulated Cortex-M3 and Cortex-M0 boards, `qemu-system-arm` (package `qemu-system-arm`). Board images (`cmc image`, `cm0c image`) also need `llvm-objcopy` (package `llvm`). The changes in each version are in [`CHANGELOG.md`](CHANGELOG.md).
 
 Try a short source file containing `5 DUP +`, or use the repository's [Forth examples](examples/forth). The commands below exercise real source parsing and compilation before comparing target behavior with Lean:
 
@@ -2284,13 +2300,15 @@ Other named samples include `bcpl_sum_1_to_10`, `wolfram_dot_2x2`, and `raw_call
 
 ## Running on a real board
 
-`cm0c image prog.fs` (BBC micro:bit V1, or `--board microbit-v2`) and `cmc image prog.fs`
-(Stellaris EK-LM3S6965) write a flashable ELF and Intel HEX file plus the exact serial output a
-correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
+`cm0c image prog.fs` (BBC micro:bit V1, or `--board microbit-v2`, or Microchip's SAM D21
+Curiosity Nano with `--board samd21-cnano`) and `cmc image prog.fs` (Stellaris EK-LM3S6965) write
+a flashable ELF and Intel HEX file plus the exact serial output a correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
 `cm0c verify prog.fs serial.log` / `cmc verify prog.fs serial.log`. The runtimes need no debugger:
 a run ends with an `EXIT` line and the status on the UART. The runbook, including what a mismatch
-means, is [docs/HARDWARE.md](docs/HARDWARE.md). The board set-up has so far been exercised only on
-QEMU's models of these boards.
+means, is [docs/HARDWARE.md](docs/HARDWARE.md). [docs/HIL.md](docs/HIL.md) automates it on a Linux machine with boards attached
+(`scripts/hil/`), as a CI job on a self-hosted runner. The board set-up has so far been exercised only on
+QEMU's models of these boards; the SAM D21 has no QEMU model, so its start-up code is checked
+only by building and disassembling the image.
 
 ## Checking everything at once
 
