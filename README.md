@@ -2305,7 +2305,8 @@ Curiosity Nano with `--board samd21-cnano`) and `cmc image prog.fs` (Stellaris E
 a flashable ELF and Intel HEX file plus the exact serial output a correct run prints. Flash the board, capture its serial port at 115200 8N1, and check the log with
 `cm0c verify prog.fs serial.log` / `cmc verify prog.fs serial.log`. The runtimes need no debugger:
 a run ends with an `EXIT` line and the status on the UART. The runbook, including what a mismatch
-means, is [docs/HARDWARE.md](docs/HARDWARE.md). The board set-up has so far been exercised only on
+means, is [docs/HARDWARE.md](docs/HARDWARE.md). [docs/HIL.md](docs/HIL.md) automates it on a Linux machine with boards attached
+(`scripts/hil/`), as a CI job on a self-hosted runner. The board set-up has so far been exercised only on
 QEMU's models of these boards; the SAM D21 has no QEMU model, so its start-up code is checked
 only by building and disassembling the image.
 
